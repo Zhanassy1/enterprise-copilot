@@ -2,6 +2,8 @@
 
 Enterprise Copilot — это AI-ассистент для бизнеса, который помогает работать с корпоративными документами быстрее и удобнее.
 
+[![CI](https://github.com/Zhanassy1/enterprise-copilot/actions/workflows/ci.yml/badge.svg)](https://github.com/Zhanassy1/enterprise-copilot/actions/workflows/ci.yml)
+
 ## Быстрый старт (Docker)
 
 Требования: Docker Desktop.
@@ -11,7 +13,7 @@ docker compose up --build
 ```
 
 После старта:
-- Frontend: `http://localhost:5173`
+- Frontend: `http://localhost:3000`
 - API: `http://localhost:8000`
 - Healthcheck API: `http://localhost:8000/healthz`
 
@@ -19,8 +21,8 @@ docker compose up --build
 
 ### Доступ с другого устройства в локальной сети
 
-Frontend уже слушает `0.0.0.0` (Vite host mode), поэтому можно открывать:
-- `http://<IP_твоего_ПК>:5173`
+Frontend доступен с другого устройства по:
+- `http://<IP_твоего_ПК>:3000`
 
 Если открываешь frontend с другого устройства, задай API хост явно:
 
@@ -55,7 +57,26 @@ npm install
 npm run dev -- --host
 ```
 
-Открой `http://localhost:5173`.
+Открой `http://localhost:3000`.
+
+## Deploy (production-style)
+
+Самый быстрый вариант деплоя — Docker Compose:
+
+```bash
+docker compose up -d --build
+```
+
+Проверка после деплоя:
+- `http://localhost:3000` — frontend
+- `http://localhost:8000/healthz` — API health
+- `docker compose ps` — статус контейнеров
+
+Остановка:
+
+```bash
+docker compose down
+```
 
 ## Тесты
 
@@ -66,12 +87,26 @@ cd backend
 C:\venvs\ec314\Scripts\python.exe -m unittest discover -s tests -v
 ```
 
+Если есть `py` launcher:
+
+```bash
+py -3 -m unittest discover -s tests -v
+```
+
 ### Backend integration test (auth -> upload -> search -> delete)
 
 Скрипт сам поднимает `db_test` (Docker profile `test`) на `localhost:5433`, прогоняет миграции и запускает интеграционный тест.
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\scripts\test-integration.ps1
+```
+
+### Frontend lint/build
+
+```bash
+cd frontend
+npm run lint
+npm run build
 ```
 
 ## Текущее состояние MVP
