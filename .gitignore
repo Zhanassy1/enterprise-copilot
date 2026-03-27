@@ -1,0 +1,31 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.venv/
+venv/
+
+# Environment
+.env
+.env.local
+
+# FastAPI / local files
+*.log
+
+# Node.js
+node_modules/
+dist/
+build/
+frontend/.next/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+
+# Runtime data
+backend/data/uploads/
