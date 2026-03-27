@@ -1,3 +1,9 @@
+import json
+import logging
+import time
+import uuid
+from collections import defaultdict
+
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse, Response
 from fastapi.middleware.cors import CORSMiddleware
@@ -8,9 +14,44 @@ from app.api.routers import auth, chat, documents, search
 from app.core.config import settings
 from app.core.debug_log import debug_log
 from app.db.session import engine
+from app.services.rate_limiter import is_rate_limited
+
+logger = logging.getLogger("app.request")
+_metrics_counter: dict[str, int] = defaultdict(int)
+_metrics_latency_sum_ms: dict[str, float] = defaultdict(float)
+
+
+def _validate_runtime_configuration() -> None:
+    env = settings.environment.lower().strip()
+    if env == "production":
+        if settings.secret_key == "dev-secret-change-me":
+            raise RuntimeError("Production configuration invalid: secret_key must not use default dev value")
+        if settings.storage_backend.lower().strip() == "s3":
+            required = {
+                "s3_bucket": settings.s3_bucket,
+                "s3_access_key_id": settings.s3_access_key_id,
+                "s3_secret_access_key": settings.s3_secret_access_key,
+            }
+            missing = [k for k, v in required.items() if not (v or "").strip()]
+            if missing:
+                raise RuntimeError(f"Production configuration invalid: missing S3 settings: {', '.join(missing)}")
+        if settings.llm_api_key and not settings.llm_base_url:
+            raise RuntimeError("Production configuration invalid: llm_base_url is required when llm_api_key is set")
 
 
 def create_app() -> FastAPI:
+    _validate_runtime_configuration()
+    if settings.sentry_dsn:
+        try:
+            import sentry_sdk
+
+            sentry_sdk.init(
+                dsn=settings.sentry_dsn,
+                traces_sample_rate=float(settings.sentry_traces_sample_rate),
+                environment=settings.environment,
+            )
+        except Exception:
+            logger.exception("Failed to initialize sentry")
     app = FastAPI(title=settings.app_name)
 
     origins = [o.strip() for o in settings.cors_origins.split(",") if o.strip()]
@@ -70,6 +111,24 @@ def create_app() -> FastAPI:
 
     @app.middleware("http")
     async def debug_request_middleware(request: Request, call_next):
+        request_id = request.headers.get("X-Request-Id") or str(uuid.uuid4())
+        request.state.request_id = request_id
+        path = request.url.path
+        ip = request.client.host if request.client else "unknown"
+        auth = request.headers.get("Authorization") or ""
+        user_token = auth[7:27] if auth.startswith("Bearer ") else ""
+        if settings.csrf_protection_enabled and request.method.upper() in {"POST", "PUT", "PATCH", "DELETE"}:
+            cookie_csrf = request.cookies.get("csrftoken") or ""
+            header_csrf = request.headers.get("X-CSRF-Token") or ""
+            session_cookie = request.cookies.get("session") or ""
+            if session_cookie and (not cookie_csrf or not header_csrf or cookie_csrf != header_csrf):
+                return JSONResponse(status_code=403, content={"detail": "CSRF validation failed"}, headers={"X-Request-Id": request_id})
+        if is_rate_limited("ip", ip, limit=int(settings.rate_limit_per_ip_per_minute)):
+            return JSONResponse(status_code=429, content={"detail": "Rate limit exceeded for IP"}, headers={"X-Request-Id": request_id})
+        if user_token and is_rate_limited("user", user_token, limit=int(settings.rate_limit_per_user_per_minute)):
+            return JSONResponse(status_code=429, content={"detail": "Rate limit exceeded for user"}, headers={"X-Request-Id": request_id})
+
+        t0 = time.perf_counter()
         # #region agent log
         debug_log(
             hypothesisId="H_route",
@@ -79,6 +138,24 @@ def create_app() -> FastAPI:
         )
         # #endregion
         response = await call_next(request)
+        elapsed_ms = (time.perf_counter() - t0) * 1000.0
+        _metrics_counter[f"requests_total:{request.method}:{path}:{response.status_code}"] += 1
+        _metrics_latency_sum_ms[f"latency_ms_sum:{request.method}:{path}"] += elapsed_ms
+        response.headers["X-Request-Id"] = request_id
+        logger.info(
+            json.dumps(
+                {
+                    "event": "http_request",
+                    "request_id": request_id,
+                    "method": request.method,
+                    "path": path,
+                    "status_code": response.status_code,
+                    "latency_ms": round(elapsed_ms, 2),
+                    "client_ip": ip,
+                },
+                ensure_ascii=False,
+            )
+        )
         # #region agent log
         debug_log(
             hypothesisId="H_route",
@@ -129,6 +206,22 @@ def create_app() -> FastAPI:
                 status_code=503,
                 content={"ok": False, "db": False, "detail": "Database unavailable — run Docker: docker compose up -d db"},
             )
+
+    @app.get("/metrics", include_in_schema=False)
+    def metrics() -> Response:
+        if not settings.observability_metrics_enabled:
+            return Response(status_code=404)
+        lines: list[str] = []
+        for key, value in sorted(_metrics_counter.items()):
+            _, method, path, status = key.split(":", 3)
+            lines.append(
+                f'http_requests_total{{method="{method}",path="{path}",status="{status}"}} {int(value)}'
+            )
+        for key, value in sorted(_metrics_latency_sum_ms.items()):
+            _, method, path = key.split(":", 2)
+            lines.append(f'http_request_latency_ms_sum{{method="{method}",path="{path}"}} {float(value):.4f}')
+        body = "\n".join(lines) + ("\n" if lines else "")
+        return Response(content=body, media_type="text/plain; version=0.0.4; charset=utf-8")
 
     return app
 

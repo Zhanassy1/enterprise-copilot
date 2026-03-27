@@ -255,3 +255,115 @@ enterprise-copilot/
 │
 ├── README.md
 └── .gitignore
+
+
+Первый крупный шаг — multi-tenant core. Я бы добавил таблицы:
+
+workspaces
+workspace_members
+workspace_invitations
+roles
+
+После этого все сущности должны привязываться не к owner_id, а к workspace_id. Пользователь может принадлежать нескольким workspace. Роли минимум: owner, admin, member, viewer. Это самое важное архитектурное изменение. Без него это не SaaS, а personal productivity app.
+
+Второй шаг — async ingestion pipeline. Загрузка должна только:
+
+принять файл,
+сохранить его в object storage,
+создать запись document(status='queued'),
+отправить job в очередь.
+
+А уже worker отдельно делает parsing → chunking → embeddings → indexing → status update. Тогда у тебя появится нормальный UX и отказоустойчивость.
+
+Третий шаг — document lifecycle model. Я бы добавил:
+
+status: queued / processing / ready / failed
+error_message
+file_size_bytes
+sha256
+page_count
+language
+parser_version
+indexed_at
+
+Это сильно поднимает maturity проекта.
+
+Четвертый шаг — object storage abstraction. Сделай интерфейс StorageService и две реализации:
+
+local filesystem storage
+S3-compatible storage
+
+Тогда локально все продолжит работать, а в “production mode” ты сможешь перейти на MinIO/S3 без рефакторинга роутов.
+
+Пятый шаг — RAG quality layer. Я бы внес:
+
+BM25/keyword retrieval alongside vector retrieval
+reranker
+deduplication near-identical chunks
+citations с page/paragraph anchors
+отдельные prompt templates
+offline eval set из 30–50 бизнес-вопросов
+
+Сейчас у тебя уже есть decision logic с answer_threshold, clarify_threshold, retrieval_min_score, и это хорошая база. Но дальше нужна именно проверяемая retrieval quality, а не только heuristics.
+
+Шестой шаг — usage/billing readiness. Даже если платежей пока нет, я бы добавил:
+
+usage_events
+учет числа документов
+учет search/chat запросов
+приблизительный token accounting
+лимиты по планам
+
+Это нужно не только для монетизации, но и чтобы понимать себестоимость пользователя.
+
+Седьмой шаг — security hardening. Минимум:
+
+refresh tokens
+password reset flow
+email verification
+stricter upload validation
+MIME sniffing, а не только extension/content-type
+per-user and per-IP rate limiting
+CSRF strategy if later появятся cookie sessions
+audit logs для удаления документов и входов
+
+Восьмой шаг — observability. Сейчас есть debug_log, что уже полезно, и есть готовность к operational handling. Но для SaaS я бы добавил structured JSON logs, request IDs, latency metrics, tracing, error reporting и dashboards по jobs/search/chat.
+
+Девятый шаг — test maturity. У тебя уже есть unit и integration CI — это отличный знак. Дальше я бы наращивал:
+
+permission tests
+ingestion retry tests
+search relevance regression tests
+contract tests для API
+migration smoke tests
+e2e UI tests
+
+Наличие CI сейчас — плюс. Но полноценный SaaS обычно живет на более широком наборе автопроверок.
+
+Что бы я конкретно поменял в коде прямо сейчас.
+
+Я бы убрал прямое обновление embedding_vector через raw SQL inside request handler и вынес indexing в сервис/worker. Это сейчас рабочее решение, но оно смешивает upload orchestration, ML, persistence и indexing в одном endpoint.
+
+Я бы ввел service layer типа:
+
+DocumentIngestionService
+DocumentIndexingService
+SearchService
+ChatService
+
+Сейчас роуты уже не ужасные, но логики в них все еще многовато, особенно в documents/chat/search.
+
+Я бы разделил DocumentChunk.embedding и реальное embedding_vector более аккуратно. Сейчас по модели видно временную конструкцию: текстовое поле как placeholder и реальный vector-column через migration/raw SQL. Для MVP допустимо, но дальше это надо сделать чище, чтобы ORM и schema лучше совпадали.
+
+Я бы поменял security default values и сделал fail-fast для production. Например, если environment=production и secret_key остался дефолтным — приложение должно не стартовать. То же касается пустого LLM key, если включен режим summary/chat через внешний LLM.
+
+Я бы расширил модели чата. Сейчас сессии и сообщения есть, это хорошо, но дальше полезно добавить:
+
+model used
+retrieval metadata
+latency
+token usage
+feedback on answer
+answer provenance version
+
+Это сильно поможет анализировать качество.

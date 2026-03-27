@@ -10,7 +10,7 @@ if (-not (Test-Path $Python)) {
 }
 
 Set-Location $Root
-docker compose --profile test up -d db_test
+docker compose --profile test up -d db_test redis
 
 try {
     $containerId = (docker compose --profile test ps -q db_test).Trim()
@@ -36,9 +36,15 @@ try {
 
     & $Python -m alembic upgrade head
     & $Python -m unittest tests.test_api_integration -v
+    if ($env:RUN_ASYNC_PIPELINE_SMOKE -eq "1") {
+        $env:INGESTION_ASYNC_ENABLED = "1"
+        $env:CELERY_TASK_ALWAYS_EAGER = "1"
+        $env:CELERY_TASK_EAGER_PROPAGATES = "1"
+        & $Python -m unittest tests.test_ingestion_async_pipeline -v
+    }
 }
 finally {
     Set-Location $Root
-    docker compose --profile test stop db_test | Out-Null
-    docker compose --profile test rm -fsv db_test | Out-Null
+    docker compose --profile test stop db_test redis | Out-Null
+    docker compose --profile test rm -fsv db_test redis | Out-Null
 }

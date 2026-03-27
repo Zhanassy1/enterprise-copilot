@@ -16,6 +16,11 @@ class Settings(BaseSettings):
     # Security
     secret_key: str = Field(default="dev-secret-change-me")
     access_token_exp_minutes: int = Field(default=60 * 24)
+    refresh_token_exp_days: int = Field(default=14, ge=1, le=365)
+    email_verification_token_exp_minutes: int = Field(default=60 * 24, ge=5, le=60 * 24 * 30)
+    password_reset_token_exp_minutes: int = Field(default=30, ge=5, le=60 * 24)
+    rate_limit_per_user_per_minute: int = Field(default=120, ge=10, le=2000)
+    rate_limit_per_ip_per_minute: int = Field(default=240, ge=10, le=5000)
 
     # CORS
     cors_origins: str = Field(default="http://localhost:5173,http://127.0.0.1:5173")
@@ -25,9 +30,24 @@ class Settings(BaseSettings):
 
     # Redis (jobs/cache later)
     redis_url: str = Field(default="redis://localhost:6379/0")
+    celery_broker_url: str | None = Field(default=None)
+    celery_result_backend_url: str | None = Field(default=None)
+    celery_ingestion_queue: str = Field(default="ingestion")
+    celery_task_track_started: bool = Field(default=True)
+    celery_worker_prefetch_multiplier: int = Field(default=1, ge=1, le=20)
+    celery_task_acks_late: bool = Field(default=True)
+    celery_task_always_eager: bool = Field(default=False)
+    celery_task_eager_propagates: bool = Field(default=True)
 
     # Storage (relative paths are resolved against backend/)
     upload_dir: str = Field(default="data/uploads")
+    storage_backend: str = Field(default="local")
+    s3_endpoint_url: str = Field(default="")
+    s3_region: str = Field(default="us-east-1")
+    s3_access_key_id: str = Field(default="")
+    s3_secret_access_key: str = Field(default="")
+    s3_bucket: str = Field(default="")
+    s3_prefix: str = Field(default="enterprise-copilot")
 
     @field_validator("upload_dir", mode="after")
     @classmethod
@@ -52,6 +72,46 @@ class Settings(BaseSettings):
     clarify_threshold: float = Field(default=0.42, ge=0.0, le=1.0)
     retrieval_min_score: float = Field(default=0.22, ge=0.0, le=1.0)
     retrieval_max_near_duplicate_overlap: float = Field(default=0.90, ge=0.0, le=1.0)
+    retrieval_hybrid_enabled: bool = Field(default=True)
+    retrieval_rrf_k: int = Field(default=60, ge=1, le=2000)
+    retrieval_rrf_weight_dense: float = Field(default=1.0, ge=0.0, le=10.0)
+    retrieval_rrf_weight_keyword: float = Field(default=1.0, ge=0.0, le=10.0)
+    retrieval_candidate_multiplier: int = Field(default=10, ge=2, le=100)
+    retrieval_candidate_floor: int = Field(default=60, ge=10, le=1000)
+    reranker_enabled: bool = Field(default=True)
+    reranker_model_name: str = Field(default="cross-encoder/ms-marco-MiniLM-L-6-v2")
+    reranker_top_n: int = Field(default=30, ge=2, le=200)
+
+    # Async ingestion pipeline
+    ingestion_async_enabled: bool = Field(default=False)
+    ingestion_worker_poll_seconds: float = Field(default=2.0, ge=0.1, le=60.0)
+    ingestion_max_attempts: int = Field(default=5, ge=1, le=50)
+    ingestion_retry_backoff_seconds: int = Field(default=5, ge=1, le=300)
+    ingestion_retry_backoff_max_seconds: int = Field(default=300, ge=1, le=3600)
+    ingestion_task_soft_time_limit_seconds: int = Field(default=300, ge=5, le=7200)
+    ingestion_task_time_limit_seconds: int = Field(default=360, ge=10, le=7200)
+    ingestion_dead_letter_enabled: bool = Field(default=True)
+    observability_metrics_enabled: bool = Field(default=True)
+    sentry_dsn: str = Field(default="")
+    sentry_traces_sample_rate: float = Field(default=0.0, ge=0.0, le=1.0)
+    smtp_host: str = Field(default="")
+    smtp_port: int = Field(default=587, ge=1, le=65535)
+    smtp_user: str = Field(default="")
+    smtp_password: str = Field(default="")
+    smtp_from_email: str = Field(default="noreply@enterprise-copilot.local")
+    app_base_url: str = Field(default="http://localhost:3000")
+    csrf_protection_enabled: bool = Field(default=False)
+
+    @property
+    def celery_broker(self) -> str:
+        return (self.celery_broker_url or self.redis_url).strip()
+
+    @property
+    def celery_result_backend(self) -> str | None:
+        value = (self.celery_result_backend_url or "").strip()
+        if value:
+            return value
+        return self.celery_broker
 
 
 settings = Settings()

@@ -1,0 +1,30 @@
+{"id":"q001","question":"Какая цена договора?","intent":"price","expected_answer_hint":"денежная сумма","difficulty":"easy"}
+{"id":"q002","question":"В какой валюте указана стоимость?","intent":"price","expected_answer_hint":"KZT/USD/RUB","difficulty":"easy"}
+{"id":"q003","question":"Какие сроки оплаты по договору?","intent":"payment_terms","expected_answer_hint":"срок в днях","difficulty":"medium"}
+{"id":"q004","question":"Есть ли штраф за просрочку?","intent":"penalty","expected_answer_hint":"процент/сумма штрафа","difficulty":"easy"}
+{"id":"q005","question":"Какой размер неустойки?","intent":"penalty","expected_answer_hint":"процент/формула","difficulty":"medium"}
+{"id":"q006","question":"Кто является поставщиком?","intent":"party","expected_answer_hint":"название компании","difficulty":"easy"}
+{"id":"q007","question":"Кто является заказчиком?","intent":"party","expected_answer_hint":"название компании","difficulty":"easy"}
+{"id":"q008","question":"Когда договор вступает в силу?","intent":"effective_date","expected_answer_hint":"дата","difficulty":"easy"}
+{"id":"q009","question":"До какой даты действует договор?","intent":"expiry_date","expected_answer_hint":"дата окончания","difficulty":"medium"}
+{"id":"q010","question":"Какой номер договора?","intent":"contract_number","expected_answer_hint":"идентификатор договора","difficulty":"easy"}
+{"id":"q011","question":"Какая сумма аванса предусмотрена?","intent":"advance_payment","expected_answer_hint":"сумма аванса","difficulty":"medium"}
+{"id":"q012","question":"В какие сроки поставка товара?","intent":"delivery_terms","expected_answer_hint":"срок поставки","difficulty":"medium"}
+{"id":"q013","question":"Какие документы нужны для приемки?","intent":"acceptance_docs","expected_answer_hint":"перечень документов","difficulty":"hard"}
+{"id":"q014","question":"Есть ли условие об одностороннем расторжении?","intent":"termination","expected_answer_hint":"условие расторжения","difficulty":"hard"}
+{"id":"q015","question":"Какие реквизиты указаны у сторон?","intent":"party_details","expected_answer_hint":"банк/БИН/ИИК","difficulty":"medium"}
+{"id":"q016","question":"Кто подписывает договор со стороны заказчика?","intent":"signatory","expected_answer_hint":"ФИО/должность","difficulty":"medium"}
+{"id":"q017","question":"Кто подписывает договор со стороны поставщика?","intent":"signatory","expected_answer_hint":"ФИО/должность","difficulty":"medium"}
+{"id":"q018","question":"Предусмотрен ли НДС в цене?","intent":"tax","expected_answer_hint":"с НДС/без НДС","difficulty":"medium"}
+{"id":"q019","question":"Какая общая стоимость работ?","intent":"price","expected_answer_hint":"итоговая сумма","difficulty":"easy"}
+{"id":"q020","question":"Есть ли лимит ответственности сторон?","intent":"liability_limit","expected_answer_hint":"формулировка лимита","difficulty":"hard"}
+{"id":"q021","question":"Какая подсудность споров?","intent":"jurisdiction","expected_answer_hint":"суд/город","difficulty":"hard"}
+{"id":"q022","question":"Какой порядок оплаты (этапы)?","intent":"payment_schedule","expected_answer_hint":"этапы оплаты","difficulty":"hard"}
+{"id":"q023","question":"Какие гарантии предоставляет поставщик?","intent":"warranty","expected_answer_hint":"срок/условия гарантии","difficulty":"medium"}
+{"id":"q024","question":"Какой срок гарантии?","intent":"warranty","expected_answer_hint":"количество месяцев/лет","difficulty":"easy"}
+{"id":"q025","question":"Есть ли условие форс-мажора?","intent":"force_majeure","expected_answer_hint":"пункт о форс-мажоре","difficulty":"medium"}
+{"id":"q026","question":"Требуется ли страхование?","intent":"insurance","expected_answer_hint":"требование страхования","difficulty":"hard"}
+{"id":"q027","question":"Какие KPI или SLA зафиксированы?","intent":"sla","expected_answer_hint":"метрики качества/сроков","difficulty":"hard"}
+{"id":"q028","question":"Есть ли confidentiality/NDA пункт?","intent":"confidentiality","expected_answer_hint":"пункт о конфиденциальности","difficulty":"medium"}
+{"id":"q029","question":"Какие приложения являются неотъемлемой частью договора?","intent":"annexes","expected_answer_hint":"список приложений","difficulty":"medium"}
+{"id":"q030","question":"Какие основания для отказа в оплате?","intent":"payment_refusal","expected_answer_hint":"условия отказа","difficulty":"hard"}

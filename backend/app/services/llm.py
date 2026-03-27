@@ -3,6 +3,7 @@ from __future__ import annotations
 import logging
 
 from app.core.config import settings
+from app.services.prompt_templates import RAG_SYSTEM_PROMPT, SUMMARY_SYSTEM_PROMPT
 
 logger = logging.getLogger(__name__)
 
@@ -61,14 +62,7 @@ def rag_answer(query: str, context_chunks: list[str]) -> str:
 
     context = "\n\n---\n\n".join(context_chunks[: 8])
 
-    system = (
-        "Ты — AI-ассистент для анализа бизнес-документов. "
-        "Отвечай на русском языке, строго по делу и только на основе предоставленного контекста. "
-        "Нельзя добавлять предположения, внешние знания и общие фразы. "
-        "Если факт нельзя подтвердить контекстом, не включай его в ответ. "
-        "Если данных недостаточно, ответь ровно: 'Недостаточно данных в предоставленных документах.' "
-        "Формат ответа: 1-2 коротких абзаца без списков, максимум 5 предложений."
-    )
+    system = RAG_SYSTEM_PROMPT
 
     user = f"Контекст из документов:\n\n{context}\n\n---\n\nВопрос пользователя: {query}"
 
@@ -82,12 +76,7 @@ def llm_summarize(text: str) -> str:
 
     truncated = text[:settings.llm_max_context_tokens * 3]
 
-    system = (
-        "Ты — AI-ассистент для анализа бизнес-документов. "
-        "Составь краткое структурированное резюме документа на русском языке. "
-        "Выдели: тип документа, стороны, ключевые условия (суммы, сроки, обязательства), важные пункты. "
-        "Будь точен, не выдумывай."
-    )
+    system = SUMMARY_SYSTEM_PROMPT
 
     user = f"Документ:\n\n{truncated}"
 

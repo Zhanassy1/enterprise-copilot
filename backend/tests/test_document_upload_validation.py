@@ -26,6 +26,18 @@ class UploadValidationTests(unittest.TestCase):
             _validate_upload(file)
         self.assertEqual(err.exception.status_code, 400)
 
+    def test_rejects_pdf_extension_when_magic_bytes_invalid(self) -> None:
+        import io
+
+        file = UploadFile(
+            filename="report.pdf",
+            file=io.BytesIO(b"NOTPDF-DATA"),
+            headers={"content-type": "application/pdf"},
+        )
+        with self.assertRaises(HTTPException) as err:
+            _validate_upload(file)
+        self.assertEqual(err.exception.status_code, 400)
+
 
 if __name__ == "__main__":
     unittest.main()

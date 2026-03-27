@@ -35,6 +35,20 @@ $Py = if (Test-Path "C:\venvs\ec314\Scripts\python.exe") {
 Set-Location $Backend
 & $Py -m alembic upgrade head
 
+$EnableAsyncIngestion = ($env:ENABLE_ASYNC_INGESTION -eq "1")
+if ($EnableAsyncIngestion) {
+    Write-Host "Async ingestion enabled: starting Celery worker in separate PowerShell window"
+    $workerCmd = @"
+Set-Location '$Backend'
+`$env:DATABASE_URL='postgresql+psycopg://postgres:postgres@localhost:5432/enterprise_copilot'
+`$env:REDIS_URL='redis://localhost:6379/0'
+`$env:INGESTION_ASYNC_ENABLED='1'
+& '$Py' -m celery -A app.celery_app.celery_app worker --loglevel=INFO --queues=ingestion
+"@
+    Start-Process powershell -ArgumentList @("-NoExit", "-Command", $workerCmd) | Out-Null
+    $env:INGESTION_ASYNC_ENABLED = "1"
+}
+
 Get-NetTCPConnection -LocalPort 8000 -State Listen -ErrorAction SilentlyContinue |
     ForEach-Object { Stop-Process -Id $_.OwningProcess -Force -ErrorAction SilentlyContinue }
 

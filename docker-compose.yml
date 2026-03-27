@@ -67,6 +67,27 @@ services:
       timeout: 5s
       retries: 20
 
+  worker:
+    build:
+      context: ./backend
+    env_file:
+      - ./backend/.env
+    environment:
+      DATABASE_URL: postgresql+psycopg://postgres:postgres@db:5432/enterprise_copilot
+      REDIS_URL: redis://redis:6379/0
+      INGESTION_ASYNC_ENABLED: "1"
+    command: >
+      bash -lc "alembic upgrade head &&
+      celery -A app.celery_app.celery_app worker --loglevel=INFO --queues=ingestion"
+    volumes:
+      - ./backend:/app
+      - uploads:/app/data/uploads
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
   frontend:
     build:
       context: ./frontend
