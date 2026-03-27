@@ -1,10 +1,16 @@
-# Python
+﻿# Python
 __pycache__/
 *.pyc
 *.pyo
 *.pyd
 .venv/
 venv/
+
+# Local Python install / venv layout under backend (Windows py -m venv or manual)
+backend/Lib/
+backend/Include/
+backend/Scripts/
+backend/share/
 
 # Environment
 .env
