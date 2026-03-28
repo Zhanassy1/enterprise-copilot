@@ -1,237 +1,151 @@
 # Enterprise Copilot
 
-Enterprise Copilot — это AI-ассистент для бизнеса, который помогает работать с корпоративными документами быстрее и удобнее.
+**Production-style, multi-tenant** AI copilot для корпоративных документов: семантический поиск, RAG-чат, summary, **async ingestion** (Celery), **workspace + роли**, **квоты**, **audit**, **observability**, **S3-ready** storage.
 
 [![CI](https://github.com/Zhanassy1/enterprise-copilot/actions/workflows/ci.yml/badge.svg)](https://github.com/Zhanassy1/enterprise-copilot/actions/workflows/ci.yml)
 
-## Содержание README
+Статус реализации по дорожной карте: **[docs/IMPLEMENTATION_STATUS.md](docs/IMPLEMENTATION_STATUS.md)**
 
-| Раздел | Что внутри |
-|--------|------------|
-| [Документация](#документация) | Индекс `docs/*` (security, quotas, runbook, …) |
-| [Режимы dev/prod](#режимы-разработка-vs-продакшен) | Compose, `ENVIRONMENT`, секреты |
-| [Локальная разработка](#локальная-разработка-docker-dev-стек) | `docker compose up`, порты |
-| [Deploy (prod)](#deploy-production-style) | overlay `docker-compose.prod.yml` |
-| [Тесты](#тесты) | unit + integration |
-| [Архитектура](#архитектура-кратко) | upload → queue → worker; multi-tenant |
+---
 
-## Документация
+## Overview
 
-- [docs/deployment.md](docs/deployment.md) — Docker Compose (dev vs prod), TLS, миграции
-- [docs/security.md](docs/security.md) — секреты, reverse proxy, CORS, rate limits
-- [docs/quotas.md](docs/quotas.md) — планы и лимиты usage
-- [docs/runbook.md](docs/runbook.md) — 503 БД, Celery, метрики
-- [docs/observability.md](docs/observability.md) — логи, Sentry, `/metrics`
-- [docs/storage-lifecycle.md](docs/storage-lifecycle.md) — local vs S3, дедуп, AV
-- [docs/WORKSPACE_ROUTING.md](docs/WORKSPACE_ROUTING.md) — инвентарь роутеров и Celery: scope по `workspace_id`
+Сервис изолирует данные по **workspace** (заголовок `X-Workspace-Id`). Пользователь входит по JWT, выбирает workspace, загружает PDF/DOCX/TXT, задаёт вопросы и получает ответы с опорой на фрагменты документов. В **production** тяжёлая обработка (парсинг, chunking, эмбеддинги, pgvector) выполняется **только в worker**, не в HTTP upload.
 
-Шаблон env для продакшена (только плейсхолдеры): [.env.production.example](.env.production.example)
+---
 
-### Режимы: разработка vs продакшен
+## Architecture
 
-| | Локальная разработка | Продакшен (baseline) |
-|--|----------------------|----------------------|
-| **Compose** | `docker compose up --build` | `docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build` |
-| **Сеть БД/Redis** | Порты проброшены на хост (`5433`, `6380`) | Порты БД/Redis **не** публикуются (overlay) |
-| **ENVIRONMENT** | `local` (в [backend/.env.docker](backend/.env.docker)) | `production` задаётся в [docker-compose.prod.yml](docker-compose.prod.yml) для `api`/`worker` |
-| **Секреты** | dev-значения в `.env.docker` / override | только из секрет-хранилища, см. [.env.production.example](.env.production.example) |
+| Слой | Технологии |
+|------|------------|
+| API | FastAPI, JWT, workspace deps (`owner` / `admin` / `member` / `viewer`) |
+| Worker | Celery, очередь `ingestion`, retry/backoff |
+| DB | PostgreSQL + **pgvector** |
+| Cache / queue | Redis |
+| Storage | `local` (dev) или **S3** / MinIO (`storage_key`, presigned URLs) |
+| Frontend | Next.js |
 
-Не используйте один только `docker compose up -d --build` без prod-overlay как схему для публичного интернета.
+**Поток ingestion:** `POST /documents/upload` → запись в storage + строка `documents` (`queued`) + **IngestionJob** → Celery task → статусы `queued` → `processing` / `retrying` → `ready` или `failed`. Синхронная индексация в HTTP — только **local dev** при `ALLOW_SYNC_INGESTION_FOR_DEV=1` и `INGESTION_ASYNC_ENABLED=0` (тесты без worker).
 
-## Локальная разработка (Docker, dev-стек)
+**Поток RAG:** search/chat фильтруют чанки по `workspace_id`; учитываются квоты и rate limits (см. [docs/quotas.md](docs/quotas.md)).
 
-Требования: Docker Desktop.
+---
+
+## Development setup
+
+**Docker (рекомендуется):** Postgres и Redis с пробросом портов на хост, API, worker, frontend.
 
 ```bash
 docker compose up --build
 ```
 
-После старта:
-- Frontend: `http://localhost:3000`
-- API: `http://localhost:8000`
-- Healthcheck API: `http://localhost:8000/healthz`
+- UI: http://localhost:3000  
+- API: http://localhost:8000 — [OpenAPI](http://localhost:8000/docs), [healthz](http://localhost:8000/healthz)  
 
-Сервисы поднимаются с healthchecks (`db`, `redis`, `api`), чтобы `api` и `frontend` не стартовали раньше зависимостей.
+Шаблон env для локальной разработки: [env/.env.example](env/.env.example) → скопировать в `backend/.env`. Закоммиченный dev-контекст для контейнеров: [backend/.env.docker](backend/.env.docker).
 
-### Доступ с другого устройства в локальной сети
+**Без Docker:** `backend/` — venv, `pip install -r requirements.txt`, `alembic upgrade head`, `uvicorn app.main:app --reload`. `frontend/` — `npm install`, `npm run dev`.
 
-Frontend доступен с другого устройства по:
-- `http://<IP_твоего_ПК>:3000`
-
-Если открываешь frontend с другого устройства, задай API хост явно:
+**Доступ с другого устройства в LAN:** пересоберите frontend с API base вашей машины, например:
 
 ```bash
-VITE_API_BASE=http://<IP_твоего_ПК>:8000/api/v1 docker compose up --build
+docker compose build --build-arg NEXT_PUBLIC_API_BASE=http://<IP_ПК>:8000/api/v1 frontend
+docker compose up -d frontend
 ```
 
-### Первый запуск (миграции)
-Контейнер `api` при старте делает `alembic upgrade head` автоматически.
+(или задайте переменные сборки в `docker-compose.yml` под ваш сценарий.)
 
-## Быстрый старт (локально, без Docker)
+---
 
-### Backend
+## Production setup
 
-```bash
-cd backend
-python -m venv .venv
-# Windows PowerShell:
-.\.venv\Scripts\Activate.ps1
-pip install -r requirements.txt
-
-# подними Postgres с pgvector и выставь DATABASE_URL в backend/.env
-alembic upgrade head
-uvicorn app.main:app --reload --port 8000
-```
-
-### Frontend
-
-```bash
-cd frontend
-npm install
-npm run dev -- --host
-```
-
-Открой `http://localhost:3000`.
-
-## Deploy (production-style)
-
-Базовый `docker compose up` из корня репозитория **публикует порты Postgres и Redis на хост** — это удобно для локальной разработки, но не годится как единственная схема для публичного интернета. Для продакшена используйте overlay без публикации БД/Redis и задайте секреты через окружение или секрет-хранилище:
+Базовый `docker compose up` **публикует** порты БД/Redis — только для разработки. Для продакшена используйте overlay без внешних портов БД/Redis и **обязательные** секреты:
 
 ```bash
 docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
 ```
 
-Overlay **требует** в окружении или `.env` рядом с compose: `POSTGRES_USER`, `POSTGRES_PASSWORD`, `DATABASE_URL` (с теми же кредами, хост `db`), `REDIS_PASSWORD`, `REDIS_URL` (с тем же паролем), `SECRET_KEY` — иначе `compose` не соберёт конфиг. Подробно: [docs/deployment.md](docs/deployment.md) и [.env.production.example](.env.production.example). TLS — на reverse proxy; для корректного client IP за прокси задайте `USE_FORWARDED_HEADERS` и `TRUSTED_PROXY_IPS` (см. [docs/security.md](docs/security.md)).
+Требуются в окружении или `.env` рядом с compose: `POSTGRES_USER`, `POSTGRES_PASSWORD`, `DATABASE_URL` (хост `db`, те же креды), `REDIS_PASSWORD`, `REDIS_URL`, `SECRET_KEY`. Подробно: [docs/deployment.md](docs/deployment.md), шаблон: [.env.production.example](.env.production.example).
 
-Проверка после деплоя:
-- `http://localhost:3000` — frontend
-- `http://localhost:8000/healthz` — API health
-- `docker compose ps` — статус контейнеров
+TLS и доверие к `X-Forwarded-*` — на reverse proxy; см. [docs/security.md](docs/security.md). Старт API в `ENVIRONMENT=production` с небезопасным конфигом **запрещён** (fail-fast в `startup_checks`).
 
-Остановка:
+---
 
-```bash
-docker compose down
-```
+## Security
 
-## Тесты
+Секреты, CORS, rate limits, proxy / `TRUSTED_PROXY_IPS`, заголовки в production — **[docs/security.md](docs/security.md)**. Refresh tokens, rotation, logout, audit событий входа — в коде и в security-доке.
 
-### Backend unit tests
+---
 
-```bash
-cd backend
-C:\venvs\ec314\Scripts\python.exe -m unittest discover -s tests -v
-```
+## Quotas
 
-Если есть `py` launcher:
+Планы **free / pro / team**, лимиты на upload, concurrent jobs, запросы search/chat/rerank, токены — **[docs/quotas.md](docs/quotas.md)**. Enforcement в API и worker; превышение — ответы 429 и события audit.
 
-```bash
-py -3 -m unittest discover -s tests -v
-```
+---
 
-### Backend integration test (auth -> upload -> search -> delete)
+## Observability
 
-Скрипт сам поднимает `db_test` (Docker profile `test`) на `localhost:5433`, прогоняет миграции и запускает интеграционный тест.
+Структурированные логи, `X-Request-Id`, Sentry (опционально), `/metrics` — **[docs/observability.md](docs/observability.md)**. Операционные сценарии: **[docs/runbook.md](docs/runbook.md)**.
 
-```powershell
-powershell -ExecutionPolicy Bypass -File .\scripts\test-integration.ps1
-```
+---
 
-### Frontend lint/build
+## Storage
 
-```bash
-cd frontend
-npm run lint
-npm run build
-```
+`storage_key`, local vs S3/MinIO, дедуп, soft-delete, политика AV — **[docs/storage-lifecycle.md](docs/storage-lifecycle.md)**. В production при `PRODUCTION_REQUIRE_S3_BACKEND=1` требуется `STORAGE_BACKEND=s3` (см. `startup_checks`).
 
-## Архитектура (кратко)
+---
 
-- **Multi-tenant:** данные scoped по `workspace_id` (заголовок `X-Workspace-Id`); см. [docs/security.md](docs/security.md).
-- **Ingestion:** HTTP **upload** только сохраняет файл (storage), создаёт строку `documents` (`queued` / …) и ставит задачу Celery. **Парсинг, chunking, эмбеддинги и запись векторов в pgvector** выполняются в **worker**, не в обработчике upload.
-- **Размерность эмбеддингов:** 384 (тот же эмбеддер, что и для поиска).
-- **Production:** `INGESTION_ASYNC_ENABLED=1` обязателен (fail-fast в `startup_checks`). Синхронная индексация на upload — только `ENVIRONMENT=local` + `ALLOW_SYNC_INGESTION_FOR_DEV=1` + `INGESTION_ASYNC_ENABLED=0` (например тесты без worker).
-- **Backfill embeddings:** `POST /api/v1/documents/reindex-embeddings` (JWT + `X-Workspace-Id`), если нужно дозаполнить `embedding_vector`.
-- **Статусы ingestion / UI:** API `GET /documents/{id}/ingestion`, `GET /ingestion/jobs`, страница `/jobs` (фильтры по статусам).
+## Runbook
 
-### Индекс документации (SaaS-слой)
+Инциденты (503 БД, очередь Celery, 429, бэкапы, миграции) — **[docs/runbook.md](docs/runbook.md)**.
+
+---
+
+## Documentation
 
 | Документ | Содержание |
 |----------|------------|
-| [docs/deployment.md](docs/deployment.md) | Compose dev vs prod, TLS, MinIO/S3, миграции |
-| [docs/security.md](docs/security.md) | Секреты, CORS, rate limits, proxy, заголовки |
-| [docs/quotas.md](docs/quotas.md) | Планы free/pro/team, usage, enforcement |
-| [docs/runbook.md](docs/runbook.md) | 503 БД, очередь, 429, backup/restore |
-| [docs/observability.md](docs/observability.md) | Логи, Sentry, `/metrics` |
-| [docs/storage-lifecycle.md](docs/storage-lifecycle.md) | `storage_key`, S3, дедуп, soft-delete, AV |
-| [docs/WORKSPACE_ROUTING.md](docs/WORKSPACE_ROUTING.md) | Роутеры и фоновые задачи: tenant scope |
+| [docs/IMPLEMENTATION_STATUS.md](docs/IMPLEMENTATION_STATUS.md) | Статус шагов дорожной карты (SaaS maturity) |
+| [docs/deployment.md](docs/deployment.md) | Compose dev/prod, TLS, MinIO/S3, миграции |
+| [docs/security.md](docs/security.md) | Секреты, proxy, rate limits, заголовки |
+| [docs/quotas.md](docs/quotas.md) | Планы, лимиты, enforcement |
+| [docs/observability.md](docs/observability.md) | Логи, Sentry, метрики |
+| [docs/runbook.md](docs/runbook.md) | Операции, backup/restore, алерты |
+| [docs/storage-lifecycle.md](docs/storage-lifecycle.md) | Объекты, S3, дедуп, retention |
+| [docs/WORKSPACE_ROUTING.md](docs/WORKSPACE_ROUTING.md) | Инвентарь API и Celery: tenant scope |
+| [docs/architecture.md](docs/architecture.md) | Обзор системы |
 
-## Описание проекта
-Во многих компаниях сотрудники тратят много времени на:
-- поиск нужной информации в документах,
-- чтение длинных PDF и DOCX файлов,
-- подготовку кратких выжимок,
-- поиск конкретных условий, дат, сумм и названий компаний.
+Шаблоны env: [.env.production.example](.env.production.example), [env/.env.example](env/.env.example).
 
-Этот проект решает данную проблему с помощью AI. Пользователь загружает документы в систему и может:
-- выполнять семантический поиск,
-- задавать вопросы по документам,
-- получать ответы с указанием источников,
-- получать краткое содержание документа.
+---
 
-## Цель проекта
-Цель проекта — создать production-style AI Copilot для анализа бизнес-документов.
+## Tests
 
-## MVP-функции
-Первая версия системы включает:
+```bash
+cd backend
+py -3 -m unittest discover -s tests -v
+```
 
-- Регистрация и вход в систему
-- Загрузка PDF и DOCX файлов
-- Просмотр списка загруженных документов
-- Семантический поиск по документам
-- Чат с документами на основе RAG
-- Ответы с указанием источников
-- Генерация краткого summary документа
+Интеграционные (PostgreSQL): `RUN_INTEGRATION_TESTS=1` — см. `tests/test_api_integration.py`, `tests/test_cross_workspace_access.py`. Скрипт: `scripts/test-integration.ps1`.
 
-## Что будет добавлено позже
+```bash
+cd frontend
+npm run lint && npm run build
+```
 
-- OCR, извлечение сущностей, сравнение документов, feedback, расширенная аналитика
+---
 
-## Технологический стек
-### Backend
-- FastAPI
-- PostgreSQL
-
-### Frontend
-- React
-
-### ML / NLP
-- sentence-transformers
-- RAG
-- LLM API
-
-### Хранение и инфраструктура
-- pgvector или Qdrant
-- Redis
-- Docker
-
-## Как работает система
-
-1. Пользователь входит и выбирает workspace (`X-Workspace-Id`).
-2. **Upload:** файл → storage + запись документа + постановка задачи Celery (в prod).
-3. **Worker:** извлечение текста → chunks → эмбеддинги → pgvector → статусы `queued` → … → `ready` / `failed`.
-4. **Search / chat:** RAG по векторам в рамках workspace; LLM для ответа; учёт квот и rate limits ([docs/quotas.md](docs/quotas.md)).
-
-## Структура репозитория
+## Repository layout
 
 ```text
 enterprise-copilot/
-├── backend/          # FastAPI, Celery worker, Alembic
-├── frontend/         # Next.js
-├── docs/             # deployment, security, quotas, runbook, observability, storage
+├── backend/           # FastAPI, Celery worker, Alembic, tests
+├── frontend/          # Next.js
+├── docs/              # Deployment, security, quotas, runbook, …
+├── env/               # Dev .env example
 ├── docker-compose.yml
 ├── docker-compose.prod.yml
 └── README.md
 ```
 
-Подробнее об обзоре системы: [docs/architecture.md](docs/architecture.md).
+Остановка Docker: `docker compose down`.

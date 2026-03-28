@@ -29,3 +29,5 @@
 - `workspace.access_denied` audit при 403 из-за отсутствия membership.
 
 См. тесты: `tests/test_cross_workspace_access.py`, `tests/test_workspace_permissions.py`, `tests/test_ingestion_task_unit.py`.
+
+Общий статус дорожной карты: [IMPLEMENTATION_STATUS.md](IMPLEMENTATION_STATUS.md).
