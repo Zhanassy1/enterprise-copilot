@@ -35,6 +35,12 @@ class UsageMeteringTests(unittest.TestCase):
                 )
             self.assertEqual(err.exception.status_code, 429)
 
+    def test_plan_defaults_include_concurrent_job_cap(self) -> None:
+        from app.services.usage_metering import PLAN_LIMITS
+
+        self.assertEqual(PLAN_LIMITS["free"]["max_concurrent_ingestion_jobs"], 2)
+        self.assertEqual(PLAN_LIMITS["team"]["max_concurrent_ingestion_jobs"], 32)
+
 
 if __name__ == "__main__":
     unittest.main()

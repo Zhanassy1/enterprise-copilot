@@ -102,6 +102,24 @@ class ApiFlowIntegrationTests(unittest.TestCase):
         self.assertEqual(delete_res.status_code, 200, delete_res.text)
         self.assertTrue(delete_res.json()["ok"])
 
+    def test_refresh_token_rotation(self) -> None:
+        email = f"refresh_{uuid.uuid4().hex[:10]}@example.com"
+        password = "StrongPass123!"
+        reg = self.client.post(
+            "/api/v1/auth/register",
+            json={"email": email, "password": password, "full_name": "Refresh User"},
+        )
+        self.assertEqual(reg.status_code, 200, reg.text)
+        login = self.client.post("/api/v1/auth/login", json={"email": email, "password": password})
+        self.assertEqual(login.status_code, 200, login.text)
+        rt1 = login.json()["refresh_token"]
+        ref = self.client.post("/api/v1/auth/refresh", json={"refresh_token": rt1})
+        self.assertEqual(ref.status_code, 200, ref.text)
+        rt2 = ref.json()["refresh_token"]
+        self.assertNotEqual(rt1, rt2)
+        bad = self.client.post("/api/v1/auth/refresh", json={"refresh_token": rt1})
+        self.assertEqual(bad.status_code, 401, bad.text)
+
 
 if __name__ == "__main__":
     unittest.main()

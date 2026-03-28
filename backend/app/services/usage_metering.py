@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import math
 import uuid
 from datetime import datetime, timezone
@@ -13,10 +14,40 @@ from sqlalchemy.orm import Session
 from app.models.billing import UsageEvent, WorkspaceQuota
 from app.models.document import Document
 
+logger = logging.getLogger("app.usage")
+
+# Single source of truth for plan defaults (DB row may diverge after admin/billing updates).
 PLAN_DOCUMENT_CAP: dict[str, int | None] = {
     "free": 50,
     "pro": 10_000,
     "team": None,
+}
+
+PLAN_LIMITS: dict[str, dict[str, int | None]] = {
+    "free": {
+        "monthly_request_limit": 2_000,
+        "monthly_token_limit": 2_000_000,
+        "monthly_upload_bytes_limit": 536_870_912,  # 512 MiB
+        "max_documents": 50,
+        "max_concurrent_ingestion_jobs": 2,
+        "max_pdf_pages": 150,
+    },
+    "pro": {
+        "monthly_request_limit": 50_000,
+        "monthly_token_limit": 20_000_000,
+        "monthly_upload_bytes_limit": 5_368_709_120,  # 5 GiB
+        "max_documents": 10_000,
+        "max_concurrent_ingestion_jobs": 8,
+        "max_pdf_pages": 2000,
+    },
+    "team": {
+        "monthly_request_limit": 500_000,
+        "monthly_token_limit": 200_000_000,
+        "monthly_upload_bytes_limit": 53_687_091_200,  # 50 GiB
+        "max_documents": None,
+        "max_concurrent_ingestion_jobs": 32,
+        "max_pdf_pages": None,
+    },
 }
 
 EVENT_SEARCH_REQUEST = "search_request"
@@ -24,6 +55,7 @@ EVENT_CHAT_MESSAGE = "chat_message"
 EVENT_DOCUMENT_UPLOAD = "document_upload"
 EVENT_TOKENS = "llm_tokens"
 EVENT_UPLOAD_BYTES = "document_upload_bytes"
+EVENT_RERANK = "rerank_pass"
 
 
 def month_window(now: datetime | None = None) -> tuple[datetime, datetime]:
@@ -49,17 +81,25 @@ def estimate_tokens(text: str) -> int:
         return max(1, int(math.ceil(len(cleaned.split()) * 1.3)))
 
 
+def _defaults_for_plan(plan_slug: str) -> dict[str, int | None]:
+    slug = (plan_slug or "free").lower()
+    return dict(PLAN_LIMITS.get(slug, PLAN_LIMITS["free"]))
+
+
 def get_or_create_quota(db: Session, workspace_id: uuid.UUID) -> WorkspaceQuota:
     quota = db.scalar(select(WorkspaceQuota).where(WorkspaceQuota.workspace_id == workspace_id))
     if quota:
         return quota
     plan = "free"
-    cap = PLAN_DOCUMENT_CAP.get(plan, 50)
+    d = _defaults_for_plan(plan)
+    cap = d.get("max_documents")
+    if cap is None:
+        cap = PLAN_DOCUMENT_CAP.get(plan, 50)
     quota = WorkspaceQuota(
         workspace_id=workspace_id,
-        monthly_request_limit=20000,
-        monthly_token_limit=20_000_000,
-        monthly_upload_bytes_limit=1_073_741_824,
+        monthly_request_limit=int(d["monthly_request_limit"] or 0),
+        monthly_token_limit=int(d["monthly_token_limit"] or 0),
+        monthly_upload_bytes_limit=int(d["monthly_upload_bytes_limit"] or 0),
         plan_slug=plan,
         max_documents=cap,
     )
@@ -72,7 +112,31 @@ def _effective_document_cap(quota: WorkspaceQuota) -> int | None:
     if quota.max_documents is not None:
         return int(quota.max_documents)
     slug = (quota.plan_slug or "free").lower()
-    return PLAN_DOCUMENT_CAP.get(slug, PLAN_DOCUMENT_CAP["free"])
+    cap = PLAN_DOCUMENT_CAP.get(slug, PLAN_DOCUMENT_CAP["free"])
+    if cap is not None:
+        return int(cap)
+    return _defaults_for_plan(slug).get("max_documents")
+
+
+def max_concurrent_ingestion_jobs_for_workspace(db: Session, workspace_id: uuid.UUID) -> int:
+    q = get_or_create_quota(db, workspace_id)
+    n = _defaults_for_plan(q.plan_slug or "free").get("max_concurrent_ingestion_jobs")
+    return int(n or 2)
+
+
+def max_pdf_pages_for_workspace(db: Session, workspace_id: uuid.UUID) -> int | None:
+    q = get_or_create_quota(db, workspace_id)
+    return _defaults_for_plan(q.plan_slug or "free").get("max_pdf_pages")
+
+
+def _log_quota_violation(workspace_id: uuid.UUID, reason: str) -> None:
+    """Structured log for operators (avoid extra DB connection on hot path)."""
+    logger.warning(
+        json.dumps(
+            {"event": "quota.violation", "workspace_id": str(workspace_id), "reason": reason},
+            ensure_ascii=False,
+        )
+    )
 
 
 def _sum_events(
@@ -117,6 +181,7 @@ def assert_quota(
             to_dt=end,
         )
         if current_requests + int(request_increment) > int(quota.monthly_request_limit):
+            _log_quota_violation(workspace_id, "monthly_requests")
             raise HTTPException(status_code=429, detail="Workspace monthly request quota exceeded")
 
     if token_increment > 0:
@@ -129,6 +194,7 @@ def assert_quota(
             to_dt=end,
         )
         if current_tokens + int(token_increment) > int(quota.monthly_token_limit):
+            _log_quota_violation(workspace_id, "monthly_tokens")
             raise HTTPException(status_code=429, detail="Workspace monthly token quota exceeded")
 
     if upload_bytes_increment > 0:
@@ -140,6 +206,7 @@ def assert_quota(
                 .where(Document.workspace_id == workspace_id, Document.deleted_at.is_(None))
             )
             if int(n or 0) >= int(cap_docs):
+                _log_quota_violation(workspace_id, "document_cap")
                 raise HTTPException(status_code=403, detail="Workspace document limit reached for this plan")
         current_bytes = _sum_events(
             db,
@@ -150,6 +217,7 @@ def assert_quota(
             to_dt=end,
         )
         if current_bytes + int(upload_bytes_increment) > int(quota.monthly_upload_bytes_limit):
+            _log_quota_violation(workspace_id, "monthly_upload_bytes")
             raise HTTPException(status_code=429, detail="Workspace monthly upload quota exceeded")
 
 

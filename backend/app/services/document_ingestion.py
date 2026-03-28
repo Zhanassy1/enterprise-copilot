@@ -5,7 +5,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from fastapi import HTTPException, UploadFile
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
@@ -19,6 +19,7 @@ from app.services.usage_metering import (
     EVENT_DOCUMENT_UPLOAD,
     EVENT_UPLOAD_BYTES,
     assert_quota,
+    max_concurrent_ingestion_jobs_for_workspace,
     record_event,
 )
 from app.tasks.ingestion import ingest_document_task
@@ -128,6 +129,22 @@ class DocumentIngestionService:
         self.db.flush()
 
         if settings.ingestion_async_enabled:
+            active_jobs = self.db.scalar(
+                select(func.count())
+                .select_from(IngestionJob)
+                .where(
+                    IngestionJob.workspace_id == workspace.id,
+                    IngestionJob.status.in_(["queued", "processing", "retrying"]),
+                )
+            )
+            max_jobs = max_concurrent_ingestion_jobs_for_workspace(self.db, workspace.id)
+            if int(active_jobs or 0) >= max_jobs:
+                self.storage.delete(stored.storage_key)
+                self.db.rollback()
+                raise HTTPException(
+                    status_code=429,
+                    detail=f"Too many concurrent ingestion jobs for this workspace (limit {max_jobs})",
+                )
             deduplication_key = f"{workspace.id}:{doc.id}"
             celery_task_id = str(uuid.uuid4())
             job = IngestionJob(

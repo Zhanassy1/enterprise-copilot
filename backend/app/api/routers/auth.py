@@ -1,7 +1,7 @@
 from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, HTTPException
-from sqlalchemy import select
+from sqlalchemy import select, update
 
 from app.api.deps import DbDep
 from app.core.config import settings
@@ -156,6 +156,7 @@ def reset_password(payload: PasswordResetIn, db: DbDep) -> dict:
         raise HTTPException(status_code=404, detail="User not found")
     user.password_hash = hash_password(payload.new_password)
     row.used = True
+    db.execute(update(RefreshToken).where(RefreshToken.user_id == user.id).values(revoked=True))
     write_audit_log(
         db,
         event_type="auth.password_reset_completed",
@@ -163,6 +164,7 @@ def reset_password(payload: PasswordResetIn, db: DbDep) -> dict:
         user_id=user.id,
         target_type="user",
         target_id=str(user.id),
+        metadata={"refresh_tokens_revoked": True},
     )
     db.add(user)
     db.add(row)

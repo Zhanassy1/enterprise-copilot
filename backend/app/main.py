@@ -14,6 +14,8 @@ from sqlalchemy.exc import OperationalError
 from app.api.routers import audit, auth, billing, chat, documents, ingestion, search, workspaces
 from app.core.config import settings
 from app.core.debug_log import debug_log
+from app.core.startup_checks import validate_settings
+from app.core.trusted_proxy import get_effective_client_ip
 from app.db.session import engine
 from app.services.rate_limiter import is_rate_limited
 
@@ -50,26 +52,17 @@ def _dbg515(hypothesis_id: str, location: str, message: str, data: dict) -> None
 # #endregion
 
 
-def _validate_runtime_configuration() -> None:
-    env = settings.environment.lower().strip()
-    if env == "production":
-        if settings.secret_key == "dev-secret-change-me":
-            raise RuntimeError("Production configuration invalid: secret_key must not use default dev value")
-        if settings.storage_backend.lower().strip() == "s3":
-            required = {
-                "s3_bucket": settings.s3_bucket,
-                "s3_access_key_id": settings.s3_access_key_id,
-                "s3_secret_access_key": settings.s3_secret_access_key,
-            }
-            missing = [k for k, v in required.items() if not (v or "").strip()]
-            if missing:
-                raise RuntimeError(f"Production configuration invalid: missing S3 settings: {', '.join(missing)}")
-        if settings.llm_api_key and not settings.llm_base_url:
-            raise RuntimeError("Production configuration invalid: llm_base_url is required when llm_api_key is set")
+def _apply_production_security_headers(response: Response) -> None:
+    if settings.environment.lower().strip() != "production":
+        return
+    response.headers.setdefault("X-Content-Type-Options", "nosniff")
+    response.headers.setdefault("X-Frame-Options", "DENY")
+    response.headers.setdefault("Referrer-Policy", "strict-origin-when-cross-origin")
+    response.headers.setdefault("Permissions-Policy", "camera=(), microphone=(), geolocation=()")
 
 
 def create_app() -> FastAPI:
-    _validate_runtime_configuration()
+    validate_settings(settings)
     if settings.sentry_dsn:
         try:
             import sentry_sdk
@@ -146,8 +139,27 @@ def create_app() -> FastAPI:
     async def debug_request_middleware(request: Request, call_next):
         request_id = request.headers.get("X-Request-Id") or str(uuid.uuid4())
         request.state.request_id = request_id
+
+        def _finish(resp: Response) -> Response:
+            if "X-Request-Id" not in resp.headers:
+                resp.headers["X-Request-Id"] = request_id
+            _apply_production_security_headers(resp)
+            return resp
         path = request.url.path
-        ip = request.client.host if request.client else "unknown"
+        ip = get_effective_client_ip(
+            request,
+            use_forwarded_headers=bool(settings.use_forwarded_headers),
+            trusted_proxy_ips=settings.trusted_proxy_ips,
+        )
+        if settings.sentry_dsn:
+            try:
+                import sentry_sdk
+
+                ws_hdr = (request.headers.get("X-Workspace-Id") or "").strip()
+                if ws_hdr:
+                    sentry_sdk.set_tag("workspace_id", ws_hdr[:128])
+            except Exception:
+                pass
         auth = request.headers.get("Authorization") or ""
         user_token = auth[7:27] if auth.startswith("Bearer ") else ""
         if settings.csrf_protection_enabled and request.method.upper() in {"POST", "PUT", "PATCH", "DELETE"}:
@@ -158,7 +170,7 @@ def create_app() -> FastAPI:
                 # #region agent log
                 _dbg515("H4", "main.py:middleware", "csrf_block", {"path": path})
                 # #endregion
-                return JSONResponse(status_code=403, content={"detail": "CSRF validation failed"}, headers={"X-Request-Id": request_id})
+                return _finish(JSONResponse(status_code=403, content={"detail": "CSRF validation failed"}, headers={"X-Request-Id": request_id}))
         path = request.url.path
         method_u = request.method.upper()
         if method_u == "POST" and path in {
@@ -170,32 +182,36 @@ def create_app() -> FastAPI:
                 # #region agent log
                 _dbg515("H4", "main.py:middleware", "rate_limit_auth", {"path": path})
                 # #endregion
-                return JSONResponse(
-                    status_code=429,
-                    content={"detail": "Rate limit exceeded for authentication"},
-                    headers={"X-Request-Id": request_id},
+                return _finish(
+                    JSONResponse(
+                        status_code=429,
+                        content={"detail": "Rate limit exceeded for authentication"},
+                        headers={"X-Request-Id": request_id},
+                    )
                 )
         if method_u == "POST" and path == f"{settings.api_v1_prefix}/documents/upload" and user_token:
             if is_rate_limited("upload_user", user_token, limit=int(settings.rate_limit_upload_per_user_per_minute)):
                 # #region agent log
                 _dbg515("H4", "main.py:middleware", "rate_limit_upload", {"path": path})
                 # #endregion
-                return JSONResponse(
-                    status_code=429,
-                    content={"detail": "Rate limit exceeded for uploads"},
-                    headers={"X-Request-Id": request_id},
+                return _finish(
+                    JSONResponse(
+                        status_code=429,
+                        content={"detail": "Rate limit exceeded for uploads"},
+                        headers={"X-Request-Id": request_id},
+                    )
                 )
 
         if is_rate_limited("ip", ip, limit=int(settings.rate_limit_per_ip_per_minute)):
             # #region agent log
             _dbg515("H4", "main.py:middleware", "rate_limit_ip", {"path": path})
             # #endregion
-            return JSONResponse(status_code=429, content={"detail": "Rate limit exceeded for IP"}, headers={"X-Request-Id": request_id})
+            return _finish(JSONResponse(status_code=429, content={"detail": "Rate limit exceeded for IP"}, headers={"X-Request-Id": request_id}))
         if user_token and is_rate_limited("user", user_token, limit=int(settings.rate_limit_per_user_per_minute)):
             # #region agent log
             _dbg515("H4", "main.py:middleware", "rate_limit_user", {"path": path})
             # #endregion
-            return JSONResponse(status_code=429, content={"detail": "Rate limit exceeded for user"}, headers={"X-Request-Id": request_id})
+            return _finish(JSONResponse(status_code=429, content={"detail": "Rate limit exceeded for user"}, headers={"X-Request-Id": request_id}))
 
         t0 = time.perf_counter()
         # #region agent log
@@ -226,6 +242,7 @@ def create_app() -> FastAPI:
         _metrics_counter[f"requests_total:{request.method}:{path}:{response.status_code}"] += 1
         _metrics_latency_sum_ms[f"latency_ms_sum:{request.method}:{path}"] += elapsed_ms
         response.headers["X-Request-Id"] = request_id
+        _finish(response)
         logger.info(
             json.dumps(
                 {

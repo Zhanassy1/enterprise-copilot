@@ -107,6 +107,13 @@ class Settings(BaseSettings):
     app_base_url: str = Field(default="http://localhost:3000")
     csrf_protection_enabled: bool = Field(default=False)
 
+    # Reverse proxy: only trust X-Forwarded-* when the direct TCP client is in TRUSTED_PROXY_IPS.
+    use_forwarded_headers: bool = Field(default=False)
+    trusted_proxy_ips: str = Field(
+        default="",
+        description="Comma-separated IPs or CIDRs (e.g. 10.0.0.0/8,172.31.0.1) for nginx/ingress.",
+    )
+
     @property
     def celery_broker(self) -> str:
         return (self.celery_broker_url or self.redis_url).strip()

@@ -179,6 +179,51 @@ class CrossWorkspaceAccessTests(unittest.TestCase):
         )
         self.assertEqual(msg_res.status_code, 404, msg_res.text)
 
+    def test_user_cannot_use_foreign_workspace_header(self) -> None:
+        ua, _ub, ws_a, ws_b, _doc_b, _sess_b = self._seed_two_workspaces()
+        db = SessionLocal()
+        try:
+            user_a = db.scalar(select(User).where(User.id == ua))
+            assert user_a is not None
+            email_a = user_a.email
+        finally:
+            db.close()
+        login = self.client.post(
+            "/api/v1/auth/login",
+            json={"email": email_a, "password": "CrossWsTest1!"},
+        )
+        self.assertEqual(login.status_code, 200, login.text)
+        token = login.json()["access_token"]
+        headers = {"Authorization": f"Bearer {token}", "X-Workspace-Id": str(ws_b)}
+        res = self.client.get("/api/v1/billing/usage", headers=headers)
+        self.assertEqual(res.status_code, 403, res.text)
+
+    def test_search_and_billing_scoped_to_workspace(self) -> None:
+        ua, _ub, ws_a, _ws_b, _doc_b, _sess_b = self._seed_two_workspaces()
+        db = SessionLocal()
+        try:
+            user_a = db.scalar(select(User).where(User.id == ua))
+            assert user_a is not None
+            email_a = user_a.email
+        finally:
+            db.close()
+        login = self.client.post(
+            "/api/v1/auth/login",
+            json={"email": email_a, "password": "CrossWsTest1!"},
+        )
+        self.assertEqual(login.status_code, 200, login.text)
+        token = login.json()["access_token"]
+        headers = {"Authorization": f"Bearer {token}", "X-Workspace-Id": str(ws_a)}
+        search_res = self.client.post(
+            "/api/v1/search",
+            headers=headers,
+            json={"query": "contract penalty", "top_k": 3},
+        )
+        self.assertEqual(search_res.status_code, 200, search_res.text)
+        bill_res = self.client.get("/api/v1/billing/usage", headers=headers)
+        self.assertEqual(bill_res.status_code, 200, bill_res.text)
+        self.assertIn("plan_slug", bill_res.json())
+
 
 if __name__ == "__main__":
     unittest.main()

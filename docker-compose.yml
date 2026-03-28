@@ -1,3 +1,6 @@
+# Dev-oriented stack: Postgres and Redis publish ports to the host for local tools (DBeaver, redis-cli).
+# Do not expose this compose file unchanged on the public internet. For production-style networking use:
+#   docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
 services:
   db:
     image: pgvector/pgvector:pg16
@@ -6,6 +9,7 @@ services:
       POSTGRES_PASSWORD: postgres
       POSTGRES_DB: enterprise_copilot
     ports:
+      # DEV ONLY: published for host access; prod overlay removes these (docker-compose.prod.yml).
       # 5433 на хосте — если локальный Postgres уже слушает :5432
       - "5433:5432"
     volumes:
@@ -36,6 +40,7 @@ services:
   redis:
     image: redis:7-alpine
     ports:
+      # DEV ONLY: published for host access; prod overlay removes these.
       # 6380 на хосте — чтобы не конфликтовать с уже запущенным Redis на :6379
       - "6380:6379"
     healthcheck:

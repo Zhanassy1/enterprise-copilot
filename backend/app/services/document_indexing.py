@@ -8,6 +8,7 @@ from sqlalchemy import delete, text
 from sqlalchemy.orm import Session
 
 from app.models.document import Document, DocumentChunk
+from app.services.usage_metering import max_pdf_pages_for_workspace
 from app.services.chunking import chunk_text
 from app.services.embeddings import embed_texts
 from app.services.storage.base import StorageService
@@ -80,6 +81,9 @@ class DocumentIndexingService:
             document.extracted_text = extracted
             document.page_count = extracted_doc.page_count
             document.language = extracted_doc.language
+            page_limit = max_pdf_pages_for_workspace(self.db, document.workspace_id)
+            if page_limit is not None and int(extracted_doc.page_count or 0) > int(page_limit):
+                raise ValueError(f"Document exceeds plan page limit ({page_limit} pages max)")
             chunks = chunk_text(extracted)
             offsets = _chunk_offsets(extracted, chunks)
             spans = _page_spans(extracted)

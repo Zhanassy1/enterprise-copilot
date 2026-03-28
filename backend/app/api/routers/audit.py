@@ -13,13 +13,13 @@ def list_audit_logs(
     db: DbDep,
     ws: WorkspaceReadAccess,
     limit: int = Query(default=50, ge=1, le=200),
+    event_type: str | None = Query(default=None, description="Filter by event_type prefix match"),
 ) -> list[AuditLogOut]:
-    rows = db.scalars(
-        select(AuditLog)
-        .where(AuditLog.workspace_id == ws.workspace.id)
-        .order_by(AuditLog.created_at.desc())
-        .limit(limit)
-    ).all()
+    q = select(AuditLog).where(AuditLog.workspace_id == ws.workspace.id)
+    if event_type and event_type.strip():
+        et = event_type.strip()
+        q = q.where(AuditLog.event_type == et)
+    rows = db.scalars(q.order_by(AuditLog.created_at.desc()).limit(limit)).all()
     return [
         AuditLogOut(
             id=r.id,
