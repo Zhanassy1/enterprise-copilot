@@ -2,6 +2,8 @@
 
 Все workspace-scoped операции должны фильтровать по `workspace_id` из контекста (`WorkspaceReadAccess` / `WorkspaceWriteAccess` из `deps.py`) или из поля `IngestionJob.workspace_id` / `Document.workspace_id` в фоновых задачах. `owner_id` на моделях — метаданные/аудит, не путь авторизации.
 
+В **production** синхронная индексация в процессе API отключена: `document_ingestion.py` (upload), `documents.reindex_embeddings` (sync-ветка), плюс `startup_checks` — `ALLOW_SYNC_INGESTION_FOR_DEV` не может быть `true` при `ENVIRONMENT=production`.
+
 ## HTTP routers (`backend/app/api/routers/`)
 
 | Router | Scope | Примечание |

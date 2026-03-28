@@ -19,10 +19,12 @@ Default plan limits are defined in code (`PLAN_LIMITS` / `PLAN_DOCUMENT_CAP` in 
 
 ## Enforcement
 
-- `assert_quota` runs before expensive paths (search, chat, upload). Document page count is enforced during indexing against the workspace plan.
-- Concurrent async ingestion jobs are capped per plan before enqueueing Celery work.
+- `assert_quota` in `backend/app/services/usage_metering.py` runs before expensive paths (search, chat, upload). Document page count is enforced during indexing against the workspace plan (`max_pdf_pages` / `PLAN_LIMITS` in the same module; `DocumentIndexingService.run`).
+- Concurrent async ingestion jobs are capped per plan before enqueueing Celery work (`document_ingestion.py` vs `max_concurrent_ingestion_jobs_for_workspace`).
 - Quota violations emit a structured log line `event: quota.violation` (logger `app.usage`) for operators and SIEM routing.
 - При превышении лимита также пишется audit-событие `quota.denied` (workspace-scoped), если транзакция БД доступна.
+
+Production startup also enforces `ALLOW_SYNC_INGESTION_FOR_DEV=false` in `startup_checks.py` so sync indexing cannot be enabled alongside `ENVIRONMENT=production`.
 
 ## HTTP rate limits (per plan)
 

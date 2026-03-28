@@ -28,6 +28,11 @@ When `PRODUCTION_REQUIRE_S3_BACKEND=1`, the API refuses to start unless `STORAGE
 
 When `PRODUCTION_REQUIRE_TRUSTED_PROXY_IPS=1`, the API refuses to start if `TRUSTED_PROXY_IPS` is empty (document ingress/LB CIDRs). Use when the API is always behind a known reverse proxy. Implemented in `backend/app/core/startup_checks.py` (tests in `tests/test_startup_checks.py`).
 
+### Ingestion: production vs dev
+
+- **Production** (`ENVIRONMENT=production`): `startup_checks` requires `INGESTION_ASYNC_ENABLED=1` and **`ALLOW_SYNC_INGESTION_FOR_DEV=0`** (`backend/app/core/startup_checks.py`). HTTP upload never runs in-process indexing (`backend/app/services/document_ingestion.py`); sync reindex in API is disabled (`backend/app/api/routers/documents.py` `reindex_embeddings`).
+- **Dev**: `docker-compose.yml` may use `INGESTION_ASYNC_ENABLED=1` with worker; optional local sync path only when `ENVIRONMENT=local`, `INGESTION_ASYNC_ENABLED=0`, and `ALLOW_SYNC_INGESTION_FOR_DEV=1`.
+
 ## TLS
 
 - Run the API behind a reverse proxy that terminates HTTPS. Configure `USE_FORWARDED_HEADERS` and `TRUSTED_PROXY_IPS` so client IP and rate limits work correctly.

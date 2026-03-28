@@ -56,6 +56,11 @@ def reindex_embeddings(db: DbDep, _user: CurrentUser, ws: WorkspaceWriteAccess) 
             task_id=async_result.id,
             message="Reindex job queued; poll Celery result or re-run with sync (INGESTION_ASYNC_ENABLED=0) for local dev.",
         )
+    if settings.environment.lower().strip() == "production":
+        raise HTTPException(
+            status_code=503,
+            detail="Synchronous reindex is not available in production; keep INGESTION_ASYNC_ENABLED=1 and use the queued task.",
+        )
     n = reindex_null_embeddings_for_workspace(db, workspace_id=ws.workspace.id)
     return ReindexEmbeddingsOut(updated=n, mode="sync", message=None)
 

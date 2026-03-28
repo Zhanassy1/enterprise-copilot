@@ -12,6 +12,7 @@ class StartupChecksTests(unittest.TestCase):
             database_url="postgresql+psycopg://postgres:postgres@db.example.com:5432/app",
             redis_url="redis://:somesecret@redis.example.com:6379/0",
             ingestion_async_enabled=True,
+            allow_sync_ingestion_for_dev=False,
         )
         with self.assertRaises(RuntimeError) as ctx:
             validate_production_settings(s)
@@ -24,6 +25,7 @@ class StartupChecksTests(unittest.TestCase):
             database_url="postgresql+psycopg://u:p@localhost:5432/app",
             redis_url="redis://:somesecret@redis.example.com:6379/0",
             ingestion_async_enabled=True,
+            allow_sync_ingestion_for_dev=False,
         )
         with self.assertRaises(RuntimeError) as ctx:
             validate_production_settings(s)
@@ -38,6 +40,7 @@ class StartupChecksTests(unittest.TestCase):
             use_forwarded_headers=True,
             trusted_proxy_ips=" ",
             ingestion_async_enabled=True,
+            allow_sync_ingestion_for_dev=False,
         )
         with self.assertRaises(RuntimeError) as ctx:
             validate_production_settings(s)
@@ -58,6 +61,7 @@ class StartupChecksTests(unittest.TestCase):
             database_url="postgresql+psycopg://u:p@db.example.com:5432/app?sslmode=require",
             redis_url="redis://:somesecret@redis.example.com:6379/0",
             ingestion_async_enabled=True,
+            allow_sync_ingestion_for_dev=False,
         )
         with self.assertRaises(RuntimeError) as ctx:
             validate_production_settings(s)
@@ -71,6 +75,7 @@ class StartupChecksTests(unittest.TestCase):
             redis_url="redis://:somesecret@redis.example.com:6379/0",
             secret_key_min_length=32,
             ingestion_async_enabled=True,
+            allow_sync_ingestion_for_dev=False,
         )
         with self.assertRaises(RuntimeError) as ctx:
             validate_production_settings(s)
@@ -83,6 +88,7 @@ class StartupChecksTests(unittest.TestCase):
             database_url="postgresql+psycopg://u:p@db.example.com:5432/app?sslmode=require",
             redis_url="redis://:somesecret@redis.example.com:6379/0",
             ingestion_async_enabled=False,
+            allow_sync_ingestion_for_dev=False,
         )
         with self.assertRaises(RuntimeError) as ctx:
             validate_production_settings(s)
@@ -97,6 +103,7 @@ class StartupChecksTests(unittest.TestCase):
             ingestion_async_enabled=True,
             production_require_s3_backend=True,
             storage_backend="local",
+            allow_sync_ingestion_for_dev=False,
         )
         with self.assertRaises(RuntimeError) as ctx:
             validate_production_settings(s)
@@ -111,10 +118,24 @@ class StartupChecksTests(unittest.TestCase):
             ingestion_async_enabled=True,
             production_require_trusted_proxy_ips=True,
             trusted_proxy_ips=" ",
+            allow_sync_ingestion_for_dev=False,
         )
         with self.assertRaises(RuntimeError) as ctx:
             validate_production_settings(s)
         self.assertIn("TRUSTED_PROXY_IPS", str(ctx.exception))
+
+    def test_production_rejects_allow_sync_ingestion_for_dev(self) -> None:
+        s = Settings(
+            environment="production",
+            secret_key="not-the-default-dev-secret-change-me-xxxxxxxx",
+            database_url="postgresql+psycopg://u:p@db.example.com:5432/app?sslmode=require",
+            redis_url="redis://:somesecret@redis.example.com:6379/0",
+            ingestion_async_enabled=True,
+            allow_sync_ingestion_for_dev=True,
+        )
+        with self.assertRaises(RuntimeError) as ctx:
+            validate_production_settings(s)
+        self.assertIn("ALLOW_SYNC_INGESTION_FOR_DEV", str(ctx.exception))
 
 
 if __name__ == "__main__":

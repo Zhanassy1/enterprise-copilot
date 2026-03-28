@@ -4,6 +4,8 @@
 
 [![CI](https://github.com/Zhanassy1/enterprise-copilot/actions/workflows/ci.yml/badge.svg)](https://github.com/Zhanassy1/enterprise-copilot/actions/workflows/ci.yml)
 
+**Документация (индекс):** [deployment](docs/deployment.md) · [security](docs/security.md) · [quotas](docs/quotas.md) · [observability](docs/observability.md) · [runbook](docs/runbook.md) · [storage-lifecycle](docs/storage-lifecycle.md) · [WORKSPACE_ROUTING](docs/WORKSPACE_ROUTING.md) — полная таблица ниже в [Documentation](#documentation).
+
 Статус реализации по дорожной карте: **[docs/IMPLEMENTATION_STATUS.md](docs/IMPLEMENTATION_STATUS.md)**
 
 ---

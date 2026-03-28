@@ -6,7 +6,7 @@ from datetime import datetime, timezone
 from types import SimpleNamespace
 from unittest.mock import patch
 
-from fastapi import UploadFile
+from fastapi import HTTPException, UploadFile
 
 from app.models.document import IngestionJob
 from app.services.document_ingestion import DocumentIngestionService
@@ -49,6 +49,9 @@ class _FakeDb:
     def commit(self) -> None:
         return None
 
+    def rollback(self) -> None:
+        return None
+
     def refresh(self, obj) -> None:
         if getattr(obj, "created_at", None) is None:
             obj.created_at = datetime.now(timezone.utc)
@@ -72,6 +75,27 @@ class DocumentUploadAsyncContractTests(unittest.TestCase):
         self.assertEqual(result.chunks_created, 0)
         self.assertTrue(publish_mock.called)
         self.assertTrue(any(isinstance(obj, IngestionJob) for obj in db._objects))
+
+    def test_production_never_runs_sync_indexing_on_upload(self) -> None:
+        """Defense in depth: `document_ingestion.py` rejects in-process indexing when ENVIRONMENT=production."""
+        db = _FakeDb()
+        service = DocumentIngestionService(db, _FakeStorage())
+        workspace = SimpleNamespace(id=uuid.uuid4())
+        user_id = uuid.uuid4()
+        file = UploadFile(filename="contract.txt", file=io.BytesIO(b"contract body"), headers={"content-type": "text/plain"})
+
+        with (
+            patch("app.services.document_ingestion.settings.environment", "production"),
+            patch("app.services.document_ingestion.settings.ingestion_async_enabled", False),
+            patch("app.services.document_ingestion.settings.allow_sync_ingestion_for_dev", True),
+            patch("app.services.document_ingestion.assert_quota"),
+            patch("app.services.document_ingestion.record_event"),
+            patch("app.services.document_ingestion.scan_uploaded_file_safe"),
+        ):
+            with self.assertRaises(HTTPException) as err:
+                service.upload_document(user_id=user_id, workspace=workspace, file=file)
+        self.assertEqual(err.exception.status_code, 503)
+        self.assertIn("production", (err.exception.detail or "").lower())
 
 
 if __name__ == "__main__":

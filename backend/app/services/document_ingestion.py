@@ -230,6 +230,14 @@ class DocumentIngestionService:
                 raise HTTPException(status_code=503, detail="Failed to enqueue ingestion task") from exc
             chunks_created = 0
         else:
+            # Sync path is dev-only; never index in-process in production (even if misconfigured).
+            if settings.environment.lower().strip() == "production":
+                self.storage.delete(stored.storage_key)
+                self.db.rollback()
+                raise HTTPException(
+                    status_code=503,
+                    detail="In-process ingestion is disabled in production; use INGESTION_ASYNC_ENABLED=1 and the Celery worker.",
+                )
             if not settings.allow_sync_ingestion_for_dev:
                 self.storage.delete(stored.storage_key)
                 self.db.rollback()

@@ -310,6 +310,33 @@ class CrossWorkspaceAccessTests(unittest.TestCase):
         self.assertEqual(bill_res.status_code, 200, bill_res.text)
         self.assertIn("plan_slug", bill_res.json())
 
+    def test_search_hits_never_include_foreign_workspace_document_id(self) -> None:
+        """SearchService + vector_search SQL scope by workspace; no hit may reference doc_b."""
+        ua, _ub, ws_a, _ws_b, doc_b_id, _sess_b = self._seed_two_workspaces()
+        db = SessionLocal()
+        try:
+            user_a = db.scalar(select(User).where(User.id == ua))
+            assert user_a is not None
+            email_a = user_a.email
+        finally:
+            db.close()
+        login = self.client.post(
+            "/api/v1/auth/login",
+            json={"email": email_a, "password": "CrossWsTest1!"},
+        )
+        self.assertEqual(login.status_code, 200, login.text)
+        token = login.json()["access_token"]
+        headers = {"Authorization": f"Bearer {token}", "X-Workspace-Id": str(ws_a)}
+        search_res = self.client.post(
+            "/api/v1/search",
+            headers=headers,
+            json={"query": "anything", "top_k": 5},
+        )
+        self.assertEqual(search_res.status_code, 200, search_res.text)
+        doc_b_str = str(doc_b_id)
+        for hit in search_res.json().get("hits") or []:
+            self.assertNotEqual(str(hit.get("document_id")), doc_b_str)
+
     def test_user_cannot_get_or_download_foreign_document(self) -> None:
         ua, _ub, ws_a, _ws_b, doc_b_id, _sess_b = self._seed_two_workspaces()
         db = SessionLocal()

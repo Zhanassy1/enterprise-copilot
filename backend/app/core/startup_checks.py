@@ -93,6 +93,12 @@ def validate_production_settings(settings: Settings) -> None:
             "(ingestion runs in Celery worker only)"
         )
 
+    if settings.allow_sync_ingestion_for_dev:
+        raise RuntimeError(
+            "Production configuration invalid: ALLOW_SYNC_INGESTION_FOR_DEV must be false in production "
+            "(sync indexing in API process is dev-only)"
+        )
+
     urls_to_check: list[tuple[str, str]] = [("REDIS_URL", settings.redis_url)]
     broker = (settings.celery_broker_url or "").strip()
     if broker and broker != settings.redis_url.strip():
