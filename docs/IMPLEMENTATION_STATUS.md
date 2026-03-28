@@ -15,13 +15,13 @@
 | 6 | Cross-workspace integration tests + unit ingestion `workspace_mismatch` | **Done** — `tests/test_cross_workspace_access.py` + `test_ingestion_task_unit.py` (локально/CI: `RUN_INTEGRATION_TESTS=1`, `docker compose --profile test up db_test`, см. README Tests) |
 | **Этап 4** | | |
 | 7 | Async ingestion production path; sync только dev (`ALLOW_SYNC_INGESTION_FOR_DEV`) | **Done** |
-| 8 | Job/document статусы, API ingestion, `/jobs` UI, retry/backoff | **Done** |
+| 8 | Job/document статусы, API ingestion, `/jobs` UI, retry/backoff, CI async smoke (`backend-async-smoke`, commit до enqueue) | **Done** |
 | **Этап 5** | | |
 | 9 | Quotas enforcement (upload, concurrent jobs, RAG, tokens, rerank) | **Done** |
 | 10 | Usage ledger (`usage_events`, billing stubs) | **Done** |
 | **Этап 6** | | |
 | 11 | Refresh tokens, rotation, logout, reuse detection | **Done** |
-| 12 | Email verification, password reset, revoke refresh on reset | **Partial** — unit `test_password_reset_revokes_refresh.py`; integration `test_api_integration.py` (refresh rotation, reuse, logout, logout-all); e2e доставка писем зависит от SMTP |
+| 12 | Email verification, password reset, revoke refresh on reset | **Partial** — `EMAIL_CAPTURE_MODE`, `docs/email-testing.md`, `test_email_capture.py`; integration auth в `test_api_integration.py`; полный SMTP/Mailpit — см. док |
 | 13 | Upload validation (MIME, sniffing, size, pages, encrypted PDF, double ext) | **Done** |
 | 14 | Rate limits по группам (auth, upload, RAG), plan-aware | **Done** |
 | **Этап 7** | | |
