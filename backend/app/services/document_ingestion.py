@@ -208,6 +208,10 @@ class DocumentIngestionService:
             )
             self.db.add(job)
             self.db.flush()
+            # Commit before enqueue: worker uses a new DB connection; uncommitted rows are invisible (avoids perpetual "queued" with eager/sync apply).
+            self.db.commit()
+            self.db.refresh(doc)
+            self.db.refresh(job)
             try:
                 ingest_document_task.apply_async(
                     kwargs={
@@ -220,14 +224,18 @@ class DocumentIngestionService:
                     task_id=celery_task_id,
                 )
             except Exception as exc:
-                doc.status = "failed"
-                doc.error_message = f"Failed to enqueue ingestion task: {exc}"
-                job.status = "failed"
-                job.error_message = str(exc)
-                self.db.add(doc)
-                self.db.add(job)
-                self.db.commit()
+                doc_row = self.db.get(Document, doc.id)
+                job_row = self.db.get(IngestionJob, job.id)
+                if doc_row is not None and job_row is not None:
+                    doc_row.status = "failed"
+                    doc_row.error_message = f"Failed to enqueue ingestion task: {exc}"
+                    job_row.status = "failed"
+                    job_row.error_message = str(exc)
+                    self.db.add(doc_row)
+                    self.db.add(job_row)
+                    self.db.commit()
                 raise HTTPException(status_code=503, detail="Failed to enqueue ingestion task") from exc
+            self.db.refresh(doc)
             chunks_created = 0
         else:
             # Sync path is dev-only; never index in-process in production (even if misconfigured).
@@ -247,9 +255,9 @@ class DocumentIngestionService:
                     "or for local development only set ALLOW_SYNC_INGESTION_FOR_DEV=1 with ENVIRONMENT=local",
                 )
             chunks_created = self.indexer.run(doc)
+            self.db.commit()
+            self.db.refresh(doc)
 
-        self.db.commit()
-        self.db.refresh(doc)
         record_event(
             self.db,
             workspace_id=workspace.id,

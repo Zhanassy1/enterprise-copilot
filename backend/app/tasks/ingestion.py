@@ -62,9 +62,6 @@ def ingest_document_task(
 ) -> dict:
     global ingestion_retries_total, ingestion_terminal_failures_total
 
-    db = SessionLocal()
-    job: IngestionJob | None = None
-    document: Document | None = None
     try:
         job_uuid = uuid.UUID(ingestion_job_id)
         doc_uuid = uuid.UUID(document_id)
@@ -72,6 +69,9 @@ def ingest_document_task(
     except ValueError:
         return {"status": "ignored", "reason": "invalid_ids"}
 
+    db = SessionLocal()
+    job: IngestionJob | None = None
+    document: Document | None = None
     try:
         if settings.sentry_dsn:
             try:

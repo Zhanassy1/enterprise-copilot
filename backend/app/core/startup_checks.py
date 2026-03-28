@@ -127,6 +127,12 @@ def validate_production_settings(settings: Settings) -> None:
     if settings.llm_api_key and not settings.llm_base_url:
         raise RuntimeError("Production configuration invalid: llm_base_url is required when llm_api_key is set")
 
+    if getattr(settings, "email_capture_mode", False):
+        raise RuntimeError(
+            "Production configuration invalid: EMAIL_CAPTURE_MODE must be false in production "
+            "(in-memory email sink is for tests only)"
+        )
+
     if settings.use_forwarded_headers and not (settings.trusted_proxy_ips or "").strip():
         raise RuntimeError(
             "Production configuration invalid: USE_FORWARDED_HEADERS=1 requires TRUSTED_PROXY_IPS "

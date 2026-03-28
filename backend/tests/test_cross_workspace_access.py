@@ -31,6 +31,10 @@ class CrossWorkspaceAccessTests(unittest.TestCase):
     def setUpClass(cls) -> None:
         cls.client = TestClient(app)
 
+    @classmethod
+    def tearDownClass(cls) -> None:
+        cls.client.close()
+
     def _seed_two_workspaces(self) -> tuple[uuid.UUID, uuid.UUID, uuid.UUID, uuid.UUID, uuid.UUID, uuid.UUID]:
         """user_a, user_b, ws_a, ws_b, doc_b, chat_session_b."""
         db = SessionLocal()

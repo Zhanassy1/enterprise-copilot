@@ -3,10 +3,23 @@ from __future__ import annotations
 import logging
 import smtplib
 from email.message import EmailMessage
+from typing import Any
 
 from app.core.config import settings
 
 logger = logging.getLogger(__name__)
+
+_captured: list[dict[str, Any]] = []
+
+
+def clear_captured_emails() -> None:
+    """Test helper: reset in-memory capture buffer."""
+    _captured.clear()
+
+
+def get_captured_emails() -> list[dict[str, Any]]:
+    """Copy of emails captured when email_capture_mode is True."""
+    return list(_captured)
 
 
 def _smtp_configured() -> bool:
@@ -14,6 +27,10 @@ def _smtp_configured() -> bool:
 
 
 def send_email(*, to_email: str, subject: str, body: str) -> bool:
+    if settings.email_capture_mode:
+        _captured.append({"to": to_email, "subject": subject, "body": body})
+        logger.debug("email_capture_mode: stored message to %s", to_email)
+        return True
     if not _smtp_configured():
         logger.info("SMTP not configured; skipping email to %s with subject %s", to_email, subject)
         return False

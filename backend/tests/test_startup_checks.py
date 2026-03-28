@@ -108,6 +108,20 @@ class StartupChecksTests(unittest.TestCase):
             validate_production_settings(s)
         self.assertIn("INGESTION_ASYNC", str(ctx.exception))
 
+    def test_production_rejects_email_capture_mode(self) -> None:
+        s = Settings(
+            environment="production",
+            secret_key="not-the-default-dev-secret-change-me-xxxxxxxx",
+            database_url="postgresql+psycopg://u:p@db.example.com:5432/app?sslmode=require",
+            redis_url="redis://:somesecret@redis.example.com:6379/0",
+            ingestion_async_enabled=True,
+            allow_sync_ingestion_for_dev=False,
+            email_capture_mode=True,
+        )
+        with self.assertRaises(RuntimeError) as ctx:
+            validate_production_settings(s)
+        self.assertIn("EMAIL_CAPTURE_MODE", str(ctx.exception))
+
     def test_production_requires_s3_when_flag(self) -> None:
         s = Settings(
             environment="production",

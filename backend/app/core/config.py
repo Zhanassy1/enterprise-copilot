@@ -123,6 +123,8 @@ class Settings(BaseSettings):
     smtp_user: str = Field(default="")
     smtp_password: str = Field(default="")
     smtp_from_email: str = Field(default="noreply@enterprise-copilot.local")
+    # In-memory capture for unit/integration tests only; must stay false in production (startup_checks).
+    email_capture_mode: bool = Field(default=False)
     app_base_url: str = Field(default="http://localhost:3000")
     csrf_protection_enabled: bool = Field(default=False)
 

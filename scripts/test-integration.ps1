@@ -30,6 +30,7 @@ try {
     # docker-compose.yml maps db_test to host:5434 (dev db uses 5433)
     $env:DATABASE_URL = "postgresql+psycopg://postgres:postgres@127.0.0.1:5434/enterprise_copilot_test"
     $env:RUN_INTEGRATION_TESTS = "1"
+    $env:SQLALCHEMY_USE_NULLPOOL = "1"
 
     py -3 -m alembic upgrade head
     py -3 -m unittest discover -s tests -v
@@ -37,6 +38,10 @@ try {
         $env:INGESTION_ASYNC_ENABLED = "1"
         $env:CELERY_TASK_ALWAYS_EAGER = "1"
         $env:CELERY_TASK_EAGER_PROPAGATES = "1"
+        $env:RUN_ASYNC_PIPELINE_SMOKE = "1"
+        if (-not $env:REDIS_URL) {
+            $env:REDIS_URL = "redis://127.0.0.1:6380/0"
+        }
         py -3 -m unittest tests.test_ingestion_async_pipeline -v
     }
 }

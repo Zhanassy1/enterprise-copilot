@@ -1,13 +1,22 @@
 import os
+
+# Celery should load with eager=True before app import when this file is the only test module (async-smoke CI job).
+if os.environ.get("RUN_ASYNC_PIPELINE_SMOKE") == "1":
+    os.environ.setdefault("CELERY_TASK_ALWAYS_EAGER", "1")
+    os.environ.setdefault("CELERY_TASK_EAGER_PROPAGATES", "1")
+    os.environ.setdefault("SQLALCHEMY_USE_NULLPOOL", "1")
+
 import time
-import uuid
 import unittest
+import uuid
+from unittest.mock import patch
 
 from fastapi.testclient import TestClient
 
 from app.celery_app import celery_app
 from app.core.config import settings
 from app.main import app
+from app.tasks.ingestion import ingest_document_task
 
 
 @unittest.skipUnless(
@@ -15,20 +24,51 @@ from app.main import app
     "Set RUN_ASYNC_PIPELINE_SMOKE=1 to run async ingestion smoke.",
 )
 class AsyncIngestionPipelineSmokeTests(unittest.TestCase):
+    """Upload commits doc+job before enqueue (see document_ingestion). In full discover, patch apply_async→apply if Celery was imported without eager."""
+
+    _apply_async_patch = None
+
     @classmethod
     def setUpClass(cls) -> None:
+        def _apply_kwargs(**opts: object) -> object:
+            inner = opts.get("kwargs")
+            if not isinstance(inner, dict):
+                raise AssertionError("expected kwargs= for ingest_document_task.apply_async")
+            r = ingest_document_task.apply(kwargs=inner)
+            if getattr(r, "failed", lambda: False)():
+                raise AssertionError(f"ingest_document_task failed: {getattr(r, 'result', r)}")
+            return r
+
+        if not celery_app.conf.task_always_eager:
+            p = patch(
+                "app.services.document_ingestion.ingest_document_task.apply_async",
+                side_effect=_apply_kwargs,
+            )
+            p.start()
+            cls._apply_async_patch = p
         cls.client = TestClient(app)
+
+    @classmethod
+    def tearDownClass(cls) -> None:
+        cls.client.close()
+        if getattr(cls, "_apply_async_patch", None) is not None:
+            cls._apply_async_patch.stop()
+
+    def _headers_with_workspace(self, access_token: str) -> dict[str, str]:
+        h = {"Authorization": f"Bearer {access_token}"}
+        ws_res = self.client.get("/api/v1/workspaces", headers=h)
+        self.assertEqual(ws_res.status_code, 200, ws_res.text)
+        workspaces = ws_res.json()
+        self.assertGreaterEqual(len(workspaces), 1, ws_res.text)
+        h["X-Workspace-Id"] = str(workspaces[0]["id"])
+        return h
 
     def test_upload_async_pipeline_reaches_terminal_status(self) -> None:
         email = f"it_async_{uuid.uuid4().hex[:10]}@example.com"
         password = "StrongPass123!"
 
         original_async = settings.ingestion_async_enabled
-        original_always_eager = celery_app.conf.task_always_eager
-        original_eager_propagates = celery_app.conf.task_eager_propagates
         settings.ingestion_async_enabled = True
-        celery_app.conf.task_always_eager = True
-        celery_app.conf.task_eager_propagates = True
         try:
             register_res = self.client.post(
                 "/api/v1/auth/register",
@@ -42,7 +82,7 @@ class AsyncIngestionPipelineSmokeTests(unittest.TestCase):
             )
             self.assertEqual(login_res.status_code, 200, login_res.text)
             token = login_res.json()["access_token"]
-            headers = {"Authorization": f"Bearer {token}"}
+            headers = self._headers_with_workspace(token)
 
             upload_res = self.client.post(
                 "/api/v1/documents/upload",
@@ -53,7 +93,7 @@ class AsyncIngestionPipelineSmokeTests(unittest.TestCase):
             self.assertIn(upload_res.json()["document"]["status"], {"queued", "processing", "retrying", "ready", "failed"})
 
             terminal = None
-            for _ in range(10):
+            for _ in range(180):
                 listed = self.client.get("/api/v1/documents", headers=headers)
                 self.assertEqual(listed.status_code, 200, listed.text)
                 docs = listed.json()
@@ -61,13 +101,11 @@ class AsyncIngestionPipelineSmokeTests(unittest.TestCase):
                 terminal = docs[0]["status"]
                 if terminal in {"ready", "failed"}:
                     break
-                time.sleep(0.2)
+                time.sleep(0.5)
 
             self.assertIn(terminal, {"ready", "failed"})
         finally:
             settings.ingestion_async_enabled = original_async
-            celery_app.conf.task_always_eager = original_always_eager
-            celery_app.conf.task_eager_propagates = original_eager_propagates
 
 
 if __name__ == "__main__":

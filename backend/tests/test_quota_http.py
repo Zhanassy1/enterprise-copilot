@@ -47,12 +47,12 @@ class QuotaHttpTests(unittest.TestCase):
             "app.services.usage_metering.assert_quota",
             side_effect=HTTPException(status_code=429, detail="Workspace monthly request quota exceeded"),
         ):
-            client = TestClient(app)
-            r = client.post(
-                f"{settings.api_v1_prefix}/search",
-                json={"query": "price", "top_k": 3},
-                headers={"Authorization": "Bearer " + "t" * 32},
-            )
+            with TestClient(app) as client:
+                r = client.post(
+                    f"{settings.api_v1_prefix}/search",
+                    json={"query": "price", "top_k": 3},
+                    headers={"Authorization": "Bearer " + "t" * 32},
+                )
         self.assertEqual(r.status_code, 429)
         self.assertIn("quota", (r.json().get("detail") or "").lower())
 

@@ -129,6 +129,7 @@ TLS и доверие к `X-Forwarded-*` — на reverse proxy; см. [docs/sec
 | [docs/storage-lifecycle.md](docs/storage-lifecycle.md) | Объекты, S3, дедуп, retention |
 | [docs/WORKSPACE_ROUTING.md](docs/WORKSPACE_ROUTING.md) | Инвентарь API и Celery: tenant scope |
 | [docs/architecture.md](docs/architecture.md) | Обзор системы |
+| [docs/email-testing.md](docs/email-testing.md) | Тестовый SMTP / capture / Mailpit, план e2e для verify/reset |
 
 Шаблоны env: [.env.example](.env.example) (указатель), [env/.env.example](env/.env.example), [backend/.env.example](backend/.env.example), [.env.production.example](.env.production.example).
 
@@ -154,6 +155,24 @@ py -3 -m unittest discover -s tests -v
 Windows: `scripts/test-integration.ps1` делает то же (alembic + полный discover). CI: job `backend-integration` в `.github/workflows/ci.yml` — сервис Postgres на `:5433`, `RUN_INTEGRATION_TESTS=1`, полный `unittest discover`.
 
 При `RUN_INTEGRATION_TESTS=1` middleware **не применяет** in-memory rate limits (много логинов с одного IP в одном процессе) — см. `backend/app/main.py` (`_skip_rl_for_integration`).
+
+Для прогона без `ResourceWarning` от пула psycopg в CI и локально: `SQLALCHEMY_USE_NULLPOOL=1` (см. `backend/app/db/session.py`) — уже выставлено в jobs `backend-integration` / `backend-async-smoke` и в `scripts/test-integration.ps1`.
+
+**Async ingestion smoke** (Celery eager, документ доходит до `ready`/`failed`): job `backend-async-smoke` в `.github/workflows/ci.yml`; локально нужны Postgres + Redis и переменные:
+
+```bash
+docker compose --profile test up -d db_test
+docker compose up -d redis
+set DATABASE_URL=postgresql+psycopg://postgres:postgres@127.0.0.1:5434/enterprise_copilot_test
+set REDIS_URL=redis://127.0.0.1:6380/0
+set RUN_ASYNC_PIPELINE_SMOKE=1
+set RUN_INTEGRATION_TESTS=1
+set INGESTION_ASYNC_ENABLED=1
+py -3 -m alembic upgrade head
+py -3 -m unittest tests.test_ingestion_async_pipeline -v
+```
+
+Почта без реального SMTP: `EMAIL_CAPTURE_MODE=1` (только non-production) — см. [docs/email-testing.md](docs/email-testing.md).
 
 ```bash
 cd frontend

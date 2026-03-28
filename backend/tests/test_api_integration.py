@@ -2,9 +2,9 @@ import os
 import uuid
 import unittest
 
-# Sync indexing for this flow (no Celery worker in integration job).
-os.environ.setdefault("INGESTION_ASYNC_ENABLED", "0")
-os.environ.setdefault("ALLOW_SYNC_INGESTION_FOR_DEV", "1")
+# Sync indexing for this flow (no Celery worker in integration job). Force override shell/CI INGESTION_ASYNC_ENABLED=1.
+os.environ["INGESTION_ASYNC_ENABLED"] = "0"
+os.environ["ALLOW_SYNC_INGESTION_FOR_DEV"] = "1"
 
 from fastapi.testclient import TestClient
 
@@ -19,6 +19,10 @@ class ApiFlowIntegrationTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
         cls.client = TestClient(app)
+
+    @classmethod
+    def tearDownClass(cls) -> None:
+        cls.client.close()
 
     def _headers_with_workspace(self, access_token: str) -> dict[str, str]:
         """Explicit tenant: GET /workspaces then X-Workspace-Id (production-style)."""

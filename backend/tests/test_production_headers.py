@@ -25,8 +25,8 @@ class ProductionHeadersTests(unittest.TestCase):
         from app.main import app
 
         with patch.object(main.settings, "environment", "production"):
-            c = TestClient(app)
-            r = c.get("/healthz")
+            with TestClient(app) as c:
+                r = c.get("/healthz")
         self.assertEqual(r.headers.get("X-Frame-Options"), "DENY")
         self.assertEqual(r.headers.get("X-Content-Type-Options"), "nosniff")
 
