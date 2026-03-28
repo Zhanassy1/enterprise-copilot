@@ -1,9 +1,11 @@
+import uuid
 from datetime import datetime, timedelta, timezone
 
-from fastapi import APIRouter, HTTPException
-from sqlalchemy import select
+from fastapi import APIRouter, HTTPException, Request
+from sqlalchemy import select, update
 
-from app.api.deps import DbDep
+from app.api.deps import CurrentUser, DbDep
+from app.core.client_ip import get_client_ip
 from app.core.config import settings
 from app.core.security import (
     create_access_token,
@@ -16,6 +18,7 @@ from app.models.security import EmailVerificationToken, PasswordResetToken, Refr
 from app.models.user import User
 from app.schemas.auth import (
     LoginIn,
+    LogoutRefreshIn,
     PasswordResetIn,
     RefreshTokenIn,
     RegisterIn,
@@ -24,15 +27,26 @@ from app.schemas.auth import (
     UserOut,
     VerifyEmailIn,
 )
-from app.services.audit import write_audit_log
+from app.services.audit import write_audit_from_request, write_audit_log
 from app.services.email_service import send_password_reset_email, send_verification_email
+from app.services.rate_limiter import enforce_auth_email_rate_limit
 from app.services.workspace_service import create_personal_workspace
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
 
+def _revoke_all_refresh_tokens(db, user_id: uuid.UUID) -> None:
+    now = datetime.now(timezone.utc)
+    db.execute(
+        update(RefreshToken)
+        .where(RefreshToken.user_id == user_id)
+        .values(revoked=True, revoked_at=now)
+    )
+
+
 @router.post("/register", response_model=UserOut)
-def register(payload: RegisterIn, db: DbDep) -> UserOut:
+def register(payload: RegisterIn, db: DbDep, request: Request) -> UserOut:
+    enforce_auth_email_rate_limit(payload.email)
     existing = db.scalar(select(User).where(User.email == payload.email))
     if existing:
         raise HTTPException(status_code=409, detail="Email already registered")
@@ -51,8 +65,9 @@ def register(payload: RegisterIn, db: DbDep) -> UserOut:
         )
     )
     send_verification_email(user.email, verify_token)
-    write_audit_log(
+    write_audit_from_request(
         db,
+        request,
         event_type="auth.register",
         workspace_id=None,
         user_id=user.id,
@@ -66,21 +81,38 @@ def register(payload: RegisterIn, db: DbDep) -> UserOut:
 
 
 @router.post("/login", response_model=Token)
-def login(payload: LoginIn, db: DbDep) -> Token:
+def login(payload: LoginIn, db: DbDep, request: Request) -> Token:
+    enforce_auth_email_rate_limit(payload.email)
     user = db.scalar(select(User).where(User.email == payload.email))
     if not user or not verify_password(payload.password, user.password_hash):
+        write_audit_log(
+            db,
+            event_type="auth.login_failed",
+            workspace_id=None,
+            user_id=None,
+            actor_user_id=None,
+            target_type="user",
+            target_id=None,
+            metadata={"email": payload.email},
+            ip_address=get_client_ip(request),
+            user_agent=(request.headers.get("user-agent") or "")[:512] or None,
+        )
+        db.commit()
         raise HTTPException(status_code=401, detail="Invalid email or password")
     refresh_token = generate_opaque_token()
     db.add(
         RefreshToken(
             user_id=user.id,
+            jti=uuid.uuid4(),
             token_hash=hash_opaque_token(refresh_token),
             expires_at=datetime.now(timezone.utc) + timedelta(days=int(settings.refresh_token_exp_days)),
             revoked=False,
+            revoked_at=None,
         )
     )
-    write_audit_log(
+    write_audit_from_request(
         db,
+        request,
         event_type="auth.login",
         workspace_id=None,
         user_id=user.id,
@@ -93,30 +125,82 @@ def login(payload: LoginIn, db: DbDep) -> Token:
 
 
 @router.post("/refresh", response_model=Token)
-def refresh_token(payload: RefreshTokenIn, db: DbDep) -> Token:
+def refresh_token_ep(payload: RefreshTokenIn, db: DbDep) -> Token:
     token_hash = hash_opaque_token(payload.refresh_token)
-    token_row = db.scalar(select(RefreshToken).where(RefreshToken.token_hash == token_hash, RefreshToken.revoked.is_(False)))
-    if not token_row:
+    row = db.scalar(select(RefreshToken).where(RefreshToken.token_hash == token_hash))
+    if not row:
         raise HTTPException(status_code=401, detail="Invalid refresh token")
-    if token_row.expires_at < datetime.now(timezone.utc):
+    now = datetime.now(timezone.utc)
+    if row.expires_at < now:
         raise HTTPException(status_code=401, detail="Refresh token expired")
+    if row.revoked or row.revoked_at is not None:
+        write_audit_log(
+            db,
+            event_type="auth.refresh_token_reuse",
+            workspace_id=None,
+            user_id=row.user_id,
+            target_type="refresh_token",
+            target_id=str(row.id),
+            metadata={"action": "revoke_all_sessions"},
+        )
+        _revoke_all_refresh_tokens(db, row.user_id)
+        db.commit()
+        raise HTTPException(status_code=401, detail="Invalid refresh token")
 
-    token_row.revoked = True
+    row.revoked = True
+    row.revoked_at = now
     new_refresh = generate_opaque_token()
     db.add(
         RefreshToken(
-            user_id=token_row.user_id,
+            user_id=row.user_id,
+            jti=uuid.uuid4(),
+            rotated_from_id=row.id,
             token_hash=hash_opaque_token(new_refresh),
-            expires_at=datetime.now(timezone.utc) + timedelta(days=int(settings.refresh_token_exp_days)),
+            expires_at=now + timedelta(days=int(settings.refresh_token_exp_days)),
             revoked=False,
+            revoked_at=None,
         )
     )
     db.commit()
-    return Token(access_token=create_access_token(str(token_row.user_id)), refresh_token=new_refresh)
+    return Token(access_token=create_access_token(str(row.user_id)), refresh_token=new_refresh)
+
+
+@router.post("/logout")
+def logout(payload: LogoutRefreshIn, db: DbDep) -> dict:
+    token_hash = hash_opaque_token(payload.refresh_token)
+    row = db.scalar(
+        select(RefreshToken).where(
+            RefreshToken.token_hash == token_hash,
+            RefreshToken.revoked.is_(False),
+            RefreshToken.revoked_at.is_(None),
+        )
+    )
+    if row:
+        now = datetime.now(timezone.utc)
+        row.revoked = True
+        row.revoked_at = now
+        db.commit()
+    return {"ok": True}
+
+
+@router.post("/logout-all")
+def logout_all(db: DbDep, user: CurrentUser) -> dict:
+    _revoke_all_refresh_tokens(db, user.id)
+    write_audit_log(
+        db,
+        event_type="auth.logout_all",
+        workspace_id=None,
+        user_id=user.id,
+        target_type="user",
+        target_id=str(user.id),
+    )
+    db.commit()
+    return {"ok": True}
 
 
 @router.post("/request-password-reset")
 def request_password_reset(payload: RequestPasswordResetIn, db: DbDep) -> dict:
+    enforce_auth_email_rate_limit(payload.email)
     user = db.scalar(select(User).where(User.email == payload.email))
     if not user:
         return {"ok": True}
@@ -156,6 +240,7 @@ def reset_password(payload: PasswordResetIn, db: DbDep) -> dict:
         raise HTTPException(status_code=404, detail="User not found")
     user.password_hash = hash_password(payload.new_password)
     row.used = True
+    _revoke_all_refresh_tokens(db, user.id)
     write_audit_log(
         db,
         event_type="auth.password_reset_completed",

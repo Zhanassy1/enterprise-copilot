@@ -13,6 +13,10 @@ class UsageSummaryOut(BaseModel):
     usage_requests_month: int
     usage_tokens_month: int
     usage_bytes_month: int
+    usage_rerank_calls_month: int = 0
+    usage_pdf_pages_month: int = 0
+    max_rerank_calls_month: int | None = None
+    max_pdf_pages_month: int | None = None
     document_count: int
 
 

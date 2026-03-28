@@ -1,9 +1,46 @@
-# Production-oriented overrides: do not publish PostgreSQL or Redis to the host.
-# Usage: docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
-# Set secrets via environment or a secrets manager — never commit real values.
+# Production-oriented overrides — use with:
+#   docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
+#
+# Before running: copy .env.production.example to .env (or export vars). Never commit real secrets.
+# - Set POSTGRES_PASSWORD, REDIS_PASSWORD, DATABASE_URL, REDIS_URL (must match passwords).
+# - Do NOT use default postgres/postgres in real deployments.
+#
+# Celery: serializers stay json-only in app (see backend/app/celery_app.py). Do not enable pickle.
 
 services:
   db:
     ports: []
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required when using docker-compose.prod.yml}
+      POSTGRES_DB: ${POSTGRES_DB:-enterprise_copilot}
+
   redis:
+    ports: []
+    command: >
+      sh -c 'exec redis-server --requirepass "$${REDIS_PASSWORD}"'
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?REDIS_PASSWORD is required when using docker-compose.prod.yml}
+    healthcheck:
+      test: ["CMD-SHELL", 'redis-cli -a "$${REDIS_PASSWORD}" ping | grep -q PONG']
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  api:
+    # API is only reachable inside the Docker network — put nginx/traefik on the edge.
+    ports: []
+    environment:
+      DATABASE_URL: ${DATABASE_URL:?DATABASE_URL is required when using docker-compose.prod.yml}
+      REDIS_URL: ${REDIS_URL:?REDIS_URL is required when using docker-compose.prod.yml}
+      ENVIRONMENT: ${ENVIRONMENT:-production}
+
+  worker:
+    environment:
+      DATABASE_URL: ${DATABASE_URL:?DATABASE_URL is required when using docker-compose.prod.yml}
+      REDIS_URL: ${REDIS_URL:?REDIS_URL is required when using docker-compose.prod.yml}
+      ENVIRONMENT: ${ENVIRONMENT:-production}
+
+  frontend:
+    # Serve via reverse proxy or use docker-compose.prod-local-ports.yml for localhost-only smoke tests.
     ports: []

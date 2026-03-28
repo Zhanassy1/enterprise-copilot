@@ -10,6 +10,7 @@ from fastapi import HTTPException
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from app.core.config import settings
 from app.models.billing import UsageEvent, WorkspaceQuota
 from app.models.document import Document
 
@@ -24,6 +25,8 @@ EVENT_CHAT_MESSAGE = "chat_message"
 EVENT_DOCUMENT_UPLOAD = "document_upload"
 EVENT_TOKENS = "llm_tokens"
 EVENT_UPLOAD_BYTES = "document_upload_bytes"
+EVENT_RERANK_CALL = "rerank_call"
+EVENT_PDF_PAGES = "pdf_pages_processed"
 
 
 def month_window(now: datetime | None = None) -> tuple[datetime, datetime]:
@@ -103,6 +106,8 @@ def assert_quota(
     request_increment: int = 0,
     token_increment: int = 0,
     upload_bytes_increment: int = 0,
+    rerank_increment: int = 0,
+    pdf_pages_increment: int = 0,
 ) -> None:
     quota = get_or_create_quota(db, workspace_id)
     start, end = month_window()
@@ -152,6 +157,37 @@ def assert_quota(
         if current_bytes + int(upload_bytes_increment) > int(quota.monthly_upload_bytes_limit):
             raise HTTPException(status_code=429, detail="Workspace monthly upload quota exceeded")
 
+    if rerank_increment > 0:
+        cap_rr = int(settings.max_rerank_calls_per_workspace_month)
+        if cap_rr == 0:
+            raise HTTPException(status_code=429, detail="Reranking is disabled by policy")
+        if cap_rr > 0:
+            current_rr = _sum_events(
+                db,
+                workspace_id=workspace_id,
+                event_types=(EVENT_RERANK_CALL,),
+                unit="count",
+                from_dt=start,
+                to_dt=end,
+            )
+            if current_rr + int(rerank_increment) > cap_rr:
+                raise HTTPException(status_code=429, detail="Workspace monthly rerank quota exceeded")
+
+    if pdf_pages_increment > 0:
+        cap_pg = int(settings.max_pdf_pages_processed_per_workspace_month)
+        if cap_pg == 0:
+            raise HTTPException(status_code=429, detail="PDF page processing is disabled by policy")
+        if cap_pg > 0:
+            current_pages = _sum_events(
+                db,
+                workspace_id=workspace_id,
+                event_types=(EVENT_PDF_PAGES,),
+                unit="pages",
+                from_dt=start,
+                to_dt=end,
+            )
+            if current_pages + int(pdf_pages_increment) > cap_pg:
+                raise HTTPException(status_code=429, detail="Workspace monthly PDF page processing quota exceeded")
 
 def record_event(
     db: Session,

@@ -4,7 +4,7 @@ from typing import Annotated
 
 import uuid
 
-from fastapi import Depends, Header, HTTPException
+from fastapi import Depends, Header, HTTPException, Request
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from jwt import ExpiredSignatureError, PyJWTError
 from sqlalchemy import select
@@ -15,6 +15,7 @@ from app.core.security import decode_token
 from app.db.session import get_db
 from app.models.user import User
 from app.models.workspace import Workspace, WorkspaceMember
+from app.services.audit import write_audit_from_request
 
 bearer = HTTPBearer(auto_error=False)
 
@@ -61,10 +62,12 @@ class WorkspaceContext:
 def get_workspace_context(
     db: DbDep,
     user: CurrentUser,
+    request: Request,
     x_workspace_id: Annotated[str | None, Header(alias="X-Workspace-Id")] = None,
 ) -> WorkspaceContext:
     env = settings.environment.lower().strip()
-    if env == "production" and settings.require_workspace_header_in_production:
+    require_header = (env == "production" and settings.require_workspace_header_in_production) or settings.require_workspace_header_strict
+    if require_header:
         if not (x_workspace_id and str(x_workspace_id).strip()):
             raise HTTPException(status_code=400, detail="X-Workspace-Id header is required")
 
@@ -80,6 +83,18 @@ def get_workspace_context(
             .limit(1)
         )
         if not membership:
+            write_audit_from_request(
+                db,
+                request,
+                event_type="security.workspace_access_denied",
+                workspace_id=workspace_uuid,
+                user_id=user.id,
+                actor_user_id=user.id,
+                target_type="workspace",
+                target_id=str(workspace_uuid),
+                metadata={"reason": "not_a_member"},
+            )
+            db.commit()
             raise HTTPException(status_code=403, detail="No access to workspace")
     else:
         membership = db.scalar(

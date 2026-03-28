@@ -25,18 +25,22 @@ export function useAuth() {
     try {
       const { access_token } = await api.login(email, password);
       setToken(access_token);
-      try {
-        const workspaces = await api.listWorkspaces();
-        if (workspaces.length && !getWorkspaceId()) {
-          setWorkspaceId(workspaces[0].id);
+      // Do not await: a slow or stuck /workspaces call must not block login + redirect.
+      void (async () => {
+        try {
+          const workspaces = await api.listWorkspaces();
+          if (workspaces.length && !getWorkspaceId()) {
+            setWorkspaceId(workspaces[0].id);
+          }
+        } catch {
+          /* workspace list optional on first login */
         }
-      } catch {
-        /* workspace list optional on first login */
-      }
-      return true;
+      })();
+      return { ok: true as const };
     } catch (err) {
-      setError(toErrorMessage(err));
-      return false;
+      const msg = toErrorMessage(err);
+      setError(msg);
+      return { ok: false as const, error: msg };
     } finally {
       setLoading(false);
     }
@@ -48,10 +52,11 @@ export function useAuth() {
       setError(null);
       try {
         await api.register(email, password, fullName);
-        return true;
+        return { ok: true as const };
       } catch (err) {
-        setError(toErrorMessage(err));
-        return false;
+        const msg = toErrorMessage(err);
+        setError(msg);
+        return { ok: false as const, error: msg };
       } finally {
         setLoading(false);
       }

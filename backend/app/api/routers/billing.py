@@ -4,9 +4,12 @@ from app.api.deps import DbDep, WorkspaceReadAccess
 from app.models.billing import BillingLedgerEntry
 from app.models.document import Document
 from app.schemas.billing_api import BillingLedgerOut, UsageSummaryOut
+from app.core.config import settings
 from app.services.usage_metering import (
     EVENT_CHAT_MESSAGE,
     EVENT_DOCUMENT_UPLOAD,
+    EVENT_PDF_PAGES,
+    EVENT_RERANK_CALL,
     EVENT_SEARCH_REQUEST,
     EVENT_TOKENS,
     EVENT_UPLOAD_BYTES,
@@ -48,6 +51,22 @@ def billing_usage(db: DbDep, ws: WorkspaceReadAccess) -> UsageSummaryOut:
         from_dt=start,
         to_dt=end,
     )
+    rer = _sum_events(
+        db,
+        workspace_id=ws.workspace.id,
+        event_types=(EVENT_RERANK_CALL,),
+        unit="count",
+        from_dt=start,
+        to_dt=end,
+    )
+    pdfp = _sum_events(
+        db,
+        workspace_id=ws.workspace.id,
+        event_types=(EVENT_PDF_PAGES,),
+        unit="pages",
+        from_dt=start,
+        to_dt=end,
+    )
     doc_count = db.scalar(
         select(func.count())
         .select_from(Document)
@@ -62,6 +81,18 @@ def billing_usage(db: DbDep, ws: WorkspaceReadAccess) -> UsageSummaryOut:
         usage_requests_month=int(req),
         usage_tokens_month=int(tok),
         usage_bytes_month=int(byt),
+        usage_rerank_calls_month=int(rer),
+        usage_pdf_pages_month=int(pdfp),
+        max_rerank_calls_month=(
+            None
+            if int(settings.max_rerank_calls_per_workspace_month) < 0
+            else int(settings.max_rerank_calls_per_workspace_month)
+        ),
+        max_pdf_pages_month=(
+            None
+            if int(settings.max_pdf_pages_processed_per_workspace_month) < 0
+            else int(settings.max_pdf_pages_processed_per_workspace_month)
+        ),
         document_count=int(doc_count or 0),
     )
 

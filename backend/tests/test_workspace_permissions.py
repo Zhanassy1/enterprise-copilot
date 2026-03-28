@@ -35,7 +35,7 @@ class WorkspacePermissionTests(unittest.TestCase):
             mock_settings.environment = "production"
             mock_settings.require_workspace_header_in_production = True
             with self.assertRaises(HTTPException) as err:
-                get_workspace_context(MagicMock(), MagicMock(), None)  # type: ignore[arg-type]
+                get_workspace_context(MagicMock(), MagicMock(), MagicMock(), None)  # type: ignore[arg-type]
             self.assertEqual(err.exception.status_code, 400)
             self.assertIn("Workspace", err.exception.detail or "")
 

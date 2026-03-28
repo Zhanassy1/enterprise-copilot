@@ -1,4 +1,4 @@
-﻿# Python
+# Python
 __pycache__/
 *.pyc
 *.pyo
@@ -15,6 +15,7 @@ backend/share/
 # Environment
 .env
 .env.local
+.env.production
 
 # FastAPI / local files
 *.log

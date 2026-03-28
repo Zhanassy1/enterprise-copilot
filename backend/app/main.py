@@ -186,6 +186,20 @@ def create_app() -> FastAPI:
                     headers={"X-Request-Id": request_id},
                 )
 
+        _pre = settings.api_v1_prefix
+        if user_token and (path == f"{_pre}/search" or path.startswith(f"{_pre}/chat/")):
+            if is_sliding_rate_limited(
+                "search_chat",
+                (request.headers.get("X-Workspace-Id") or "").strip() + ":" + user_token,
+                limit=int(settings.rate_limit_search_chat_workspace_limit),
+                window_seconds=int(settings.rate_limit_search_chat_workspace_window_seconds),
+            ):
+                return JSONResponse(
+                    status_code=429,
+                    content={"detail": "Rate limit exceeded for search/chat"},
+                    headers={"X-Request-Id": request_id},
+                )
+
         if is_rate_limited("ip", ip, limit=int(settings.rate_limit_per_ip_per_minute)):
             # #region agent log
             _dbg515("H4", "main.py:middleware", "rate_limit_ip", {"path": path})

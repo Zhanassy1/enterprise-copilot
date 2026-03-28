@@ -1,8 +1,11 @@
 import { getToken, clearToken } from "./auth";
 import { getWorkspaceId } from "./workspace";
 
+/** Base URL for JSON API (browser). Default uses 127.0.0.1 to avoid Windows IPv6 localhost quirks. */
 const API_BASE =
-  process.env.NEXT_PUBLIC_API_BASE?.trim() || "http://localhost:8000/api/v1";
+  process.env.NEXT_PUBLIC_API_BASE?.trim() || "http://127.0.0.1:8000/api/v1";
+
+const JSON_REQUEST_TIMEOUT_MS = 25_000;
 
 export class ApiError extends Error {
   status: number;
@@ -16,6 +19,7 @@ export class ApiError extends Error {
 
 export function toErrorMessage(err: unknown): string {
   if (err instanceof ApiError) {
+    if (err.status === 408) return err.message;
     const b = err.body as Record<string, unknown> | null;
     if (b && typeof b === "object" && "detail" in b) {
       const d = b.detail;
@@ -28,18 +32,43 @@ export function toErrorMessage(err: unknown): string {
   return String(err);
 }
 
+function abortSignalForJsonRequest(userSignal: AbortSignal | undefined): AbortSignal | undefined {
+  if (typeof AbortSignal === "undefined" || !("timeout" in AbortSignal)) return userSignal;
+  const t = AbortSignal.timeout(JSON_REQUEST_TIMEOUT_MS);
+  if (!userSignal) return t;
+  if ("any" in AbortSignal && typeof AbortSignal.any === "function") {
+    return AbortSignal.any([userSignal, t]);
+  }
+  return t;
+}
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const token = getToken();
   const headers = new Headers(init?.headers);
   headers.set("Accept", "application/json");
-  if (!(init?.body instanceof FormData)) {
+  const isFormData = init?.body instanceof FormData;
+  if (!isFormData) {
     headers.set("Content-Type", "application/json");
   }
   if (token) headers.set("Authorization", `Bearer ${token}`);
   const ws = getWorkspaceId();
   if (ws) headers.set("X-Workspace-Id", ws);
 
-  const res = await fetch(`${API_BASE}${path}`, { ...init, headers });
+  const signal = isFormData ? init?.signal : abortSignalForJsonRequest(init?.signal);
+
+  let res: Response;
+  try {
+    res = await fetch(`${API_BASE}${path}`, { ...init, headers, signal });
+  } catch (e) {
+    if (e instanceof Error && e.name === "AbortError") {
+      throw new ApiError(
+        `Нет ответа от API за ${JSON_REQUEST_TIMEOUT_MS / 1000} с. Убедитесь, что backend запущен и доступен по ${API_BASE} (переменная NEXT_PUBLIC_API_BASE).`,
+        408,
+        null
+      );
+    }
+    throw e;
+  }
   const txt = await res.text();
   const body = txt ? safeJson(txt) ?? txt : null;
 
@@ -73,6 +102,7 @@ export interface UserOut {
 export interface Token {
   access_token: string;
   token_type: string;
+  refresh_token?: string | null;
 }
 
 export interface DocumentOut {
@@ -110,6 +140,10 @@ export interface UsageSummaryOut {
   usage_requests_month: number;
   usage_tokens_month: number;
   usage_bytes_month: number;
+  usage_rerank_calls_month?: number;
+  usage_pdf_pages_month?: number;
+  max_rerank_calls_month?: number | null;
+  max_pdf_pages_month?: number | null;
   document_count: number;
 }
 
@@ -208,6 +242,18 @@ export const api = {
     request<Token>("/auth/login", {
       method: "POST",
       body: JSON.stringify({ email, password }),
+    }),
+
+  logout: (refreshToken: string) =>
+    request<{ ok: boolean }>("/auth/logout", {
+      method: "POST",
+      body: JSON.stringify({ refresh_token: refreshToken }),
+    }),
+
+  logoutAll: () =>
+    request<{ ok: boolean }>("/auth/logout-all", {
+      method: "POST",
+      body: "{}",
     }),
 
   listDocuments: () => request<DocumentOut[]>("/documents"),

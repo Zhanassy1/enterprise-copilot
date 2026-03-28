@@ -1,11 +1,14 @@
 from __future__ import annotations
 
+import io
+import re
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 
 from fastapi import HTTPException, UploadFile
-from sqlalchemy import select
+from pypdf import PdfReader
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
@@ -23,7 +26,6 @@ from app.services.usage_metering import (
 )
 from app.tasks.ingestion import ingest_document_task
 
-MAX_UPLOAD_BYTES = 25 * 1024 * 1024
 ALLOWED_SUFFIXES = {".pdf", ".docx", ".txt"}
 ALLOWED_CONTENT_TYPES = {
     "application/pdf",
@@ -32,27 +34,74 @@ ALLOWED_CONTENT_TYPES = {
     "text/plain",
 }
 
+_SUSPICIOUS_DOUBLE_EXT = re.compile(r"\.(pdf|docx|txt)\.[^.\\/]+$", re.IGNORECASE)
 
-def validate_upload(file: UploadFile) -> None:
-    suffix = Path(file.filename or "").suffix.lower()
-    content_type = (file.content_type or "").lower().strip()
+
+def validate_filename_rules(filename: str | None) -> None:
+    name = (filename or "").strip()
+    if not name or "\x00" in name:
+        raise HTTPException(status_code=400, detail="Invalid filename")
+    norm = name.replace("\\", "/")
+    if ".." in norm or norm.startswith("/"):
+        raise HTTPException(status_code=400, detail="Invalid filename")
+    base = Path(name).name
+    if _SUSPICIOUS_DOUBLE_EXT.search(base):
+        raise HTTPException(status_code=400, detail="Invalid filename (suspicious double extension)")
+
+
+def read_upload_body_capped(stream, max_bytes: int) -> bytes:
+    out = bytearray()
+    while True:
+        chunk = stream.read(1024 * 1024)
+        if not chunk:
+            break
+        out.extend(chunk)
+        if len(out) > max_bytes:
+            raise HTTPException(status_code=413, detail=f"File too large (max {max_bytes} bytes)")
+    return bytes(out)
+
+
+def validate_upload_bytes(filename: str | None, content_type: str | None, body: bytes) -> None:
+    suffix = Path(filename or "").suffix.lower()
     if suffix not in ALLOWED_SUFFIXES:
         raise HTTPException(status_code=400, detail="Unsupported file extension. Allowed: pdf, docx, txt")
-    if content_type and content_type not in ALLOWED_CONTENT_TYPES:
+    ct = (content_type or "").lower().strip()
+    if ct and ct not in ALLOWED_CONTENT_TYPES:
         raise HTTPException(status_code=400, detail="Unsupported content type")
-    # MIME sniffing: verify magic bytes for binary formats.
+    if suffix == ".txt":
+        return
+    if suffix == ".pdf":
+        if not body.startswith(b"%PDF"):
+            raise HTTPException(status_code=400, detail="File content does not match PDF format")
+        try:
+            reader = PdfReader(io.BytesIO(body))
+        except Exception:
+            raise HTTPException(status_code=400, detail="Invalid or unreadable PDF")
+        if getattr(reader, "is_encrypted", False):
+            raise HTTPException(
+                status_code=400,
+                detail="Encrypted PDFs are not supported; remove password protection first",
+            )
+        n_pages = len(reader.pages)
+        if n_pages > int(settings.max_pdf_pages_per_upload):
+            raise HTTPException(
+                status_code=400,
+                detail=f"PDF exceeds maximum page count ({int(settings.max_pdf_pages_per_upload)})",
+            )
+        return
+    if suffix == ".docx":
+        if not body.startswith(b"PK"):
+            raise HTTPException(status_code=400, detail="File content does not match DOCX format")
+
+
+def validate_upload(file: UploadFile) -> None:
+    """Validate an upload stream (consumes `file.file`). Prefer `upload_document` for API handlers."""
+    validate_filename_rules(file.filename)
+    max_bytes = int(settings.max_upload_bytes_per_file)
     if not file.file:
         return
-    try:
-        pos = file.file.tell()
-        header = file.file.read(8) or b""
-        file.file.seek(pos)
-    except Exception:
-        return
-    if suffix == ".pdf" and not header.startswith(b"%PDF"):
-        raise HTTPException(status_code=400, detail="File content does not match PDF format")
-    if suffix == ".docx" and not header.startswith(b"PK"):
-        raise HTTPException(status_code=400, detail="File content does not match DOCX format")
+    body = read_upload_body_capped(file.file, max_bytes)
+    validate_upload_bytes(file.filename, file.content_type, body)
 
 
 class DocumentIngestionService:
@@ -81,11 +130,13 @@ class DocumentIngestionService:
         )
 
     def upload_document(self, user_id: uuid.UUID, workspace: Workspace, file: UploadFile) -> DocumentIngestOut:
-        validate_upload(file)
-        stored = self.storage.save_upload(file.file, file.filename or "upload.bin")
-        if stored.size_bytes > MAX_UPLOAD_BYTES:
-            self.storage.delete(stored.storage_key)
-            raise HTTPException(status_code=413, detail="File too large (max 25MB)")
+        max_bytes = int(settings.max_upload_bytes_per_file)
+        if not file.file:
+            raise HTTPException(status_code=400, detail="Empty upload")
+        body = read_upload_body_capped(file.file, max_bytes)
+        validate_filename_rules(file.filename)
+        validate_upload_bytes(file.filename, file.content_type, body)
+        stored = self.storage.save_upload(io.BytesIO(body), file.filename or "upload.bin")
 
         with self.storage.local_path(stored.storage_key) as local_file:
             scan_uploaded_file_safe(local_file)
@@ -101,6 +152,21 @@ class DocumentIngestionService:
         if dup:
             self.storage.delete(stored.storage_key)
             return DocumentIngestOut(document=DocumentOut.from_document(dup), chunks_created=0)
+
+        n_active = self.db.scalar(
+            select(func.count())
+            .select_from(IngestionJob)
+            .where(
+                IngestionJob.workspace_id == workspace.id,
+                IngestionJob.status.in_(["queued", "processing", "retrying"]),
+            )
+        )
+        if int(n_active or 0) >= int(settings.max_concurrent_ingestion_jobs_per_workspace):
+            self.storage.delete(stored.storage_key)
+            raise HTTPException(
+                status_code=429,
+                detail="Too many concurrent ingestion jobs for this workspace; try again later.",
+            )
 
         assert_quota(
             self.db,

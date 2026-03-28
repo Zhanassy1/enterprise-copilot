@@ -67,6 +67,17 @@ npm run dev -- --host
 docker compose up -d --build
 ```
 
+**Production baseline** (без публикации Postgres/Redis наружу, сильные пароли из `.env`):
+
+```bash
+# Скопируй .env.production.example → .env и задай POSTGRES_PASSWORD, REDIS_PASSWORD, DATABASE_URL, REDIS_URL
+docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
+```
+
+Локальный smoke-тест только на loopback: добавь `docker-compose.prod-local-ports.yml` как третий файл.
+
+Полное описание: [docs/deployment.md](docs/deployment.md) (security, storage S3/MinIO, квоты, Celery beat, observability, ops).
+
 Проверка после деплоя:
 - `http://localhost:3000` — frontend
 - `http://localhost:8000/healthz` — API health
@@ -77,6 +88,8 @@ docker compose up -d --build
 ```bash
 docker compose down
 ```
+
+**Опции compose:** `--profile beat` — Celery beat (retention); `--profile objectstorage` — MinIO для S3-совместимого хранилища.
 
 ## Тесты
 

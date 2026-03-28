@@ -56,7 +56,14 @@ class SearchService:
         self.db = db
 
     def search(self, *, workspace_id: uuid.UUID, user_id: uuid.UUID, query: str, top_k: int) -> SearchOut:
-        from app.services.usage_metering import EVENT_SEARCH_REQUEST, EVENT_TOKENS, assert_quota, estimate_tokens, record_event
+        from app.services.usage_metering import (
+            EVENT_RERANK_CALL,
+            EVENT_SEARCH_REQUEST,
+            EVENT_TOKENS,
+            assert_quota,
+            estimate_tokens,
+            record_event,
+        )
 
         query_tokens = estimate_tokens(query)
         assert_quota(
@@ -74,6 +81,8 @@ class SearchService:
             query_embedding=qvec,
             top_k=max(top_k, int(settings.reranker_top_n)),
         )
+        if settings.reranker_enabled:
+            assert_quota(self.db, workspace_id=workspace_id, rerank_increment=1)
         hits = rerank_hits(query, hits, top_n=int(settings.reranker_top_n))
         hits = hits[: int(top_k)]
         for h in hits:
@@ -109,6 +118,16 @@ class SearchService:
             unit="count",
             metadata={"top_k": int(top_k)},
         )
+        if settings.reranker_enabled:
+            record_event(
+                self.db,
+                workspace_id=workspace_id,
+                user_id=user_id,
+                event_type=EVENT_RERANK_CALL,
+                quantity=1,
+                unit="count",
+                metadata={"scope": "search"},
+            )
         record_event(
             self.db,
             workspace_id=workspace_id,

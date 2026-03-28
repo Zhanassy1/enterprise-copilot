@@ -1,4 +1,5 @@
 from celery import Celery
+from celery.schedules import crontab
 
 from app.core.config import settings
 
@@ -6,7 +7,7 @@ celery_app = Celery(
     "enterprise_copilot",
     broker=settings.celery_broker,
     backend=settings.celery_result_backend,
-    include=["app.tasks.ingestion"],
+    include=["app.tasks.ingestion", "app.tasks.maintenance"],
 )
 
 celery_app.conf.update(
@@ -22,8 +23,16 @@ celery_app.conf.update(
     task_serializer="json",
     result_serializer="json",
     accept_content=["json"],
+    result_accept_content=["json"],
     event_serializer="json",
 )
+
+celery_app.conf.beat_schedule = {
+    "purge-soft-deleted-documents-daily": {
+        "task": "app.tasks.maintenance.purge_expired_soft_deleted_documents",
+        "schedule": crontab(hour=4, minute=30),
+    },
+}
 
 try:
     from celery.signals import worker_process_init

@@ -218,12 +218,16 @@ def ingest_document_task(
 @celery_app.task(name="app.tasks.ingestion.reindex_workspace_embeddings_task")
 def reindex_workspace_embeddings_task(*, workspace_id: str) -> dict:
     """Backfill embedding_vector for chunks missing vectors (legacy data)."""
+    from app.models.workspace import Workspace
+
     db = SessionLocal()
     try:
         ws_uuid = uuid.UUID(workspace_id)
     except ValueError:
         return {"status": "ignored", "updated": 0}
     try:
+        if not db.scalar(select(Workspace).where(Workspace.id == ws_uuid)):
+            return {"status": "ignored", "updated": 0, "reason": "workspace_not_found"}
         n = reindex_null_embeddings_for_workspace(db, workspace_id=ws_uuid)
         return {"status": "ok", "updated": n}
     except Exception as exc:

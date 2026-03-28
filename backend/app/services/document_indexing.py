@@ -4,6 +4,7 @@ from datetime import datetime, timezone
 import re
 import uuid
 
+from fastapi import HTTPException
 from sqlalchemy import delete, text
 from sqlalchemy.orm import Session
 
@@ -12,6 +13,7 @@ from app.services.chunking import chunk_text
 from app.services.embeddings import embed_texts
 from app.services.storage.base import StorageService
 from app.services.text_extraction import extract_text_metadata_from_file
+from app.services.usage_metering import EVENT_PDF_PAGES, assert_quota, record_event
 
 
 def _chunk_offsets(full_text: str, chunks: list[str]) -> list[tuple[int, int]]:
@@ -62,6 +64,7 @@ class DocumentIndexingService:
         self.storage = storage
 
     def run(self, document: Document) -> int:
+        first_index = document.indexed_at is None
         document.status = "processing"
         document.error_message = None
         self.db.add(document)
@@ -73,6 +76,17 @@ class DocumentIndexingService:
             extracted = extracted_doc.text
             if not extracted:
                 raise ValueError("Failed to extract text (empty)")
+
+            pages_n = int(extracted_doc.page_count or 0)
+            if first_index and pages_n > 0:
+                try:
+                    assert_quota(
+                        self.db,
+                        workspace_id=document.workspace_id,
+                        pdf_pages_increment=pages_n,
+                    )
+                except HTTPException as exc:
+                    raise ValueError(str(exc.detail)) from exc
 
             self.db.execute(delete(DocumentChunk).where(DocumentChunk.document_id == document.id))
             self.db.flush()
@@ -115,6 +129,17 @@ class DocumentIndexingService:
             document.parser_version = "v1"
             self.db.add(document)
             self.db.flush()
+            if first_index and pages_n > 0:
+                record_event(
+                    self.db,
+                    workspace_id=document.workspace_id,
+                    user_id=document.owner_id,
+                    event_type=EVENT_PDF_PAGES,
+                    quantity=pages_n,
+                    unit="pages",
+                    metadata={"document_id": str(document.id)},
+                )
+                self.db.flush()
             return len(chunks)
         except Exception as exc:
             document.status = "failed"

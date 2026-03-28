@@ -1,7 +1,7 @@
 import uuid
 from pathlib import Path
 
-from fastapi import APIRouter, File, HTTPException, UploadFile
+from fastapi import APIRouter, File, HTTPException, Request, UploadFile
 from fastapi.responses import RedirectResponse, Response
 from sqlalchemy import select
 
@@ -15,16 +15,13 @@ from app.schemas.documents import (
     IngestionJobOut,
     ReindexEmbeddingsOut,
 )
-from app.services.document_ingestion import DocumentIngestionService, validate_upload
+from app.services.document_ingestion import DocumentIngestionService
 from app.services.document_indexing import reindex_null_embeddings_for_workspace
-from app.services.audit import write_audit_log
+from app.services.audit import write_audit_from_request
 from app.services.storage import get_storage_service
 from app.services.summary import summarize_document
 
 router = APIRouter(prefix="/documents", tags=["documents"])
-
-def _validate_upload(file: UploadFile) -> None:
-    validate_upload(file)
 
 
 @router.get("", response_model=list[DocumentOut])
@@ -112,13 +109,16 @@ def download_document(
 
 
 @router.delete("/{document_id}")
-def delete_document(document_id: uuid.UUID, db: DbDep, user: CurrentUser, ws: WorkspaceWriteAccess) -> dict:
+def delete_document(
+    document_id: uuid.UUID, db: DbDep, user: CurrentUser, ws: WorkspaceWriteAccess, request: Request
+) -> dict:
     service = DocumentIngestionService(db, get_storage_service())
     doc = service.get_document(ws.workspace.id, document_id)
     if not doc:
         raise HTTPException(status_code=404, detail="Not found")
-    write_audit_log(
+    write_audit_from_request(
         db,
+        request,
         event_type="document.deleted",
         workspace_id=ws.workspace.id,
         user_id=user.id,

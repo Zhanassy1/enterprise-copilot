@@ -1,0 +1,14 @@
+# Optional third file for smoke-testing a prod compose stack on localhost only.
+# Usage:
+#   docker compose -f docker-compose.yml -f docker-compose.prod.yml -f docker-compose.prod-local-ports.yml up -d
+#
+# Binds API and frontend to loopback — not for internet exposure.
+
+services:
+  api:
+    ports:
+      - "127.0.0.1:${HOST_API_PORT:-8000}:8000"
+
+  frontend:
+    ports:
+      - "127.0.0.1:${HOST_FRONTEND_PORT:-3000}:3000"
