@@ -16,12 +16,41 @@ from app.core.config import settings
 from app.core.debug_log import debug_log
 from app.core.startup_checks import validate_settings
 from app.core.trusted_proxy import get_effective_client_ip
-from app.db.session import engine
+from app.db.session import SessionLocal, engine
 from app.services.rate_limiter import is_rate_limited
 
 logger = logging.getLogger("app.request")
 _metrics_counter: dict[str, int] = defaultdict(int)
 _metrics_latency_sum_ms: dict[str, float] = defaultdict(float)
+_ws_plan_cache: dict[str, tuple[str, float]] = {}
+_WS_PLAN_TTL = 60.0
+
+
+def _plan_slug_for_workspace_header(workspace_id_header: str) -> str:
+    s = (workspace_id_header or "").strip()
+    if not s:
+        return "free"
+    try:
+        wid = uuid.UUID(s)
+    except ValueError:
+        return "free"
+    now = time.time()
+    k = str(wid)
+    hit = _ws_plan_cache.get(k)
+    if hit and now - hit[1] < _WS_PLAN_TTL:
+        return hit[0]
+    from app.services.usage_metering import get_or_create_quota
+
+    db = SessionLocal()
+    try:
+        q = get_or_create_quota(db, wid)
+        slug = (q.plan_slug or "free").lower()
+    except Exception:
+        slug = "free"
+    finally:
+        db.close()
+    _ws_plan_cache[k] = (slug, now)
+    return slug
 
 # #region agent log
 _w_main = Path(__file__).resolve()
@@ -151,6 +180,10 @@ def create_app() -> FastAPI:
             use_forwarded_headers=bool(settings.use_forwarded_headers),
             trusted_proxy_ips=settings.trusted_proxy_ips,
         )
+        from app.services.usage_metering import effective_rate_limits_for_plan
+
+        ws_hdr = (request.headers.get("X-Workspace-Id") or "").strip()
+        rl = effective_rate_limits_for_plan(_plan_slug_for_workspace_header(ws_hdr))
         if settings.sentry_dsn:
             try:
                 import sentry_sdk
@@ -178,7 +211,7 @@ def create_app() -> FastAPI:
             f"{settings.api_v1_prefix}/auth/register",
             f"{settings.api_v1_prefix}/auth/refresh",
         }:
-            if is_rate_limited("auth_ip", ip, limit=int(settings.rate_limit_auth_per_ip_per_minute)):
+            if is_rate_limited("auth_ip", ip, limit=int(rl["auth_ip"])):
                 # #region agent log
                 _dbg515("H4", "main.py:middleware", "rate_limit_auth", {"path": path})
                 # #endregion
@@ -190,7 +223,7 @@ def create_app() -> FastAPI:
                     )
                 )
         if method_u == "POST" and path == f"{settings.api_v1_prefix}/documents/upload" and user_token:
-            if is_rate_limited("upload_user", user_token, limit=int(settings.rate_limit_upload_per_user_per_minute)):
+            if is_rate_limited("upload_user", user_token, limit=int(rl["upload_user"])):
                 # #region agent log
                 _dbg515("H4", "main.py:middleware", "rate_limit_upload", {"path": path})
                 # #endregion
@@ -202,12 +235,12 @@ def create_app() -> FastAPI:
                     )
                 )
 
-        if is_rate_limited("ip", ip, limit=int(settings.rate_limit_per_ip_per_minute)):
+        if is_rate_limited("ip", ip, limit=int(rl["per_ip"])):
             # #region agent log
             _dbg515("H4", "main.py:middleware", "rate_limit_ip", {"path": path})
             # #endregion
             return _finish(JSONResponse(status_code=429, content={"detail": "Rate limit exceeded for IP"}, headers={"X-Request-Id": request_id}))
-        if user_token and is_rate_limited("user", user_token, limit=int(settings.rate_limit_per_user_per_minute)):
+        if user_token and is_rate_limited("user", user_token, limit=int(rl["per_user"])):
             # #region agent log
             _dbg515("H4", "main.py:middleware", "rate_limit_user", {"path": path})
             # #endregion
@@ -342,6 +375,13 @@ def create_app() -> FastAPI:
         for key, value in sorted(_metrics_latency_sum_ms.items()):
             _, method, path = key.split(":", 2)
             lines.append(f'http_request_latency_ms_sum{{method="{method}",path="{path}"}} {float(value):.4f}')
+        try:
+            from app.tasks import ingestion as _ing_metrics
+
+            lines.append(f"celery_ingestion_terminal_failures_total {_ing_metrics.ingestion_terminal_failures_total}")
+            lines.append(f"celery_ingestion_retries_total {_ing_metrics.ingestion_retries_total}")
+        except Exception:
+            pass
         body = "\n".join(lines) + ("\n" if lines else "")
         return Response(content=body, media_type="text/plain; version=0.0.4; charset=utf-8")
 

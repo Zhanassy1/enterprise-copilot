@@ -15,6 +15,7 @@ from app.core.security import decode_token
 from app.db.session import get_db
 from app.models.user import User
 from app.models.workspace import Workspace, WorkspaceMember
+from app.services.audit import write_audit_log
 
 bearer = HTTPBearer(auto_error=False)
 
@@ -80,6 +81,16 @@ def get_workspace_context(
             .limit(1)
         )
         if not membership:
+            write_audit_log(
+                db,
+                event_type="workspace.access_denied",
+                workspace_id=workspace_uuid,
+                user_id=user.id,
+                target_type="workspace",
+                target_id=str(workspace_uuid),
+                metadata={"reason": "not_a_member"},
+            )
+            db.commit()
             raise HTTPException(status_code=403, detail="No access to workspace")
     else:
         membership = db.scalar(

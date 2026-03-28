@@ -20,6 +20,12 @@ class UploadValidationTests(unittest.TestCase):
             _validate_upload(file)
         self.assertEqual(err.exception.status_code, 400)
 
+    def test_rejects_double_extension_disguise(self) -> None:
+        file = UploadFile(filename="contract.pdf.exe", file=None, headers={"content-type": "application/pdf"})
+        with self.assertRaises(HTTPException) as err:
+            _validate_upload(file)
+        self.assertEqual(err.exception.status_code, 400)
+
     def test_rejects_unsupported_content_type(self) -> None:
         file = UploadFile(filename="report.pdf", file=None, headers={"content-type": "application/octet-stream"})
         with self.assertRaises(HTTPException) as err:

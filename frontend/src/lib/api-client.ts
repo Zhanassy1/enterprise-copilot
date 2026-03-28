@@ -81,6 +81,8 @@ export interface DocumentOut {
   filename: string;
   content_type?: string | null;
   status?: string;
+  /** Latest ingestion job status when available (queued | processing | …). */
+  ingestion_job_status?: string | null;
   error_message?: string | null;
   created_at: string;
 }
@@ -253,6 +255,9 @@ export const api = {
   listBillingLedger: () => request<BillingLedgerOut[]>("/billing/ledger"),
 
   listAuditLogs: () => request<AuditLogOut[]>("/audit/logs"),
+
+  listAuditLogsAdmin: (limit = 100) =>
+    request<AuditLogOut[]>(`/audit/admin/logs?limit=${encodeURIComponent(String(limit))}`),
 
   listIngestionJobs: (status?: string) => {
     const q = status ? `?status=${encodeURIComponent(status)}` : "";

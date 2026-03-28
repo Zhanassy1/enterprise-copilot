@@ -6,7 +6,7 @@ celery_app = Celery(
     "enterprise_copilot",
     broker=settings.celery_broker,
     backend=settings.celery_result_backend,
-    include=["app.tasks.ingestion"],
+    include=["app.tasks.ingestion", "app.tasks.maintenance"],
 )
 
 celery_app.conf.update(

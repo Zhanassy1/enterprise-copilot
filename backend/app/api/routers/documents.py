@@ -30,8 +30,8 @@ def _validate_upload(file: UploadFile) -> None:
 @router.get("", response_model=list[DocumentOut])
 def list_documents(db: DbDep, _user: CurrentUser, ws: WorkspaceReadAccess) -> list[DocumentOut]:
     service = DocumentIngestionService(db, get_storage_service())
-    docs = service.list_documents(ws.workspace.id)
-    return [DocumentOut.from_document(d) for d in docs]
+    pairs = service.list_documents(ws.workspace.id)
+    return [DocumentOut.from_document(d, ingestion_job_status=js) for d, js in pairs]
 
 
 @router.post("/upload", response_model=DocumentIngestOut)
@@ -66,7 +66,8 @@ def get_document(document_id: uuid.UUID, db: DbDep, _user: CurrentUser, ws: Work
     doc = service.get_document(ws.workspace.id, document_id)
     if not doc:
         raise HTTPException(status_code=404, detail="Not found")
-    return DocumentOut.from_document(doc)
+    js = service.latest_ingestion_job_status(ws.workspace.id, document_id)
+    return DocumentOut.from_document(doc, ingestion_job_status=js)
 
 
 @router.get("/{document_id}/ingestion", response_model=IngestionJobOut | None)

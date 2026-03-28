@@ -14,6 +14,10 @@ class DocumentOut(BaseModel):
     filename: str
     content_type: str | None = None
     status: str
+    ingestion_job_status: str | None = Field(
+        default=None,
+        description="Latest ingestion job status for this document (if any), same vocabulary as IngestionJob.status.",
+    )
     error_message: str | None = None
     file_size_bytes: int | None = None
     sha256: str | None = None
@@ -24,13 +28,14 @@ class DocumentOut(BaseModel):
     created_at: datetime
 
     @classmethod
-    def from_document(cls, doc) -> "DocumentOut":
+    def from_document(cls, doc, *, ingestion_job_status: str | None = None) -> "DocumentOut":
         return cls(
             id=doc.id,
             uploaded_by=getattr(doc, "owner_id", None),
             filename=doc.filename,
             content_type=doc.content_type,
             status=doc.status,
+            ingestion_job_status=ingestion_job_status,
             error_message=doc.error_message,
             file_size_bytes=doc.file_size_bytes,
             sha256=doc.sha256,

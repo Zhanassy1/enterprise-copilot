@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import uuid
 from datetime import datetime, timezone
+import io
+import re
 from pathlib import Path
 
 from fastapi import HTTPException, UploadFile
@@ -35,7 +37,13 @@ ALLOWED_CONTENT_TYPES = {
 
 
 def validate_upload(file: UploadFile) -> None:
-    suffix = Path(file.filename or "").suffix.lower()
+    raw_name = (file.filename or "").strip()
+    if not raw_name or raw_name.endswith((".", "/")):
+        raise HTTPException(status_code=400, detail="Invalid filename")
+    # Single allowed extension at end only (reject e.g. contract.pdf.exe)
+    if not re.match(r"^[^\\/]+\.(pdf|docx|txt)$", raw_name, flags=re.IGNORECASE):
+        raise HTTPException(status_code=400, detail="Filename must end with .pdf, .docx or .txt only")
+    suffix = Path(raw_name).suffix.lower()
     content_type = (file.content_type or "").lower().strip()
     if suffix not in ALLOWED_SUFFIXES:
         raise HTTPException(status_code=400, detail="Unsupported file extension. Allowed: pdf, docx, txt")
@@ -54,6 +62,21 @@ def validate_upload(file: UploadFile) -> None:
         raise HTTPException(status_code=400, detail="File content does not match PDF format")
     if suffix == ".docx" and not header.startswith(b"PK"):
         raise HTTPException(status_code=400, detail="File content does not match DOCX format")
+    if suffix == ".pdf":
+        try:
+            pos = file.file.tell()
+            file.file.seek(0)
+            blob = file.file.read() or b""
+            file.file.seek(pos)
+            from pypdf import PdfReader
+
+            reader = PdfReader(io.BytesIO(blob))
+            if getattr(reader, "is_encrypted", False) and reader.is_encrypted:
+                raise HTTPException(status_code=400, detail="Encrypted PDFs are not supported")
+        except HTTPException:
+            raise
+        except Exception:
+            raise HTTPException(status_code=400, detail="Invalid or unreadable PDF") from None
 
 
 class DocumentIngestionService:
@@ -62,15 +85,42 @@ class DocumentIngestionService:
         self.storage = storage
         self.indexer = DocumentIndexingService(db, storage)
 
-    def list_documents(self, workspace_id: uuid.UUID) -> list[Document]:
-        return self.db.scalars(
-            select(Document)
-            .where(
-                Document.workspace_id == workspace_id,
-                Document.deleted_at.is_(None),
-            )
-            .order_by(Document.created_at.desc())
+    def list_documents(self, workspace_id: uuid.UUID) -> list[tuple[Document, str | None]]:
+        docs = list(
+            self.db.scalars(
+                select(Document)
+                .where(
+                    Document.workspace_id == workspace_id,
+                    Document.deleted_at.is_(None),
+                )
+                .order_by(Document.created_at.desc())
+            ).all()
+        )
+        if not docs:
+            return []
+        doc_ids = [d.id for d in docs]
+        rows = self.db.execute(
+            select(IngestionJob.document_id, IngestionJob.status, IngestionJob.created_at)
+            .where(IngestionJob.document_id.in_(doc_ids), IngestionJob.workspace_id == workspace_id)
+            .order_by(IngestionJob.document_id, IngestionJob.created_at.desc())
         ).all()
+        latest: dict[uuid.UUID, str] = {}
+        for row in rows:
+            if row.document_id not in latest:
+                latest[row.document_id] = row.status
+        return [(d, latest.get(d.id)) for d in docs]
+
+    def latest_ingestion_job_status(self, workspace_id: uuid.UUID, document_id: uuid.UUID) -> str | None:
+        job = self.db.scalar(
+            select(IngestionJob)
+            .where(
+                IngestionJob.document_id == document_id,
+                IngestionJob.workspace_id == workspace_id,
+            )
+            .order_by(IngestionJob.created_at.desc())
+            .limit(1)
+        )
+        return job.status if job else None
 
     def get_document(self, workspace_id: uuid.UUID, document_id: uuid.UUID) -> Document | None:
         return self.db.scalar(
@@ -179,6 +229,14 @@ class DocumentIngestionService:
                 raise HTTPException(status_code=503, detail="Failed to enqueue ingestion task") from exc
             chunks_created = 0
         else:
+            if not settings.allow_sync_ingestion_for_dev:
+                self.storage.delete(stored.storage_key)
+                self.db.rollback()
+                raise HTTPException(
+                    status_code=503,
+                    detail="Async ingestion required: set INGESTION_ASYNC_ENABLED=1 and run the Celery worker, "
+                    "or for local development only set ALLOW_SYNC_INGESTION_FOR_DEV=1 with ENVIRONMENT=local",
+                )
             chunks_created = self.indexer.run(doc)
 
         self.db.commit()

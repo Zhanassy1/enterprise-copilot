@@ -3,7 +3,7 @@ from datetime import datetime, timedelta, timezone
 from fastapi import APIRouter, HTTPException
 from sqlalchemy import select, update
 
-from app.api.deps import DbDep
+from app.api.deps import CurrentUser, DbDep
 from app.core.config import settings
 from app.core.security import (
     create_access_token,
@@ -16,6 +16,7 @@ from app.models.security import EmailVerificationToken, PasswordResetToken, Refr
 from app.models.user import User
 from app.schemas.auth import (
     LoginIn,
+    LogoutIn,
     PasswordResetIn,
     RefreshTokenIn,
     RegisterIn,
@@ -92,12 +93,59 @@ def login(payload: LoginIn, db: DbDep) -> Token:
     return Token(access_token=create_access_token(str(user.id)), refresh_token=refresh_token)
 
 
+@router.post("/logout")
+def logout(payload: LogoutIn, db: DbDep) -> dict:
+    th = hash_opaque_token(payload.refresh_token)
+    row = db.scalar(select(RefreshToken).where(RefreshToken.token_hash == th, RefreshToken.revoked.is_(False)))
+    if row:
+        row.revoked = True
+        db.add(row)
+        write_audit_log(
+            db,
+            event_type="auth.logout",
+            workspace_id=None,
+            user_id=row.user_id,
+            target_type="refresh_token",
+            target_id=str(row.id),
+        )
+        db.commit()
+    return {"ok": True}
+
+
+@router.post("/logout-all")
+def logout_all(db: DbDep, user: CurrentUser) -> dict:
+    db.execute(update(RefreshToken).where(RefreshToken.user_id == user.id).values(revoked=True))
+    write_audit_log(
+        db,
+        event_type="auth.logout_all",
+        workspace_id=None,
+        user_id=user.id,
+        target_type="user",
+        target_id=str(user.id),
+    )
+    db.commit()
+    return {"ok": True}
+
+
 @router.post("/refresh", response_model=Token)
 def refresh_token(payload: RefreshTokenIn, db: DbDep) -> Token:
     token_hash = hash_opaque_token(payload.refresh_token)
-    token_row = db.scalar(select(RefreshToken).where(RefreshToken.token_hash == token_hash, RefreshToken.revoked.is_(False)))
+    token_row = db.scalar(select(RefreshToken).where(RefreshToken.token_hash == token_hash))
     if not token_row:
         raise HTTPException(status_code=401, detail="Invalid refresh token")
+    if token_row.revoked:
+        db.execute(update(RefreshToken).where(RefreshToken.user_id == token_row.user_id).values(revoked=True))
+        write_audit_log(
+            db,
+            event_type="auth.refresh_reuse_detected",
+            workspace_id=None,
+            user_id=token_row.user_id,
+            target_type="user",
+            target_id=str(token_row.user_id),
+            metadata={"action": "revoke_all_sessions"},
+        )
+        db.commit()
+        raise HTTPException(status_code=401, detail="Refresh token reuse detected; all sessions revoked")
     if token_row.expires_at < datetime.now(timezone.utc):
         raise HTTPException(status_code=401, detail="Refresh token expired")
 

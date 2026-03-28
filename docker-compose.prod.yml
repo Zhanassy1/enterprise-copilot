@@ -1,9 +1,16 @@
 # Production-oriented overrides: do not publish PostgreSQL or Redis to the host.
-# Usage: docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
+# Usage: docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
 # Set secrets via environment or a secrets manager — never commit real values.
+# ENVIRONMENT=production enables stricter API behavior (e.g. require X-Workspace-Id) and startup checks.
 
 services:
   db:
     ports: []
   redis:
     ports: []
+  api:
+    environment:
+      ENVIRONMENT: production
+  worker:
+    environment:
+      ENVIRONMENT: production

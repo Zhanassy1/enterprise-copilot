@@ -17,6 +17,9 @@ class Settings(BaseSettings):
 
     # Security
     secret_key: str = Field(default="dev-secret-change-me")
+    secret_key_min_length: int = Field(default=32, ge=16, le=256)
+    # When True and ENVIRONMENT=production, DATABASE_URL must indicate TLS (e.g. sslmode=require).
+    production_require_database_ssl: bool = Field(default=False)
     access_token_exp_minutes: int = Field(default=60 * 24)
     refresh_token_exp_days: int = Field(default=14, ge=1, le=365)
     email_verification_token_exp_minutes: int = Field(default=60 * 24, ge=5, le=60 * 24 * 30)
@@ -87,8 +90,12 @@ class Settings(BaseSettings):
     reranker_model_name: str = Field(default="cross-encoder/ms-marco-MiniLM-L-6-v2")
     reranker_top_n: int = Field(default=30, ge=2, le=200)
 
-    # Async ingestion pipeline
+    # Async ingestion pipeline (required in production; sync only for local dev when allowed)
     ingestion_async_enabled: bool = Field(default=False)
+    allow_sync_ingestion_for_dev: bool = Field(
+        default=False,
+        description="If True and ENVIRONMENT=local, allow sync indexing on upload when INGESTION_ASYNC_ENABLED=0.",
+    )
     ingestion_worker_poll_seconds: float = Field(default=2.0, ge=0.1, le=60.0)
     ingestion_max_attempts: int = Field(default=5, ge=1, le=50)
     ingestion_retry_backoff_seconds: int = Field(default=5, ge=1, le=300)
@@ -96,6 +103,12 @@ class Settings(BaseSettings):
     ingestion_task_soft_time_limit_seconds: int = Field(default=300, ge=5, le=7200)
     ingestion_task_time_limit_seconds: int = Field(default=360, ge=10, le=7200)
     ingestion_dead_letter_enabled: bool = Field(default=True)
+    document_retention_days_after_soft_delete: int = Field(
+        default=30,
+        ge=1,
+        le=3650,
+        description="Hard-delete soft-deleted documents older than this (maintenance task).",
+    )
     observability_metrics_enabled: bool = Field(default=True)
     sentry_dsn: str = Field(default="")
     sentry_traces_sample_rate: float = Field(default=0.0, ge=0.0, le=1.0)

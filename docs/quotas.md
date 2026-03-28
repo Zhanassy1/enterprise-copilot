@@ -23,6 +23,10 @@ Default plan limits are defined in code (`PLAN_LIMITS` / `PLAN_DOCUMENT_CAP` in 
 - Concurrent async ingestion jobs are capped per plan before enqueueing Celery work.
 - Quota violations emit a structured log line `event: quota.violation` (logger `app.usage`) for operators and SIEM routing.
 
+## HTTP rate limits (per plan)
+
+Global limits from settings (`rate_limit_*`) are scaled by **plan** via `effective_rate_limits_for_plan` (free < pro < team). When `X-Workspace-Id` is present, the API resolves the workspace plan (cached ~60s) and applies the scaled limits for IP / user / upload. Monthly usage quotas above remain the hard budget.
+
 ## API
 
 - `GET /api/v1/billing/usage` returns plan limits and current month totals for the active workspace.

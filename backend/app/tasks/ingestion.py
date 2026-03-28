@@ -15,6 +15,9 @@ from app.services.audit import write_audit_log
 from app.services.document_indexing import DocumentIndexingService, reindex_null_embeddings_for_workspace
 from app.services.storage import get_storage_service
 
+ingestion_terminal_failures_total = 0
+ingestion_retries_total = 0
+
 
 def _utcnow() -> datetime:
     return datetime.now(timezone.utc)
@@ -57,6 +60,8 @@ def ingest_document_task(
     ingestion_job_id: str,
     deduplication_key: str,
 ) -> dict:
+    global ingestion_retries_total, ingestion_terminal_failures_total
+
     db = SessionLocal()
     job: IngestionJob | None = None
     document: Document | None = None
@@ -68,6 +73,16 @@ def ingest_document_task(
         return {"status": "ignored", "reason": "invalid_ids"}
 
     try:
+        if settings.sentry_dsn:
+            try:
+                import sentry_sdk
+
+                sentry_sdk.set_tag("workspace_id", workspace_id)
+                sentry_sdk.set_tag("document_id", document_id)
+                sentry_sdk.set_tag("ingestion_job_id", ingestion_job_id)
+            except Exception:
+                pass
+
         job = db.scalar(select(IngestionJob).where(IngestionJob.id == job_uuid))
         if not job:
             return {"status": "ignored", "reason": "job_not_found"}
@@ -175,8 +190,10 @@ def ingest_document_task(
                     "error": error_text,
                 },
             )
+            ingestion_retries_total += 1
             raise self.retry(exc=exc, countdown=delay)
 
+        ingestion_terminal_failures_total += 1
         job.status = "failed"
         job.completed_at = now
         job.retry_after_seconds = None

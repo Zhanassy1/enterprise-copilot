@@ -16,6 +16,17 @@
 
 - Tune `rate_limit_*` in settings or identify abusive IPs/users via `X-Request-Id` + logs.
 - Workspace quota: see [quotas.md](quotas.md) and billing usage endpoint.
+- Plan-scaled HTTP limits use `X-Workspace-Id` + workspace plan (see quotas doc).
+
+## Spike 401 on `/auth/refresh`
+
+- Often expired refresh, reuse after rotation, or revoked session. Check audit for `auth.refresh_reuse_detected`.
+- Client should clear tokens and re-login; verify clock skew.
+
+## Queue not moving (ingestion stuck)
+
+- Confirm worker container/process and same `REDIS_URL` / queue name as API.
+- Inspect `GET /api/v1/ingestion/jobs?status=queued` and worker logs. Metrics expose `celery_ingestion_retries_total` / `celery_ingestion_terminal_failures_total` on `/metrics` when enabled.
 
 ## Metrics
 
@@ -30,3 +41,10 @@
 ## TLS / proxy
 
 - Terminate TLS in front of the API; set `TRUSTED_PROXY_IPS` when using `USE_FORWARDED_HEADERS`.
+
+## Backup, restore, migrations
+
+- **Postgres**: regular logical dumps (`pg_dump`) or managed backups; test restore to a staging DB quarterly.
+- **Object storage**: replicate bucket versioning / cross-region replication per your provider; for MinIO use site replication or external backup of volumes.
+- **Alembic**: deploy runs `alembic upgrade head`. For rollback, restore DB from backup taken before the migration, then deploy the previous app image — do not run `downgrade` on production without a DBA-approved plan.
+- **Smoke after migrate**: `GET /readyz` (`db: true`), upload a tiny doc, confirm ingestion reaches `ready`.

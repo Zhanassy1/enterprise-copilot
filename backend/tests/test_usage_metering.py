@@ -5,7 +5,7 @@ from unittest.mock import patch
 
 from fastapi import HTTPException
 
-from app.services.usage_metering import assert_quota, estimate_tokens, month_window
+from app.services.usage_metering import assert_quota, effective_rate_limits_for_plan, estimate_tokens, month_window
 
 
 class UsageMeteringTests(unittest.TestCase):
@@ -40,6 +40,12 @@ class UsageMeteringTests(unittest.TestCase):
 
         self.assertEqual(PLAN_LIMITS["free"]["max_concurrent_ingestion_jobs"], 2)
         self.assertEqual(PLAN_LIMITS["team"]["max_concurrent_ingestion_jobs"], 32)
+
+    def test_effective_rate_limits_scales_by_plan(self) -> None:
+        free = effective_rate_limits_for_plan("free")
+        team = effective_rate_limits_for_plan("team")
+        self.assertGreater(team["per_user"], free["per_user"])
+        self.assertGreater(team["per_ip"], free["per_ip"])
 
 
 if __name__ == "__main__":

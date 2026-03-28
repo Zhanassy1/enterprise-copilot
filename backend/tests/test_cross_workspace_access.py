@@ -15,7 +15,7 @@ from app.core.security import hash_password
 from app.db.session import SessionLocal
 from app.main import app
 from app.models.chat import ChatMessage, ChatSession
-from app.models.document import Document
+from app.models.document import Document, IngestionJob
 from app.models.user import User
 from app.models.workspace import Workspace, WorkspaceMember
 from app.services.workspace_service import ensure_default_roles
@@ -102,6 +102,19 @@ class CrossWorkspaceAccessTests(unittest.TestCase):
                 updated_at=datetime.now(timezone.utc),
             )
             db.add(doc_b)
+            db.flush()
+
+            job_b = IngestionJob(
+                id=uuid.uuid4(),
+                document_id=doc_b.id,
+                workspace_id=ws_b.id,
+                status="failed",
+                attempts=1,
+                deduplication_key=f"{ws_b.id}:{doc_b.id}",
+                celery_task_id=str(uuid.uuid4()),
+                error_message="seed",
+            )
+            db.add(job_b)
             db.flush()
 
             sess_b = ChatSession(
@@ -223,6 +236,72 @@ class CrossWorkspaceAccessTests(unittest.TestCase):
         bill_res = self.client.get("/api/v1/billing/usage", headers=headers)
         self.assertEqual(bill_res.status_code, 200, bill_res.text)
         self.assertIn("plan_slug", bill_res.json())
+
+    def test_user_cannot_get_or_download_foreign_document(self) -> None:
+        ua, _ub, ws_a, _ws_b, doc_b_id, _sess_b = self._seed_two_workspaces()
+        db = SessionLocal()
+        try:
+            user_a = db.scalar(select(User).where(User.id == ua))
+            assert user_a is not None
+            email_a = user_a.email
+        finally:
+            db.close()
+        login = self.client.post(
+            "/api/v1/auth/login",
+            json={"email": email_a, "password": "CrossWsTest1!"},
+        )
+        self.assertEqual(login.status_code, 200, login.text)
+        token = login.json()["access_token"]
+        headers = {"Authorization": f"Bearer {token}", "X-Workspace-Id": str(ws_a)}
+        get_res = self.client.get(f"/api/v1/documents/{doc_b_id}", headers=headers)
+        self.assertEqual(get_res.status_code, 404, get_res.text)
+        dl_res = self.client.get(f"/api/v1/documents/{doc_b_id}/download", headers=headers, follow_redirects=False)
+        self.assertEqual(dl_res.status_code, 404, dl_res.text)
+
+    def test_user_cannot_read_foreign_document_ingestion(self) -> None:
+        ua, _ub, ws_a, _ws_b, doc_b_id, _sess_b = self._seed_two_workspaces()
+        db = SessionLocal()
+        try:
+            user_a = db.scalar(select(User).where(User.id == ua))
+            assert user_a is not None
+            email_a = user_a.email
+        finally:
+            db.close()
+        login = self.client.post(
+            "/api/v1/auth/login",
+            json={"email": email_a, "password": "CrossWsTest1!"},
+        )
+        self.assertEqual(login.status_code, 200, login.text)
+        token = login.json()["access_token"]
+        headers = {"Authorization": f"Bearer {token}", "X-Workspace-Id": str(ws_a)}
+        ing_res = self.client.get(f"/api/v1/documents/{doc_b_id}/ingestion", headers=headers)
+        self.assertEqual(ing_res.status_code, 404, ing_res.text)
+
+    def test_ingestion_jobs_list_scoped_no_foreign_job_ids(self) -> None:
+        ua, _ub, ws_a, ws_b, _doc_b, _sess_b = self._seed_two_workspaces()
+        db = SessionLocal()
+        try:
+            user_a = db.scalar(select(User).where(User.id == ua))
+            assert user_a is not None
+            email_a = user_a.email
+            jobs_b = db.scalars(
+                select(IngestionJob).where(IngestionJob.workspace_id == ws_b)
+            ).all()
+            job_ids_b = {str(j.id) for j in jobs_b}
+        finally:
+            db.close()
+        login = self.client.post(
+            "/api/v1/auth/login",
+            json={"email": email_a, "password": "CrossWsTest1!"},
+        )
+        self.assertEqual(login.status_code, 200, login.text)
+        token = login.json()["access_token"]
+        headers = {"Authorization": f"Bearer {token}", "X-Workspace-Id": str(ws_a)}
+        res = self.client.get("/api/v1/ingestion/jobs", headers=headers)
+        self.assertEqual(res.status_code, 200, res.text)
+        for row in res.json():
+            self.assertNotIn(row["id"], job_ids_b)
+            self.assertEqual(row["workspace_id"], str(ws_a))
 
 
 if __name__ == "__main__":

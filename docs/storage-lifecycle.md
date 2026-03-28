@@ -13,7 +13,7 @@ Enable S3 when running multiple API replicas or when disks should not be the sou
 
 ## Retention and soft delete
 
-- `Document` rows support soft delete via `deleted_at` where implemented; periodic cleanup can be driven by Celery beat (`maintenance` tasks) aligned with billing and legal retention — configure in your deployment.
+- `Document` rows use soft delete via `deleted_at`. Celery task `maintenance.purge_soft_deleted_documents` removes rows (and storage blobs) older than `DOCUMENT_RETENTION_DAYS_AFTER_SOFT_DELETE` (default 30). Schedule it with Celery beat or run manually in ops.
 
 ## Antivirus
 

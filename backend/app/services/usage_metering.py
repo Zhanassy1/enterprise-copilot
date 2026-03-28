@@ -58,6 +58,24 @@ EVENT_UPLOAD_BYTES = "document_upload_bytes"
 EVENT_RERANK = "rerank_pass"
 
 
+def plan_rate_multiplier(plan_slug: str) -> float:
+    """Scale global HTTP rate limits by billing plan (best-effort; monthly quotas remain authoritative)."""
+    return {"free": 0.75, "pro": 1.0, "team": 2.0}.get((plan_slug or "free").lower(), 1.0)
+
+
+def effective_rate_limits_for_plan(plan_slug: str) -> dict[str, int]:
+    """HTTP rate limits from settings × plan multiplier (used by API middleware)."""
+    from app.core.config import settings
+
+    m = plan_rate_multiplier(plan_slug)
+    return {
+        "per_user": max(10, int(settings.rate_limit_per_user_per_minute * m)),
+        "per_ip": max(10, int(settings.rate_limit_per_ip_per_minute * m)),
+        "upload_user": max(3, int(settings.rate_limit_upload_per_user_per_minute * m)),
+        "auth_ip": max(3, int(settings.rate_limit_auth_per_ip_per_minute * m)),
+    }
+
+
 def month_window(now: datetime | None = None) -> tuple[datetime, datetime]:
     dt = now or datetime.now(timezone.utc)
     start = dt.replace(day=1, hour=0, minute=0, second=0, microsecond=0)

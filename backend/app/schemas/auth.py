@@ -31,6 +31,10 @@ class RefreshTokenIn(BaseModel):
     refresh_token: str
 
 
+class LogoutIn(BaseModel):
+    refresh_token: str
+
+
 class RequestPasswordResetIn(BaseModel):
     email: EmailStr
 

@@ -50,18 +50,42 @@ def _redis_url_missing_password_in_production(redis_url: str) -> str | None:
     return None
 
 
+def _database_url_requires_ssl(database_url: str) -> bool:
+    low = (database_url or "").lower()
+    return "sslmode=require" in low or "ssl=true" in low or "sslmode=verify-full" in low
+
+
 def validate_production_settings(settings: Settings) -> None:
     """Raise RuntimeError when production configuration is unsafe or incomplete."""
     env = settings.environment.lower().strip()
     if env != "production":
         return
 
+    sk = (settings.secret_key or "").strip()
+    if not sk:
+        raise RuntimeError("Production configuration invalid: SECRET_KEY is empty")
     if settings.secret_key == "dev-secret-change-me":
         raise RuntimeError("Production configuration invalid: secret_key must not use default dev value")
+    if len(sk) < int(settings.secret_key_min_length):
+        raise RuntimeError(
+            f"Production configuration invalid: SECRET_KEY must be at least {settings.secret_key_min_length} characters"
+        )
 
     err = _database_url_looks_dev(settings.database_url)
     if err:
         raise RuntimeError(f"Production configuration invalid: {err}")
+
+    if settings.production_require_database_ssl and not _database_url_requires_ssl(settings.database_url):
+        raise RuntimeError(
+            "Production configuration invalid: enable TLS for DATABASE_URL "
+            "(e.g. add ?sslmode=require) or set PRODUCTION_REQUIRE_DATABASE_SSL=0 for non-TLS staging only"
+        )
+
+    if not settings.ingestion_async_enabled:
+        raise RuntimeError(
+            "Production configuration invalid: INGESTION_ASYNC_ENABLED must be true in production "
+            "(ingestion runs in Celery worker only)"
+        )
 
     urls_to_check: list[tuple[str, str]] = [("REDIS_URL", settings.redis_url)]
     broker = (settings.celery_broker_url or "").strip()
