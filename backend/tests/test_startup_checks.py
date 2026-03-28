@@ -54,6 +54,20 @@ class StartupChecksTests(unittest.TestCase):
         )
         validate_production_settings(s)
 
+    def test_production_rejects_default_dev_secret_key(self) -> None:
+        """startup_checks.validate_production_settings — app/core/startup_checks.py lines 67-68."""
+        s = Settings(
+            environment="production",
+            secret_key="dev-secret-change-me",
+            database_url="postgresql+psycopg://u:p@db.example.com:5432/app?sslmode=require",
+            redis_url="redis://:somesecret@redis.example.com:6379/0",
+            ingestion_async_enabled=True,
+            allow_sync_ingestion_for_dev=False,
+        )
+        with self.assertRaises(RuntimeError) as ctx:
+            validate_production_settings(s)
+        self.assertIn("default dev", str(ctx.exception).lower())
+
     def test_production_rejects_empty_secret(self) -> None:
         s = Settings(
             environment="production",

@@ -12,7 +12,7 @@
 | 4 | Startup fail-fast (`startup_checks`), unit tests | **Done** |
 | **Этап 3** | | |
 | 5 | Audit роутов и Celery (`docs/WORKSPACE_ROUTING.md`) | **Done** |
-| 6 | Cross-workspace integration tests + unit ingestion `workspace_mismatch` | **Partial** (интеграция search по chunk isolation — опирается на `SearchService` + ручной прогон; worker покрыт unit) |
+| 6 | Cross-workspace integration tests + unit ingestion `workspace_mismatch` | **Done** — `tests/test_cross_workspace_access.py` + `test_ingestion_task_unit.py` (локально/CI: `RUN_INTEGRATION_TESTS=1`, `docker compose --profile test up db_test`, см. README Tests) |
 | **Этап 4** | | |
 | 7 | Async ingestion production path; sync только dev (`ALLOW_SYNC_INGESTION_FOR_DEV`) | **Done** |
 | 8 | Job/document статусы, API ingestion, `/jobs` UI, retry/backoff | **Done** |
@@ -21,7 +21,7 @@
 | 10 | Usage ledger (`usage_events`, billing stubs) | **Done** |
 | **Этап 6** | | |
 | 11 | Refresh tokens, rotation, logout, reuse detection | **Done** |
-| 12 | Email verification, password reset, revoke refresh on reset | **Partial** (есть токены и flow; e2e email зависит от провайдера) |
+| 12 | Email verification, password reset, revoke refresh on reset | **Partial** — unit `test_password_reset_revokes_refresh.py`; integration `test_api_integration.py` (refresh rotation, reuse, logout, logout-all); e2e доставка писем зависит от SMTP |
 | 13 | Upload validation (MIME, sniffing, size, pages, encrypted PDF, double ext) | **Done** |
 | 14 | Rate limits по группам (auth, upload, RAG), plan-aware | **Done** |
 | **Этап 7** | | |

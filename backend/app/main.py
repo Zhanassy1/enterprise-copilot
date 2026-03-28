@@ -1,5 +1,6 @@
 import json
 import logging
+import os
 import time
 import uuid
 from collections import defaultdict
@@ -206,59 +207,62 @@ def create_app() -> FastAPI:
                 return _finish(JSONResponse(status_code=403, content={"detail": "CSRF validation failed"}, headers={"X-Request-Id": request_id}))
         path = request.url.path
         method_u = request.method.upper()
-        if method_u == "POST" and path in {
-            f"{settings.api_v1_prefix}/auth/login",
-            f"{settings.api_v1_prefix}/auth/register",
-            f"{settings.api_v1_prefix}/auth/refresh",
-        }:
-            if is_rate_limited("auth_ip", ip, limit=int(rl["auth_ip"])):
-                # #region agent log
-                _dbg515("H4", "main.py:middleware", "rate_limit_auth", {"path": path})
-                # #endregion
-                return _finish(
-                    JSONResponse(
-                        status_code=429,
-                        content={"detail": "Rate limit exceeded for authentication"},
-                        headers={"X-Request-Id": request_id},
+        # Integration suite issues many auth requests from one IP; skip Redis-less in-memory limits for that env only.
+        _skip_rl_for_integration = os.environ.get("RUN_INTEGRATION_TESTS") == "1"
+        if not _skip_rl_for_integration:
+            if method_u == "POST" and path in {
+                f"{settings.api_v1_prefix}/auth/login",
+                f"{settings.api_v1_prefix}/auth/register",
+                f"{settings.api_v1_prefix}/auth/refresh",
+            }:
+                if is_rate_limited("auth_ip", ip, limit=int(rl["auth_ip"])):
+                    # #region agent log
+                    _dbg515("H4", "main.py:middleware", "rate_limit_auth", {"path": path})
+                    # #endregion
+                    return _finish(
+                        JSONResponse(
+                            status_code=429,
+                            content={"detail": "Rate limit exceeded for authentication"},
+                            headers={"X-Request-Id": request_id},
+                        )
                     )
-                )
-        if method_u == "POST" and path == f"{settings.api_v1_prefix}/documents/upload" and user_token:
-            if is_rate_limited("upload_user", user_token, limit=int(rl["upload_user"])):
-                # #region agent log
-                _dbg515("H4", "main.py:middleware", "rate_limit_upload", {"path": path})
-                # #endregion
-                return _finish(
-                    JSONResponse(
-                        status_code=429,
-                        content={"detail": "Rate limit exceeded for uploads"},
-                        headers={"X-Request-Id": request_id},
+            if method_u == "POST" and path == f"{settings.api_v1_prefix}/documents/upload" and user_token:
+                if is_rate_limited("upload_user", user_token, limit=int(rl["upload_user"])):
+                    # #region agent log
+                    _dbg515("H4", "main.py:middleware", "rate_limit_upload", {"path": path})
+                    # #endregion
+                    return _finish(
+                        JSONResponse(
+                            status_code=429,
+                            content={"detail": "Rate limit exceeded for uploads"},
+                            headers={"X-Request-Id": request_id},
+                        )
                     )
-                )
 
-        _pfx = settings.api_v1_prefix.rstrip("/")
-        if method_u == "POST" and user_token and (
-            path == f"{_pfx}/search"
-            or ("/chat/sessions/" in path and path.endswith("/messages"))
-        ):
-            if is_rate_limited("rag_user", user_token, limit=int(rl["rag_user"])):
-                return _finish(
-                    JSONResponse(
-                        status_code=429,
-                        content={"detail": "Rate limit exceeded for search/chat (RAG)"},
-                        headers={"X-Request-Id": request_id},
+            _pfx = settings.api_v1_prefix.rstrip("/")
+            if method_u == "POST" and user_token and (
+                path == f"{_pfx}/search"
+                or ("/chat/sessions/" in path and path.endswith("/messages"))
+            ):
+                if is_rate_limited("rag_user", user_token, limit=int(rl["rag_user"])):
+                    return _finish(
+                        JSONResponse(
+                            status_code=429,
+                            content={"detail": "Rate limit exceeded for search/chat (RAG)"},
+                            headers={"X-Request-Id": request_id},
+                        )
                     )
-                )
 
-        if is_rate_limited("ip", ip, limit=int(rl["per_ip"])):
-            # #region agent log
-            _dbg515("H4", "main.py:middleware", "rate_limit_ip", {"path": path})
-            # #endregion
-            return _finish(JSONResponse(status_code=429, content={"detail": "Rate limit exceeded for IP"}, headers={"X-Request-Id": request_id}))
-        if user_token and is_rate_limited("user", user_token, limit=int(rl["per_user"])):
-            # #region agent log
-            _dbg515("H4", "main.py:middleware", "rate_limit_user", {"path": path})
-            # #endregion
-            return _finish(JSONResponse(status_code=429, content={"detail": "Rate limit exceeded for user"}, headers={"X-Request-Id": request_id}))
+            if is_rate_limited("ip", ip, limit=int(rl["per_ip"])):
+                # #region agent log
+                _dbg515("H4", "main.py:middleware", "rate_limit_ip", {"path": path})
+                # #endregion
+                return _finish(JSONResponse(status_code=429, content={"detail": "Rate limit exceeded for IP"}, headers={"X-Request-Id": request_id}))
+            if user_token and is_rate_limited("user", user_token, limit=int(rl["per_user"])):
+                # #region agent log
+                _dbg515("H4", "main.py:middleware", "rate_limit_user", {"path": path})
+                # #endregion
+                return _finish(JSONResponse(status_code=429, content={"detail": "Rate limit exceeded for user"}, headers={"X-Request-Id": request_id}))
 
         t0 = time.perf_counter()
         # #region agent log

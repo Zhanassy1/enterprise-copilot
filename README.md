@@ -136,12 +136,24 @@ TLS и доверие к `X-Forwarded-*` — на reverse proxy; см. [docs/sec
 
 ## Tests
 
+**Unit (без Postgres):** из `backend/` — `py -3 -m unittest discover -s tests -v` — интеграционные классы будут *skipped*.
+
+**Integration (PostgreSQL):** поднять тестовую БД и прогнать весь suite (cross-workspace и API flow **не** skipped):
+
 ```bash
-cd backend
+# из корня репозитория — контейнер db_test, порт хоста 5434 (см. docker-compose.yml profile test)
+docker compose --profile test up -d db_test
+
+# из backend/
+set DATABASE_URL=postgresql+psycopg://postgres:postgres@127.0.0.1:5434/enterprise_copilot_test
+set RUN_INTEGRATION_TESTS=1
+py -3 -m alembic upgrade head
 py -3 -m unittest discover -s tests -v
 ```
 
-Интеграционные (PostgreSQL): `RUN_INTEGRATION_TESTS=1` — см. `tests/test_api_integration.py`, `tests/test_cross_workspace_access.py`. Скрипт: `scripts/test-integration.ps1`.
+Windows: `scripts/test-integration.ps1` делает то же (alembic + полный discover). CI: job `backend-integration` в `.github/workflows/ci.yml` — сервис Postgres на `:5433`, `RUN_INTEGRATION_TESTS=1`, полный `unittest discover`.
+
+При `RUN_INTEGRATION_TESTS=1` middleware **не применяет** in-memory rate limits (много логинов с одного IP в одном процессе) — см. `backend/app/main.py` (`_skip_rl_for_integration`).
 
 ```bash
 cd frontend

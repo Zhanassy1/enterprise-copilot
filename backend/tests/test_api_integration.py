@@ -20,6 +20,16 @@ class ApiFlowIntegrationTests(unittest.TestCase):
     def setUpClass(cls) -> None:
         cls.client = TestClient(app)
 
+    def _headers_with_workspace(self, access_token: str) -> dict[str, str]:
+        """Explicit tenant: GET /workspaces then X-Workspace-Id (production-style)."""
+        h = {"Authorization": f"Bearer {access_token}"}
+        ws_res = self.client.get("/api/v1/workspaces", headers=h)
+        self.assertEqual(ws_res.status_code, 200, ws_res.text)
+        workspaces = ws_res.json()
+        self.assertGreaterEqual(len(workspaces), 1, ws_res.text)
+        h["X-Workspace-Id"] = str(workspaces[0]["id"])
+        return h
+
     def test_register_login_upload_search_delete_flow(self) -> None:
         email = f"it_{uuid.uuid4().hex[:10]}@example.com"
         password = "StrongPass123!"
@@ -39,7 +49,7 @@ class ApiFlowIntegrationTests(unittest.TestCase):
         )
         self.assertEqual(login_res.status_code, 200, login_res.text)
         token = login_res.json()["access_token"]
-        headers = {"Authorization": f"Bearer {token}"}
+        headers = self._headers_with_workspace(token)
 
         file_bytes = (
             b"Contract #A-2026\n"
@@ -120,6 +130,46 @@ class ApiFlowIntegrationTests(unittest.TestCase):
         self.assertNotEqual(rt1, rt2)
         bad = self.client.post("/api/v1/auth/refresh", json={"refresh_token": rt1})
         self.assertEqual(bad.status_code, 401, bad.text)
+
+    def test_logout_revokes_refresh_token(self) -> None:
+        """auth.py logout + refresh: revoked token cannot refresh."""
+        email = f"lo_{uuid.uuid4().hex[:10]}@example.com"
+        password = "StrongPass123!"
+        reg = self.client.post(
+            "/api/v1/auth/register",
+            json={"email": email, "password": password, "full_name": "Logout User"},
+        )
+        self.assertEqual(reg.status_code, 200, reg.text)
+        login = self.client.post("/api/v1/auth/login", json={"email": email, "password": password})
+        self.assertEqual(login.status_code, 200, login.text)
+        rt = login.json()["refresh_token"]
+        out = self.client.post("/api/v1/auth/logout", json={"refresh_token": rt})
+        self.assertEqual(out.status_code, 200, out.text)
+        ref = self.client.post("/api/v1/auth/refresh", json={"refresh_token": rt})
+        self.assertEqual(ref.status_code, 401, ref.text)
+
+    def test_logout_all_revokes_all_refresh_tokens(self) -> None:
+        """auth.py logout-all: both login sessions invalidated."""
+        email = f"la_{uuid.uuid4().hex[:10]}@example.com"
+        password = "StrongPass123!"
+        reg = self.client.post(
+            "/api/v1/auth/register",
+            json={"email": email, "password": password, "full_name": "Logout All User"},
+        )
+        self.assertEqual(reg.status_code, 200, reg.text)
+        login1 = self.client.post("/api/v1/auth/login", json={"email": email, "password": password})
+        self.assertEqual(login1.status_code, 200, login1.text)
+        rt_a = login1.json()["refresh_token"]
+        access_a = login1.json()["access_token"]
+        login2 = self.client.post("/api/v1/auth/login", json={"email": email, "password": password})
+        self.assertEqual(login2.status_code, 200, login2.text)
+        rt_b = login2.json()["refresh_token"]
+
+        hdr = {"Authorization": f"Bearer {access_a}"}
+        out = self.client.post("/api/v1/auth/logout-all", headers=hdr)
+        self.assertEqual(out.status_code, 200, out.text)
+        self.assertEqual(self.client.post("/api/v1/auth/refresh", json={"refresh_token": rt_a}).status_code, 401)
+        self.assertEqual(self.client.post("/api/v1/auth/refresh", json={"refresh_token": rt_b}).status_code, 401)
 
 
 if __name__ == "__main__":
