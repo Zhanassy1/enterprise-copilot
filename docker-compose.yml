@@ -6,7 +6,8 @@ services:
       POSTGRES_PASSWORD: postgres
       POSTGRES_DB: enterprise_copilot
     ports:
-      - "5432:5432"
+      # 5433 на хосте — если локальный Postgres уже слушает :5432
+      - "5433:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
@@ -23,7 +24,7 @@ services:
       POSTGRES_PASSWORD: postgres
       POSTGRES_DB: enterprise_copilot_test
     ports:
-      - "5433:5432"
+      - "5434:5432"
     volumes:
       - pgdata_test:/var/lib/postgresql/data
     healthcheck:
@@ -35,7 +36,8 @@ services:
   redis:
     image: redis:7-alpine
     ports:
-      - "6379:6379"
+      # 6380 на хосте — чтобы не конфликтовать с уже запущенным Redis на :6379
+      - "6380:6379"
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 5s
@@ -46,14 +48,15 @@ services:
     build:
       context: ./backend
     env_file:
-      - ./backend/.env
+      - ./backend/.env.docker
     environment:
       DATABASE_URL: postgresql+psycopg://postgres:postgres@db:5432/enterprise_copilot
       REDIS_URL: redis://redis:6379/0
       INGESTION_ASYNC_ENABLED: "1"
       CORS_ORIGINS: http://localhost:3000,http://127.0.0.1:3000,http://localhost:5173,http://127.0.0.1:5173
     ports:
-      - "8000:8000"
+      # Если :8000 занят: в .env в корне проекта задай HOST_API_PORT=8001 (или export перед docker compose)
+      - "${HOST_API_PORT:-8000}:8000"
     volumes:
       - ./backend:/app
       - uploads:/app/data/uploads
@@ -72,7 +75,7 @@ services:
     build:
       context: ./backend
     env_file:
-      - ./backend/.env
+      - ./backend/.env.docker
     environment:
       DATABASE_URL: postgresql+psycopg://postgres:postgres@db:5432/enterprise_copilot
       REDIS_URL: redis://redis:6379/0
@@ -93,7 +96,7 @@ services:
     build:
       context: ./frontend
       args:
-        NEXT_PUBLIC_API_BASE: http://localhost:8000/api/v1
+        NEXT_PUBLIC_API_BASE: http://localhost:${HOST_API_PORT:-8000}/api/v1
     ports:
       - "3000:3000"
     depends_on:

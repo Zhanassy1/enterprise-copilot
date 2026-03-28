@@ -3,6 +3,7 @@ import logging
 import time
 import uuid
 from collections import defaultdict
+from pathlib import Path
 
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse, Response
@@ -19,6 +20,34 @@ from app.services.rate_limiter import is_rate_limited
 logger = logging.getLogger("app.request")
 _metrics_counter: dict[str, int] = defaultdict(int)
 _metrics_latency_sum_ms: dict[str, float] = defaultdict(float)
+
+# #region agent log
+_w_main = Path(__file__).resolve()
+# Repo root (local): .../enterprise-copilot. In Docker image: parents[2] may be "/" — then use /app (backend mount).
+_DBG_LOG = (
+    _w_main.parents[1] / "debug-515011.log"
+    if str(_w_main.parents[2]) in ("/", "")
+    else _w_main.parents[2] / "debug-515011.log"
+)
+
+
+def _dbg515(hypothesis_id: str, location: str, message: str, data: dict) -> None:
+    try:
+        payload = {
+            "sessionId": "515011",
+            "timestamp": int(time.time() * 1000),
+            "hypothesisId": hypothesis_id,
+            "location": location,
+            "message": message,
+            "data": data,
+        }
+        with _DBG_LOG.open("a", encoding="utf-8") as f:
+            f.write(json.dumps(payload, ensure_ascii=False) + "\n")
+    except Exception:
+        pass
+
+
+# #endregion
 
 
 def _validate_runtime_configuration() -> None:
@@ -126,6 +155,9 @@ def create_app() -> FastAPI:
             header_csrf = request.headers.get("X-CSRF-Token") or ""
             session_cookie = request.cookies.get("session") or ""
             if session_cookie and (not cookie_csrf or not header_csrf or cookie_csrf != header_csrf):
+                # #region agent log
+                _dbg515("H4", "main.py:middleware", "csrf_block", {"path": path})
+                # #endregion
                 return JSONResponse(status_code=403, content={"detail": "CSRF validation failed"}, headers={"X-Request-Id": request_id})
         path = request.url.path
         method_u = request.method.upper()
@@ -135,6 +167,9 @@ def create_app() -> FastAPI:
             f"{settings.api_v1_prefix}/auth/refresh",
         }:
             if is_rate_limited("auth_ip", ip, limit=int(settings.rate_limit_auth_per_ip_per_minute)):
+                # #region agent log
+                _dbg515("H4", "main.py:middleware", "rate_limit_auth", {"path": path})
+                # #endregion
                 return JSONResponse(
                     status_code=429,
                     content={"detail": "Rate limit exceeded for authentication"},
@@ -142,6 +177,9 @@ def create_app() -> FastAPI:
                 )
         if method_u == "POST" and path == f"{settings.api_v1_prefix}/documents/upload" and user_token:
             if is_rate_limited("upload_user", user_token, limit=int(settings.rate_limit_upload_per_user_per_minute)):
+                # #region agent log
+                _dbg515("H4", "main.py:middleware", "rate_limit_upload", {"path": path})
+                # #endregion
                 return JSONResponse(
                     status_code=429,
                     content={"detail": "Rate limit exceeded for uploads"},
@@ -149,8 +187,14 @@ def create_app() -> FastAPI:
                 )
 
         if is_rate_limited("ip", ip, limit=int(settings.rate_limit_per_ip_per_minute)):
+            # #region agent log
+            _dbg515("H4", "main.py:middleware", "rate_limit_ip", {"path": path})
+            # #endregion
             return JSONResponse(status_code=429, content={"detail": "Rate limit exceeded for IP"}, headers={"X-Request-Id": request_id})
         if user_token and is_rate_limited("user", user_token, limit=int(settings.rate_limit_per_user_per_minute)):
+            # #region agent log
+            _dbg515("H4", "main.py:middleware", "rate_limit_user", {"path": path})
+            # #endregion
             return JSONResponse(status_code=429, content={"detail": "Rate limit exceeded for user"}, headers={"X-Request-Id": request_id})
 
         t0 = time.perf_counter()
@@ -164,6 +208,21 @@ def create_app() -> FastAPI:
         # #endregion
         response = await call_next(request)
         elapsed_ms = (time.perf_counter() - t0) * 1000.0
+        # #region agent log
+        _api_prefix = settings.api_v1_prefix
+        _wrong_api_guess = path.startswith(_api_prefix) is False and path not in ("/healthz", "/readyz", "/favicon.ico", "/metrics") and not path.startswith("/docs") and path != "/openapi.json"
+        _dbg515(
+            "H3_H4",
+            "main.py:middleware",
+            "request_complete",
+            {
+                "path": path,
+                "status": response.status_code,
+                "method": request.method,
+                "maybe_missing_api_prefix": bool(_wrong_api_guess and path != "/"),
+            },
+        )
+        # #endregion
         _metrics_counter[f"requests_total:{request.method}:{path}:{response.status_code}"] += 1
         _metrics_latency_sum_ms[f"latency_ms_sum:{request.method}:{path}"] += elapsed_ms
         response.headers["X-Request-Id"] = request_id
@@ -205,8 +264,23 @@ def create_app() -> FastAPI:
             return JSONResponse(status_code=503, content={"detail": "Database unavailable"})
         return JSONResponse(status_code=500, content={"detail": "Internal Server Error"})
 
+    @app.get("/")
+    def root() -> dict:
+        """Чтобы в браузере по http://host:8000/ не было «страница не найдена» без /docs."""
+        return {
+            "service": settings.app_name,
+            "docs": "/docs",
+            "openapi": "/openapi.json",
+            "healthz": "/healthz",
+            "readyz": "/readyz",
+            "api": settings.api_v1_prefix,
+        }
+
     @app.get("/healthz")
     def healthz() -> dict:
+        # #region agent log
+        _dbg515("H1", "main.py:healthz", "healthz_ok", {})
+        # #endregion
         return {"ok": True}
 
     @app.get("/favicon.ico", include_in_schema=False)
@@ -219,8 +293,14 @@ def create_app() -> FastAPI:
         try:
             with engine.connect() as conn:
                 conn.execute(text("SELECT 1"))
+            # #region agent log
+            _dbg515("H2", "main.py:readyz", "db_ok", {})
+            # #endregion
             return {"ok": True, "db": True}
         except OperationalError as e:
+            # #region agent log
+            _dbg515("H2", "main.py:readyz", "db_fail", {"msg": str(e)[:200]})
+            # #endregion
             debug_log(
                 hypothesisId="H_readyz",
                 location="backend/app/main.py:readyz",
@@ -248,8 +328,26 @@ def create_app() -> FastAPI:
         body = "\n".join(lines) + ("\n" if lines else "")
         return Response(content=body, media_type="text/plain; version=0.0.4; charset=utf-8")
 
+    # #region agent log
+    _dbg515(
+        "H5",
+        "main.py:create_app",
+        "create_app_finished",
+        {
+            "environment": settings.environment,
+            "api_v1_prefix": settings.api_v1_prefix,
+            "csrf_enabled": bool(settings.csrf_protection_enabled),
+        },
+    )
+    # #endregion
     return app
 
 
-app = create_app()
+# #region agent log
+try:
+    app = create_app()
+except Exception as _e:
+    _dbg515("H5", "main.py:module", "create_app_failed", {"type": type(_e).__name__, "msg": str(_e)[:500]})
+    raise
+# #endregion
 

@@ -40,8 +40,8 @@ if ($EnableAsyncIngestion) {
     Write-Host "Async ingestion enabled: starting Celery worker in separate PowerShell window"
     $workerCmd = @"
 Set-Location '$Backend'
-`$env:DATABASE_URL='postgresql+psycopg://postgres:postgres@localhost:5432/enterprise_copilot'
-`$env:REDIS_URL='redis://localhost:6379/0'
+`$env:DATABASE_URL='postgresql+psycopg://postgres:postgres@localhost:5433/enterprise_copilot'
+`$env:REDIS_URL='redis://localhost:6380/0'
 `$env:INGESTION_ASYNC_ENABLED='1'
 & '$Py' -m celery -A app.celery_app.celery_app worker --loglevel=INFO --queues=ingestion
 "@
