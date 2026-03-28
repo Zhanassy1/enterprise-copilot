@@ -1,4 +1,5 @@
 import { getToken, clearToken } from "./auth";
+import { getWorkspaceId } from "./workspace";
 
 const API_BASE =
   process.env.NEXT_PUBLIC_API_BASE?.trim() || "http://localhost:8000/api/v1";
@@ -35,6 +36,8 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     headers.set("Content-Type", "application/json");
   }
   if (token) headers.set("Authorization", `Bearer ${token}`);
+  const ws = getWorkspaceId();
+  if (ws) headers.set("X-Workspace-Id", ws);
 
   const res = await fetch(`${API_BASE}${path}`, { ...init, headers });
   const txt = await res.text();
@@ -74,8 +77,64 @@ export interface Token {
 
 export interface DocumentOut {
   id: string;
+  uploaded_by?: string | null;
   filename: string;
   content_type?: string | null;
+  status?: string;
+  error_message?: string | null;
+  created_at: string;
+}
+
+export interface WorkspaceOut {
+  id: string;
+  name: string;
+  role: string;
+}
+
+export interface BillingLedgerOut {
+  id: string;
+  workspace_id: string;
+  external_id: string;
+  event_type: string;
+  amount_cents: number;
+  currency: string;
+  created_at: string;
+}
+
+export interface UsageSummaryOut {
+  plan_slug: string;
+  monthly_request_limit: number;
+  monthly_token_limit: number;
+  monthly_upload_bytes_limit: number;
+  max_documents: number | null;
+  usage_requests_month: number;
+  usage_tokens_month: number;
+  usage_bytes_month: number;
+  document_count: number;
+}
+
+export interface IngestionJobOut {
+  id: string;
+  document_id: string;
+  workspace_id: string;
+  status: string;
+  attempts: number;
+  deduplication_key: string;
+  celery_task_id?: string | null;
+  error_message?: string | null;
+  retry_after_seconds?: number | null;
+  dead_lettered_at?: string | null;
+  created_at: string;
+  completed_at?: string | null;
+}
+
+export interface AuditLogOut {
+  id: string;
+  event_type: string;
+  user_id?: string | null;
+  target_type?: string | null;
+  target_id?: string | null;
+  metadata_json?: string | null;
   created_at: string;
 }
 
@@ -155,11 +214,15 @@ export const api = {
 
   uploadDocument: async (file: File): Promise<DocumentIngestOut> => {
     const token = getToken();
+    const ws = getWorkspaceId();
     const fd = new FormData();
     fd.append("file", file);
+    const hdr: Record<string, string> = {};
+    if (token) hdr.Authorization = `Bearer ${token}`;
+    if (ws) hdr["X-Workspace-Id"] = ws;
     const res = await fetch(`${API_BASE}/documents/upload`, {
       method: "POST",
-      headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+      headers: Object.keys(hdr).length ? hdr : undefined,
       body: fd,
     });
     const txt = await res.text();
@@ -175,10 +238,31 @@ export const api = {
     request<DocumentSummaryOut>(`/documents/${id}/summary`),
 
   reindexEmbeddings: () =>
-    request<{ updated: number }>("/documents/reindex-embeddings", {
-      method: "POST",
-      body: "{}",
-    }),
+    request<{ updated: number; mode?: string; task_id?: string | null; message?: string | null }>(
+      "/documents/reindex-embeddings",
+      {
+        method: "POST",
+        body: "{}",
+      }
+    ),
+
+  listWorkspaces: () => request<WorkspaceOut[]>("/workspaces"),
+
+  getBillingUsage: () => request<UsageSummaryOut>("/billing/usage"),
+
+  listBillingLedger: () => request<BillingLedgerOut[]>("/billing/ledger"),
+
+  listAuditLogs: () => request<AuditLogOut[]>("/audit/logs"),
+
+  listIngestionJobs: (status?: string) => {
+    const q = status ? `?status=${encodeURIComponent(status)}` : "";
+    return request<IngestionJobOut[]>(`/ingestion/jobs${q}`);
+  },
+
+  getDocument: (id: string) => request<DocumentOut>(`/documents/${id}`),
+
+  getDocumentIngestion: (id: string) =>
+    request<IngestionJobOut | null>(`/documents/${id}/ingestion`),
 
   search: (query: string, topK = 5) =>
     request<SearchOut>("/search", {

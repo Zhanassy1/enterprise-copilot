@@ -1,9 +1,10 @@
 import unittest
 from types import SimpleNamespace
+from unittest.mock import MagicMock, patch
 
 from fastapi import HTTPException
 
-from app.api.deps import WorkspaceContext, require_roles
+from app.api.deps import WorkspaceContext, get_workspace_context, require_roles
 
 
 class WorkspacePermissionTests(unittest.TestCase):
@@ -28,6 +29,15 @@ class WorkspacePermissionTests(unittest.TestCase):
         dep = require_roles("owner", "admin", "member", "viewer")
         out = dep(self._ctx("viewer"))
         self.assertEqual(out.membership.role.name, "viewer")
+
+    def test_production_requires_x_workspace_id_header(self) -> None:
+        with patch("app.api.deps.settings") as mock_settings:
+            mock_settings.environment = "production"
+            mock_settings.require_workspace_header_in_production = True
+            with self.assertRaises(HTTPException) as err:
+                get_workspace_context(MagicMock(), MagicMock(), None)  # type: ignore[arg-type]
+            self.assertEqual(err.exception.status_code, 400)
+            self.assertIn("Workspace", err.exception.detail or "")
 
 
 if __name__ == "__main__":

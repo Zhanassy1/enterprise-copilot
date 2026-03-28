@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 import re
+import uuid
 
 from sqlalchemy import delete, text
 from sqlalchemy.orm import Session
@@ -67,7 +68,7 @@ class DocumentIndexingService:
         self.db.flush()
 
         try:
-            with self.storage.local_path(document.storage_path) as local_file:
+            with self.storage.local_path(document.storage_key) as local_file:
                 extracted_doc = extract_text_metadata_from_file(local_file, content_type=document.content_type)
             extracted = extracted_doc.text
             if not extracted:
@@ -121,3 +122,36 @@ class DocumentIndexingService:
             self.db.add(document)
             self.db.flush()
             raise
+
+
+def reindex_null_embeddings_for_workspace(db: Session, *, workspace_id: uuid.UUID) -> int:
+    """Fill embedding_vector for chunks in workspace where it is NULL (legacy rows)."""
+    rows = db.execute(
+        text(
+            """
+            SELECT c.id AS id, c.text AS text
+            FROM document_chunks c
+            JOIN documents d ON d.id = c.document_id
+            WHERE d.workspace_id = CAST(:workspace_id AS uuid) AND c.embedding_vector IS NULL
+            """
+        ),
+        {"workspace_id": str(workspace_id)},
+    ).mappings().all()
+    if not rows:
+        return 0
+    texts = [str(r["text"]) for r in rows]
+    ids = [str(r["id"]) for r in rows]
+    vectors = embed_texts(texts)
+    if len(vectors) != len(ids):
+        raise ValueError("Embedding count mismatch")
+    for cid, vec in zip(ids, vectors, strict=True):
+        vec_lit = "[" + ",".join(f"{float(x):.8f}" for x in vec) + "]"
+        db.execute(
+            text(
+                "UPDATE document_chunks SET embedding_vector = (:v)::vector(384) "
+                "WHERE id = CAST(:id AS uuid)"
+            ),
+            {"v": vec_lit, "id": cid},
+        )
+    db.commit()
+    return len(ids)

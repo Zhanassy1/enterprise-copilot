@@ -32,14 +32,14 @@ class LocalStorageService(StorageService):
                 out.write(chunk)
 
         return StoredFile(
-            storage_path=str(target).replace("\\", "/"),
+            storage_key=str(target).replace("\\", "/"),
             size_bytes=total,
             sha256=hasher.hexdigest(),
         )
 
-    def delete(self, storage_path: str) -> None:
-        Path(storage_path).unlink(missing_ok=True)
+    def delete(self, storage_key: str) -> None:
+        Path(storage_key).unlink(missing_ok=True)
 
     @contextmanager
-    def local_path(self, storage_path: str):
-        yield storage_path
+    def local_path(self, storage_key: str):
+        yield storage_key

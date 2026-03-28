@@ -10,7 +10,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import text
 from sqlalchemy.exc import OperationalError
 
-from app.api.routers import auth, chat, documents, search
+from app.api.routers import audit, auth, billing, chat, documents, ingestion, search, workspaces
 from app.core.config import settings
 from app.core.debug_log import debug_log
 from app.db.session import engine
@@ -67,7 +67,11 @@ def create_app() -> FastAPI:
 
     api = FastAPI(title=settings.app_name, redirect_slashes=False)
     api.include_router(auth.router)
+    api.include_router(workspaces.router)
     api.include_router(documents.router)
+    api.include_router(ingestion.router)
+    api.include_router(billing.router)
+    api.include_router(audit.router)
     api.include_router(search.router)
     api.include_router(chat.router)
 
@@ -123,6 +127,27 @@ def create_app() -> FastAPI:
             session_cookie = request.cookies.get("session") or ""
             if session_cookie and (not cookie_csrf or not header_csrf or cookie_csrf != header_csrf):
                 return JSONResponse(status_code=403, content={"detail": "CSRF validation failed"}, headers={"X-Request-Id": request_id})
+        path = request.url.path
+        method_u = request.method.upper()
+        if method_u == "POST" and path in {
+            f"{settings.api_v1_prefix}/auth/login",
+            f"{settings.api_v1_prefix}/auth/register",
+            f"{settings.api_v1_prefix}/auth/refresh",
+        }:
+            if is_rate_limited("auth_ip", ip, limit=int(settings.rate_limit_auth_per_ip_per_minute)):
+                return JSONResponse(
+                    status_code=429,
+                    content={"detail": "Rate limit exceeded for authentication"},
+                    headers={"X-Request-Id": request_id},
+                )
+        if method_u == "POST" and path == f"{settings.api_v1_prefix}/documents/upload" and user_token:
+            if is_rate_limited("upload_user", user_token, limit=int(settings.rate_limit_upload_per_user_per_minute)):
+                return JSONResponse(
+                    status_code=429,
+                    content={"detail": "Rate limit exceeded for uploads"},
+                    headers={"X-Request-Id": request_id},
+                )
+
         if is_rate_limited("ip", ip, limit=int(settings.rate_limit_per_ip_per_minute)):
             return JSONResponse(status_code=429, content={"detail": "Rate limit exceeded for IP"}, headers={"X-Request-Id": request_id})
         if user_token and is_rate_limited("user", user_token, limit=int(settings.rate_limit_per_user_per_minute)):

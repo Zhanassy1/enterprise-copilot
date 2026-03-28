@@ -21,7 +21,7 @@ class Document(Base):
 
     filename: Mapped[str] = mapped_column(String(512), nullable=False)
     content_type: Mapped[str | None] = mapped_column(String(255), nullable=True)
-    storage_path: Mapped[str] = mapped_column(String(1024), nullable=False)
+    storage_key: Mapped[str] = mapped_column(String(1024), nullable=False)
     status: Mapped[str] = mapped_column(String(32), nullable=False, default="queued")
     error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
     file_size_bytes: Mapped[int | None] = mapped_column(nullable=True)
@@ -32,6 +32,8 @@ class Document(Base):
     indexed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     extracted_text: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True, index=True)
 
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)

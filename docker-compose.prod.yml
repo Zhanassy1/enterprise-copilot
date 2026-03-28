@@ -1,0 +1,9 @@
+# Production-oriented overrides: do not publish PostgreSQL or Redis to the host.
+# Usage: docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
+# Set secrets via environment or a secrets manager — never commit real values.
+
+services:
+  db:
+    ports: []
+  redis:
+    ports: []

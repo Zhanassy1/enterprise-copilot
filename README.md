@@ -115,19 +115,21 @@ npm run build
 - **Documents**: список + upload + delete
 - **Search**: `/api/v1/search` (pgvector cosine)
 
-### `embedding_vector`
+### `embedding_vector` и ingestion
 
-При **upload** документа backend сразу пишет `embedding_vector` для каждого chunk (размерность **384**, тот же эмбеддер, что и для запроса поиска).
+**Upload** сохраняет файл в storage, создаёт запись `documents` со статусом `queued` и (при `INGESTION_ASYNC_ENABLED=1`) ставит задачу Celery. **Парсинг, chunking и запись `embedding_vector`** выполняются в **worker**, а не в HTTP-обработчике upload.
 
-Если у тебя остались **старые** строки без вектора (NULL), один раз вызови (с тем же JWT, что и для API):
+Размерность эмбеддингов **384** (тот же эмбеддер, что и для поиска).
+
+Если остались **старые** chunks с `embedding_vector IS NULL`, вызови (с JWT и заголовком `X-Workspace-Id` для workspace):
 
 ```http
 POST /api/v1/documents/reindex-embeddings
 ```
 
-Ответ: `{"updated": <число обновлённых chunks>}`.
+При async ingestion задача уходит в очередь; в синхронном режиме (`INGESTION_ASYNC_ENABLED=0`) ответ содержит `updated` сразу.
 
-Нужны работающий **PostgreSQL + расширение pgvector** и применённые миграции (`alembic upgrade head`).
+Нужны **PostgreSQL + pgvector**, **Redis** (для Celery) и миграции: `alembic upgrade head`.
 
 ## Описание проекта
 Во многих компаниях сотрудники тратят много времени на:

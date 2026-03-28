@@ -8,7 +8,7 @@ from typing import BinaryIO
 
 @dataclass
 class StoredFile:
-    storage_path: str
+    storage_key: str
     size_bytes: int
     sha256: str
 
@@ -19,10 +19,14 @@ class StorageService(ABC):
         raise NotImplementedError
 
     @abstractmethod
-    def delete(self, storage_path: str) -> None:
+    def delete(self, storage_key: str) -> None:
         raise NotImplementedError
 
     @abstractmethod
     @contextmanager
-    def local_path(self, storage_path: str):
+    def local_path(self, storage_key: str):
         raise NotImplementedError
+
+    def presigned_get_url(self, storage_key: str, *, expires_seconds: int = 3600) -> str | None:
+        """Return a time-limited download URL, or None if not supported (e.g. local dev)."""
+        return None

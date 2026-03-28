@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { FileText, Search, MessageSquare, LogOut } from "lucide-react";
+import { FileText, Search, MessageSquare, LogOut, CreditCard, ListTree } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
   Sheet,
@@ -18,6 +18,8 @@ const navItems = [
   { href: "/documents", label: "Документы", icon: FileText },
   { href: "/search", label: "Поиск", icon: Search },
   { href: "/chat", label: "Чат", icon: MessageSquare },
+  { href: "/billing", label: "План / usage", icon: CreditCard },
+  { href: "/jobs", label: "Ingestion jobs", icon: ListTree },
 ];
 
 interface MobileNavProps {

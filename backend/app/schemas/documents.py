@@ -7,6 +7,10 @@ from pydantic import BaseModel, Field, field_validator
 
 class DocumentOut(BaseModel):
     id: uuid.UUID
+    uploaded_by: uuid.UUID | None = Field(
+        default=None,
+        description="User who uploaded the document (DB owner_id); not used for authorization — scope is workspace_id.",
+    )
     filename: str
     content_type: str | None = None
     status: str
@@ -23,6 +27,7 @@ class DocumentOut(BaseModel):
     def from_document(cls, doc) -> "DocumentOut":
         return cls(
             id=doc.id,
+            uploaded_by=getattr(doc, "owner_id", None),
             filename=doc.filename,
             content_type=doc.content_type,
             status=doc.status,
@@ -43,7 +48,42 @@ class DocumentIngestOut(BaseModel):
 
 
 class ReindexEmbeddingsOut(BaseModel):
-    updated: int
+    updated: int = 0
+    mode: Literal["sync", "async"] = "sync"
+    task_id: str | None = None
+    message: str | None = None
+
+
+class IngestionJobOut(BaseModel):
+    id: uuid.UUID
+    document_id: uuid.UUID
+    workspace_id: uuid.UUID
+    status: str
+    attempts: int
+    deduplication_key: str
+    celery_task_id: str | None = None
+    error_message: str | None = None
+    retry_after_seconds: int | None = None
+    dead_lettered_at: datetime | None = None
+    created_at: datetime
+    completed_at: datetime | None = None
+
+    @classmethod
+    def from_job(cls, job) -> "IngestionJobOut":
+        return cls(
+            id=job.id,
+            document_id=job.document_id,
+            workspace_id=job.workspace_id,
+            status=job.status,
+            attempts=int(job.attempts or 0),
+            deduplication_key=job.deduplication_key,
+            celery_task_id=job.celery_task_id,
+            error_message=job.error_message,
+            retry_after_seconds=job.retry_after_seconds,
+            dead_lettered_at=job.dead_lettered_at,
+            created_at=job.created_at,
+            completed_at=job.completed_at,
+        )
 
 
 class DocumentSummaryOut(BaseModel):

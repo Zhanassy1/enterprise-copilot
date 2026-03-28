@@ -11,6 +11,13 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.models.billing import UsageEvent, WorkspaceQuota
+from app.models.document import Document
+
+PLAN_DOCUMENT_CAP: dict[str, int | None] = {
+    "free": 50,
+    "pro": 10_000,
+    "team": None,
+}
 
 EVENT_SEARCH_REQUEST = "search_request"
 EVENT_CHAT_MESSAGE = "chat_message"
@@ -46,15 +53,26 @@ def get_or_create_quota(db: Session, workspace_id: uuid.UUID) -> WorkspaceQuota:
     quota = db.scalar(select(WorkspaceQuota).where(WorkspaceQuota.workspace_id == workspace_id))
     if quota:
         return quota
+    plan = "free"
+    cap = PLAN_DOCUMENT_CAP.get(plan, 50)
     quota = WorkspaceQuota(
         workspace_id=workspace_id,
         monthly_request_limit=20000,
         monthly_token_limit=20_000_000,
         monthly_upload_bytes_limit=1_073_741_824,
+        plan_slug=plan,
+        max_documents=cap,
     )
     db.add(quota)
     db.flush()
     return quota
+
+
+def _effective_document_cap(quota: WorkspaceQuota) -> int | None:
+    if quota.max_documents is not None:
+        return int(quota.max_documents)
+    slug = (quota.plan_slug or "free").lower()
+    return PLAN_DOCUMENT_CAP.get(slug, PLAN_DOCUMENT_CAP["free"])
 
 
 def _sum_events(
@@ -114,6 +132,15 @@ def assert_quota(
             raise HTTPException(status_code=429, detail="Workspace monthly token quota exceeded")
 
     if upload_bytes_increment > 0:
+        cap_docs = _effective_document_cap(quota)
+        if cap_docs is not None:
+            n = db.scalar(
+                select(func.count())
+                .select_from(Document)
+                .where(Document.workspace_id == workspace_id, Document.deleted_at.is_(None))
+            )
+            if int(n or 0) >= int(cap_docs):
+                raise HTTPException(status_code=403, detail="Workspace document limit reached for this plan")
         current_bytes = _sum_events(
             db,
             workspace_id=workspace_id,

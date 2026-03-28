@@ -2,16 +2,19 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { FileText, Search, MessageSquare, LogOut } from "lucide-react";
+import { FileText, Search, MessageSquare, LogOut, CreditCard, ListTree } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import { useAuth } from "@/hooks/use-auth";
+import { WorkspaceSwitcher } from "@/components/layout/workspace-switcher";
 
 const navItems = [
   { href: "/documents", label: "Документы", icon: FileText },
   { href: "/search", label: "Поиск", icon: Search },
   { href: "/chat", label: "Чат", icon: MessageSquare },
+  { href: "/billing", label: "План / usage", icon: CreditCard },
+  { href: "/jobs", label: "Ingestion jobs", icon: ListTree },
 ];
 
 export function Sidebar() {
@@ -26,6 +29,9 @@ export function Sidebar() {
         </Link>
       </div>
       <Separator />
+      <div className="px-3 pt-3">
+        <WorkspaceSwitcher />
+      </div>
       <nav className="flex-1 space-y-1 px-3 py-4">
         {navItems.map(({ href, label, icon: Icon }) => {
           const active = pathname.startsWith(href);

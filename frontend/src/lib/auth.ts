@@ -1,3 +1,5 @@
+import { clearWorkspaceId } from "./workspace";
+
 const TOKEN_KEY = "ec_token";
 
 export function getToken(): string | null {
@@ -11,6 +13,7 @@ export function setToken(token: string): void {
 
 export function clearToken(): void {
   localStorage.removeItem(TOKEN_KEY);
+  clearWorkspaceId();
 }
 
 export function isAuthenticated(): boolean {

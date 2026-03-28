@@ -1,4 +1,13 @@
-from app.api.routers import auth, chat, documents, search
+from app.api.routers import audit, auth, billing, chat, documents, ingestion, search, workspaces
 
-__all__ = ["auth", "documents", "search", "chat"]
+__all__ = [
+    "auth",
+    "audit",
+    "billing",
+    "documents",
+    "ingestion",
+    "search",
+    "chat",
+    "workspaces",
+]
 

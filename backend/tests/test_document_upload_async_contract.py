@@ -1,6 +1,7 @@
 import io
 import uuid
 import unittest
+from contextlib import contextmanager
 from datetime import datetime, timezone
 from types import SimpleNamespace
 from unittest.mock import patch
@@ -13,7 +14,7 @@ from app.services.document_ingestion import DocumentIngestionService
 
 class _StoredUpload:
     def __init__(self) -> None:
-        self.storage_path = "uploads/test-contract.txt"
+        self.storage_key = "uploads/test-contract.txt"
         self.size_bytes = 32
         self.sha256 = "a" * 64
 
@@ -22,8 +23,12 @@ class _FakeStorage:
     def save_upload(self, _file_obj, _name: str) -> _StoredUpload:
         return _StoredUpload()
 
-    def delete(self, _storage_path: str) -> None:
+    def delete(self, _storage_key: str) -> None:
         return None
+
+    @contextmanager
+    def local_path(self, _storage_key: str):
+        yield __file__
 
 
 class _FakeDb:

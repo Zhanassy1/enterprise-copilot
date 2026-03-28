@@ -1,5 +1,9 @@
+import os
 import uuid
 import unittest
+
+# Sync indexing for this flow (no Celery worker in integration job).
+os.environ.setdefault("INGESTION_ASYNC_ENABLED", "0")
 
 from fastapi.testclient import TestClient
 

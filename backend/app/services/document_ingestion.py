@@ -12,6 +12,7 @@ from app.core.config import settings
 from app.models.document import Document, IngestionJob
 from app.models.workspace import Workspace
 from app.schemas.documents import DocumentIngestOut, DocumentOut
+from app.services.antivirus import scan_uploaded_file_safe
 from app.services.document_indexing import DocumentIndexingService
 from app.services.storage.base import StorageService
 from app.services.usage_metering import (
@@ -62,20 +63,45 @@ class DocumentIngestionService:
 
     def list_documents(self, workspace_id: uuid.UUID) -> list[Document]:
         return self.db.scalars(
-            select(Document).where(Document.workspace_id == workspace_id).order_by(Document.created_at.desc())
+            select(Document)
+            .where(
+                Document.workspace_id == workspace_id,
+                Document.deleted_at.is_(None),
+            )
+            .order_by(Document.created_at.desc())
         ).all()
 
     def get_document(self, workspace_id: uuid.UUID, document_id: uuid.UUID) -> Document | None:
         return self.db.scalar(
-            select(Document).where(Document.id == document_id, Document.workspace_id == workspace_id)
+            select(Document).where(
+                Document.id == document_id,
+                Document.workspace_id == workspace_id,
+                Document.deleted_at.is_(None),
+            )
         )
 
     def upload_document(self, user_id: uuid.UUID, workspace: Workspace, file: UploadFile) -> DocumentIngestOut:
         validate_upload(file)
         stored = self.storage.save_upload(file.file, file.filename or "upload.bin")
         if stored.size_bytes > MAX_UPLOAD_BYTES:
-            self.storage.delete(stored.storage_path)
+            self.storage.delete(stored.storage_key)
             raise HTTPException(status_code=413, detail="File too large (max 25MB)")
+
+        with self.storage.local_path(stored.storage_key) as local_file:
+            scan_uploaded_file_safe(local_file)
+
+        dup = self.db.scalar(
+            select(Document).where(
+                Document.workspace_id == workspace.id,
+                Document.sha256 == stored.sha256,
+                Document.deleted_at.is_(None),
+                Document.status == "ready",
+            )
+        )
+        if dup:
+            self.storage.delete(stored.storage_key)
+            return DocumentIngestOut(document=DocumentOut.from_document(dup), chunks_created=0)
+
         assert_quota(
             self.db,
             workspace_id=workspace.id,
@@ -89,7 +115,7 @@ class DocumentIngestionService:
             workspace_id=workspace.id,
             filename=file.filename or "upload.bin",
             content_type=file.content_type,
-            storage_path=stored.storage_path,
+            storage_key=stored.storage_key,
             status="queued",
             file_size_bytes=stored.size_bytes,
             sha256=stored.sha256,
@@ -165,6 +191,6 @@ class DocumentIngestionService:
         )
 
     def delete_document(self, document: Document) -> None:
-        self.storage.delete(document.storage_path)
-        self.db.delete(document)
+        document.deleted_at = datetime.now(timezone.utc)
+        self.db.add(document)
         self.db.commit()

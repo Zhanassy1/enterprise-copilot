@@ -38,6 +38,7 @@ def _dense_candidates(
         JOIN documents d ON d.id = c.document_id
         WHERE
           d.workspace_id = :workspace_id
+          AND d.deleted_at IS NULL
           AND d.status = 'ready'
           AND c.embedding_vector IS NOT NULL
         ORDER BY dense_score DESC, c.chunk_index ASC
@@ -79,7 +80,7 @@ def _keyword_candidates(
           ) AS keyword_score
         FROM document_chunks c
         JOIN documents d ON d.id = c.document_id
-        WHERE d.workspace_id = :workspace_id AND d.status = 'ready'
+        WHERE d.workspace_id = :workspace_id AND d.deleted_at IS NULL AND d.status = 'ready'
         ORDER BY keyword_score DESC, c.chunk_index ASC
         LIMIT :candidate_k
         """

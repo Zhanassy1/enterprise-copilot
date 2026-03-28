@@ -50,22 +50,35 @@ class S3StorageService(StorageService):
         finally:
             Path(tmp_path).unlink(missing_ok=True)
 
-        return StoredFile(storage_path=f"s3://{self._bucket}/{key}", size_bytes=total, sha256=hasher.hexdigest())
+        return StoredFile(storage_key=f"s3://{self._bucket}/{key}", size_bytes=total, sha256=hasher.hexdigest())
 
-    def delete(self, storage_path: str) -> None:
-        if not storage_path.startswith("s3://"):
+    def delete(self, storage_key: str) -> None:
+        if not storage_key.startswith("s3://"):
             return
-        _, _, rest = storage_path.partition("s3://")
+        _, _, rest = storage_key.partition("s3://")
         bucket, _, key = rest.partition("/")
         if not bucket or not key:
             return
         self._client.delete_object(Bucket=bucket, Key=key)
 
+    def presigned_get_url(self, storage_key: str, *, expires_seconds: int = 3600) -> str | None:
+        if not storage_key.startswith("s3://"):
+            return None
+        _, _, rest = storage_key.partition("s3://")
+        bucket, _, key = rest.partition("/")
+        if not bucket or not key:
+            return None
+        return self._client.generate_presigned_url(
+            "get_object",
+            Params={"Bucket": bucket, "Key": key},
+            ExpiresIn=int(expires_seconds),
+        )
+
     @contextmanager
-    def local_path(self, storage_path: str):
-        if not storage_path.startswith("s3://"):
+    def local_path(self, storage_key: str):
+        if not storage_key.startswith("s3://"):
             raise RuntimeError("Expected s3:// path for S3 storage backend")
-        _, _, rest = storage_path.partition("s3://")
+        _, _, rest = storage_key.partition("s3://")
         bucket, _, key = rest.partition("/")
         if not bucket or not key:
             raise RuntimeError("Malformed S3 storage path")

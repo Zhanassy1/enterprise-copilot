@@ -1,5 +1,5 @@
 from app.models.chat import ChatMessage, ChatSession
-from app.models.billing import UsageEvent, WorkspaceQuota
+from app.models.billing import BillingLedgerEntry, UsageEvent, WorkspaceQuota
 from app.models.document import Document, DocumentChunk, IngestionJob
 from app.models.security import AuditLog, EmailVerificationToken, PasswordResetToken, RefreshToken
 from app.models.user import User
@@ -17,6 +17,7 @@ __all__ = [
     "WorkspaceInvitation",
     "Role",
     "WorkspaceQuota",
+    "BillingLedgerEntry",
     "UsageEvent",
     "RefreshToken",
     "PasswordResetToken",

@@ -11,7 +11,8 @@ from app.core.config import settings
 from app.core.debug_log import debug_log
 from app.db.session import SessionLocal
 from app.models.document import Document, IngestionJob
-from app.services.document_indexing import DocumentIndexingService
+from app.services.audit import write_audit_log
+from app.services.document_indexing import DocumentIndexingService, reindex_null_embeddings_for_workspace
 from app.services.storage import get_storage_service
 
 
@@ -186,6 +187,15 @@ def ingest_document_task(
             document.status = "failed"
             document.error_message = error_text
             db.add(document)
+        write_audit_log(
+            db,
+            event_type="ingestion.failed",
+            workspace_id=job.workspace_id,
+            user_id=None,
+            target_type="document",
+            target_id=str(job.document_id),
+            metadata={"job_id": str(job.id), "error": error_text, "attempts": attempt_number},
+        )
         db.commit()
         debug_log(
             hypothesisId="H_ingestion_dead",
@@ -201,5 +211,22 @@ def ingest_document_task(
             },
         )
         return {"status": "failed", "error": error_text}
+    finally:
+        db.close()
+
+
+@celery_app.task(name="app.tasks.ingestion.reindex_workspace_embeddings_task")
+def reindex_workspace_embeddings_task(*, workspace_id: str) -> dict:
+    """Backfill embedding_vector for chunks missing vectors (legacy data)."""
+    db = SessionLocal()
+    try:
+        ws_uuid = uuid.UUID(workspace_id)
+    except ValueError:
+        return {"status": "ignored", "updated": 0}
+    try:
+        n = reindex_null_embeddings_for_workspace(db, workspace_id=ws_uuid)
+        return {"status": "ok", "updated": n}
+    except Exception as exc:
+        return {"status": "failed", "error": _truncate_error(exc)}
     finally:
         db.close()

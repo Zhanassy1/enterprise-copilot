@@ -12,6 +12,8 @@ class Settings(BaseSettings):
     app_name: str = "enterprise-copilot"
     environment: str = Field(default="local")
     api_v1_prefix: str = "/api/v1"
+    # When True and environment is production, every workspace-scoped request must send X-Workspace-Id (no implicit first-workspace fallback).
+    require_workspace_header_in_production: bool = Field(default=True)
 
     # Security
     secret_key: str = Field(default="dev-secret-change-me")
@@ -21,6 +23,9 @@ class Settings(BaseSettings):
     password_reset_token_exp_minutes: int = Field(default=30, ge=5, le=60 * 24)
     rate_limit_per_user_per_minute: int = Field(default=120, ge=10, le=2000)
     rate_limit_per_ip_per_minute: int = Field(default=240, ge=10, le=5000)
+    # Stricter limits for brute-force / abuse-prone endpoints (applied in addition to global IP/user limits).
+    rate_limit_auth_per_ip_per_minute: int = Field(default=30, ge=3, le=500)
+    rate_limit_upload_per_user_per_minute: int = Field(default=30, ge=3, le=500)
 
     # CORS
     cors_origins: str = Field(default="http://localhost:5173,http://127.0.0.1:5173")

@@ -18,4 +18,25 @@ celery_app.conf.update(
     task_eager_propagates=settings.celery_task_eager_propagates,
     timezone="UTC",
     enable_utc=True,
+    # Security: reject pickle/or other unsafe serializers (Celery recommendation for untrusted brokers).
+    task_serializer="json",
+    result_serializer="json",
+    accept_content=["json"],
+    event_serializer="json",
 )
+
+try:
+    from celery.signals import worker_process_init
+
+    @worker_process_init.connect
+    def _celery_init_sentry(**_kwargs) -> None:
+        if settings.sentry_dsn:
+            import sentry_sdk
+
+            sentry_sdk.init(
+                dsn=settings.sentry_dsn,
+                environment=settings.environment,
+                traces_sample_rate=float(settings.sentry_traces_sample_rate),
+            )
+except Exception:
+    pass

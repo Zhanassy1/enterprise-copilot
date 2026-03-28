@@ -10,6 +10,7 @@ from jwt import ExpiredSignatureError, PyJWTError
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.core.config import settings
 from app.core.security import decode_token
 from app.db.session import get_db
 from app.models.user import User
@@ -62,6 +63,11 @@ def get_workspace_context(
     user: CurrentUser,
     x_workspace_id: Annotated[str | None, Header(alias="X-Workspace-Id")] = None,
 ) -> WorkspaceContext:
+    env = settings.environment.lower().strip()
+    if env == "production" and settings.require_workspace_header_in_production:
+        if not (x_workspace_id and str(x_workspace_id).strip()):
+            raise HTTPException(status_code=400, detail="X-Workspace-Id header is required")
+
     if x_workspace_id:
         try:
             workspace_uuid = uuid.UUID(x_workspace_id)

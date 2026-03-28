@@ -1,13 +1,22 @@
 import uuid
+from pathlib import Path
 
 from fastapi import APIRouter, File, HTTPException, UploadFile
-from sqlalchemy import text
+from fastapi.responses import RedirectResponse, Response
+from sqlalchemy import select
 
 from app.api.deps import CurrentUser, DbDep, WorkspaceReadAccess, WorkspaceWriteAccess
-from app.models.document import DocumentChunk
-from app.schemas.documents import DocumentIngestOut, DocumentOut, DocumentSummaryOut, ReindexEmbeddingsOut
+from app.core.config import settings
+from app.models.document import IngestionJob
+from app.schemas.documents import (
+    DocumentIngestOut,
+    DocumentOut,
+    DocumentSummaryOut,
+    IngestionJobOut,
+    ReindexEmbeddingsOut,
+)
 from app.services.document_ingestion import DocumentIngestionService, validate_upload
-from app.services.embeddings import embed_texts
+from app.services.document_indexing import reindex_null_embeddings_for_workspace
 from app.services.audit import write_audit_log
 from app.services.storage import get_storage_service
 from app.services.summary import summarize_document
@@ -33,38 +42,73 @@ def upload_document(db: DbDep, user: CurrentUser, ws: WorkspaceWriteAccess, file
 
 @router.post("/reindex-embeddings", response_model=ReindexEmbeddingsOut)
 def reindex_embeddings(db: DbDep, _user: CurrentUser, ws: WorkspaceWriteAccess) -> ReindexEmbeddingsOut:
-    """Заполняет embedding_vector для chunks текущего workspace, где он NULL (старые данные)."""
-    rows = db.execute(
-        text(
-            """
-            SELECT c.id AS id, c.text AS text
-            FROM document_chunks c
-            JOIN documents d ON d.id = c.document_id
-            WHERE d.workspace_id = CAST(:workspace_id AS uuid) AND c.embedding_vector IS NULL
-            """
-        ),
-        {"workspace_id": str(ws.workspace.id)},
-    ).mappings().all()
-    if not rows:
-        return ReindexEmbeddingsOut(updated=0)
+    """Backfill embedding_vector for chunks where NULL. Runs in Celery when async ingestion is enabled."""
+    if settings.ingestion_async_enabled:
+        from app.tasks.ingestion import reindex_workspace_embeddings_task
 
-    texts = [str(r["text"]) for r in rows]
-    ids = [str(r["id"]) for r in rows]
-    vectors = embed_texts(texts)
-    if len(vectors) != len(ids):
-        raise HTTPException(status_code=500, detail="Embedding count mismatch")
-
-    for cid, vec in zip(ids, vectors, strict=True):
-        vec_lit = "[" + ",".join(f"{float(x):.8f}" for x in vec) + "]"
-        db.execute(
-            text(
-                "UPDATE document_chunks SET embedding_vector = (:v)::vector(384) "
-                "WHERE id = CAST(:id AS uuid)"
-            ),
-            {"v": vec_lit, "id": cid},
+        async_result = reindex_workspace_embeddings_task.apply_async(
+            kwargs={"workspace_id": str(ws.workspace.id)},
+            queue=settings.celery_ingestion_queue,
         )
-    db.commit()
-    return ReindexEmbeddingsOut(updated=len(ids))
+        return ReindexEmbeddingsOut(
+            updated=0,
+            mode="async",
+            task_id=async_result.id,
+            message="Reindex job queued; poll Celery result or re-run with sync (INGESTION_ASYNC_ENABLED=0) for local dev.",
+        )
+    n = reindex_null_embeddings_for_workspace(db, workspace_id=ws.workspace.id)
+    return ReindexEmbeddingsOut(updated=n, mode="sync", message=None)
+
+
+@router.get("/{document_id}", response_model=DocumentOut)
+def get_document(document_id: uuid.UUID, db: DbDep, _user: CurrentUser, ws: WorkspaceReadAccess) -> DocumentOut:
+    service = DocumentIngestionService(db, get_storage_service())
+    doc = service.get_document(ws.workspace.id, document_id)
+    if not doc:
+        raise HTTPException(status_code=404, detail="Not found")
+    return DocumentOut.from_document(doc)
+
+
+@router.get("/{document_id}/ingestion", response_model=IngestionJobOut | None)
+def get_document_ingestion_job(
+    document_id: uuid.UUID, db: DbDep, _user: CurrentUser, ws: WorkspaceReadAccess
+) -> IngestionJobOut | None:
+    service = DocumentIngestionService(db, get_storage_service())
+    if not service.get_document(ws.workspace.id, document_id):
+        raise HTTPException(status_code=404, detail="Not found")
+    job = db.scalar(
+        select(IngestionJob)
+        .where(
+            IngestionJob.document_id == document_id,
+            IngestionJob.workspace_id == ws.workspace.id,
+        )
+        .order_by(IngestionJob.created_at.desc())
+        .limit(1)
+    )
+    if not job:
+        return None
+    return IngestionJobOut.from_job(job)
+
+
+@router.get("/{document_id}/download", response_model=None)
+def download_document(
+    document_id: uuid.UUID, db: DbDep, _user: CurrentUser, ws: WorkspaceReadAccess
+) -> RedirectResponse | Response:
+    service = DocumentIngestionService(db, get_storage_service())
+    doc = service.get_document(ws.workspace.id, document_id)
+    if not doc:
+        raise HTTPException(status_code=404, detail="Not found")
+    storage = get_storage_service()
+    url = storage.presigned_get_url(doc.storage_key)
+    if url:
+        return RedirectResponse(url)
+    with storage.local_path(doc.storage_key) as local_path:
+        data = Path(local_path).read_bytes()
+    return Response(
+        content=data,
+        media_type=doc.content_type or "application/octet-stream",
+        headers={"Content-Disposition": f'attachment; filename="{doc.filename}"'},
+    )
 
 
 @router.delete("/{document_id}")

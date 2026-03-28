@@ -3,6 +3,7 @@
 import { useState, useCallback, useSyncExternalStore } from "react";
 import { api, toErrorMessage } from "@/lib/api-client";
 import { setToken, clearToken, getToken } from "@/lib/auth";
+import { getWorkspaceId, setWorkspaceId } from "@/lib/workspace";
 
 function subscribe(cb: () => void) {
   window.addEventListener("storage", cb);
@@ -24,6 +25,14 @@ export function useAuth() {
     try {
       const { access_token } = await api.login(email, password);
       setToken(access_token);
+      try {
+        const workspaces = await api.listWorkspaces();
+        if (workspaces.length && !getWorkspaceId()) {
+          setWorkspaceId(workspaces[0].id);
+        }
+      } catch {
+        /* workspace list optional on first login */
+      }
       return true;
     } catch (err) {
       setError(toErrorMessage(err));
