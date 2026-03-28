@@ -22,6 +22,8 @@ class Settings(BaseSettings):
     production_require_database_ssl: bool = Field(default=False)
     # When True and ENVIRONMENT=production, STORAGE_BACKEND must be s3 (MinIO/S3-first production path).
     production_require_s3_backend: bool = Field(default=False)
+    # When True and ENVIRONMENT=production, TRUSTED_PROXY_IPS must be non-empty (API always behind a known LB/ingress).
+    production_require_trusted_proxy_ips: bool = Field(default=False)
     access_token_exp_minutes: int = Field(default=60 * 24)
     refresh_token_exp_days: int = Field(default=14, ge=1, le=365)
     email_verification_token_exp_minutes: int = Field(default=60 * 24, ge=5, le=60 * 24 * 30)

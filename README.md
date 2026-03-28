@@ -25,7 +25,12 @@
 | Storage | `local` (dev) или **S3** / MinIO (`storage_key`, presigned URLs) |
 | Frontend | Next.js |
 
-**Поток ingestion:** `POST /documents/upload` → запись в storage + строка `documents` (`queued`) + **IngestionJob** → Celery task → статусы `queued` → `processing` / `retrying` → `ready` или `failed`. Синхронная индексация в HTTP — только **local dev** при `ALLOW_SYNC_INGESTION_FOR_DEV=1` и `INGESTION_ASYNC_ENABLED=0` (тесты без worker).
+**Поток ingestion (фактический код):**
+
+1. **HTTP** [`backend/app/api/routers/documents.py`](backend/app/api/routers/documents.py) → [`DocumentIngestionService.upload_document`](backend/app/services/document_ingestion.py): файл в storage (`storage_key`), строка `documents` со статусом **`queued`**, при `INGESTION_ASYNC_ENABLED=1` — строка **`IngestionJob`** (`queued`) и `ingest_document_task.apply_async` в Celery.
+2. **В request-response нет** записи `embedding_vector` в БД: векторы пишутся в **worker** в [`DocumentIndexingService.run`](backend/app/services/document_indexing.py) (`UPDATE document_chunks ... embedding_vector`).
+3. **Worker** [`backend/app/tasks/ingestion.py`](backend/app/tasks/ingestion.py) вызывает индексацию; статусы документа и job: `queued` → `processing` / `retrying` → `ready` или `failed`.
+4. Синхронная индексация в том же процессе, что и upload — только **local dev**: `ENVIRONMENT=local`, `ALLOW_SYNC_INGESTION_FOR_DEV=1`, `INGESTION_ASYNC_ENABLED=0` (см. `document_ingestion.py`).
 
 **Поток RAG:** search/chat фильтруют чанки по `workspace_id`; учитываются квоты и rate limits (см. [docs/quotas.md](docs/quotas.md)).
 

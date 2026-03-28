@@ -1,9 +1,10 @@
 from datetime import datetime, timedelta, timezone
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Request
 from sqlalchemy import select, update
 
 from app.api.deps import CurrentUser, DbDep
+from app.core.trusted_proxy import get_effective_client_ip
 from app.core.config import settings
 from app.core.security import (
     create_access_token,
@@ -67,9 +68,24 @@ def register(payload: RegisterIn, db: DbDep) -> UserOut:
 
 
 @router.post("/login", response_model=Token)
-def login(payload: LoginIn, db: DbDep) -> Token:
+def login(payload: LoginIn, db: DbDep, request: Request) -> Token:
     user = db.scalar(select(User).where(User.email == payload.email))
     if not user or not verify_password(payload.password, user.password_hash):
+        ip = get_effective_client_ip(
+            request,
+            use_forwarded_headers=settings.use_forwarded_headers,
+            trusted_proxy_ips=settings.trusted_proxy_ips,
+        )
+        write_audit_log(
+            db,
+            event_type="auth.login_failed",
+            workspace_id=None,
+            user_id=None,
+            target_type="login",
+            target_id=(payload.email or "")[:320],
+            metadata={"reason": "invalid_credentials", "ip": ip},
+        )
+        db.commit()
         raise HTTPException(status_code=401, detail="Invalid email or password")
     refresh_token = generate_opaque_token()
     db.add(

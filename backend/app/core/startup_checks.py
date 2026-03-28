@@ -75,6 +75,12 @@ def validate_production_settings(settings: Settings) -> None:
     if err:
         raise RuntimeError(f"Production configuration invalid: {err}")
 
+    if settings.production_require_trusted_proxy_ips and not (settings.trusted_proxy_ips or "").strip():
+        raise RuntimeError(
+            "Production configuration invalid: TRUSTED_PROXY_IPS must be set when "
+            "PRODUCTION_REQUIRE_TRUSTED_PROXY_IPS=1 (document ingress/LB CIDRs)"
+        )
+
     if settings.production_require_database_ssl and not _database_url_requires_ssl(settings.database_url):
         raise RuntimeError(
             "Production configuration invalid: enable TLS for DATABASE_URL "

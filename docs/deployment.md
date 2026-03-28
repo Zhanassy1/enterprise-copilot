@@ -24,6 +24,10 @@ Copy `.env.production.example` to your orchestration layer and replace placehold
 
 When `PRODUCTION_REQUIRE_S3_BACKEND=1`, the API refuses to start unless `STORAGE_BACKEND=s3` and S3 settings are present — use for SaaS-style object storage. Omit or `0` for staging with local storage (still use non-dev `DATABASE_URL` / `REDIS_URL` / `SECRET_KEY`).
 
+### `PRODUCTION_REQUIRE_TRUSTED_PROXY_IPS`
+
+When `PRODUCTION_REQUIRE_TRUSTED_PROXY_IPS=1`, the API refuses to start if `TRUSTED_PROXY_IPS` is empty (document ingress/LB CIDRs). Use when the API is always behind a known reverse proxy. Implemented in `backend/app/core/startup_checks.py` (tests in `tests/test_startup_checks.py`).
+
 ## TLS
 
 - Run the API behind a reverse proxy that terminates HTTPS. Configure `USE_FORWARDED_HEADERS` and `TRUSTED_PROXY_IPS` so client IP and rate limits work correctly.

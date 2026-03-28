@@ -102,6 +102,20 @@ class StartupChecksTests(unittest.TestCase):
             validate_production_settings(s)
         self.assertIn("s3", str(ctx.exception).lower())
 
+    def test_production_requires_trusted_proxy_ips_when_flag(self) -> None:
+        s = Settings(
+            environment="production",
+            secret_key="not-the-default-dev-secret-change-me-xxxxxxxx",
+            database_url="postgresql+psycopg://u:p@db.example.com:5432/app?sslmode=require",
+            redis_url="redis://:somesecret@redis.example.com:6379/0",
+            ingestion_async_enabled=True,
+            production_require_trusted_proxy_ips=True,
+            trusted_proxy_ips=" ",
+        )
+        with self.assertRaises(RuntimeError) as ctx:
+            validate_production_settings(s)
+        self.assertIn("TRUSTED_PROXY_IPS", str(ctx.exception))
+
 
 if __name__ == "__main__":
     unittest.main()
