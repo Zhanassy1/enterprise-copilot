@@ -277,6 +277,27 @@ class CrossWorkspaceAccessTests(unittest.TestCase):
         ing_res = self.client.get(f"/api/v1/documents/{doc_b_id}/ingestion", headers=headers)
         self.assertEqual(ing_res.status_code, 404, ing_res.text)
 
+    def test_chat_sessions_list_only_current_workspace(self) -> None:
+        ua, _ub, ws_a, _ws_b, _doc_b, sess_b = self._seed_two_workspaces()
+        db = SessionLocal()
+        try:
+            user_a = db.scalar(select(User).where(User.id == ua))
+            assert user_a is not None
+            email_a = user_a.email
+        finally:
+            db.close()
+        login = self.client.post(
+            "/api/v1/auth/login",
+            json={"email": email_a, "password": "CrossWsTest1!"},
+        )
+        self.assertEqual(login.status_code, 200, login.text)
+        token = login.json()["access_token"]
+        headers = {"Authorization": f"Bearer {token}", "X-Workspace-Id": str(ws_a)}
+        res = self.client.get("/api/v1/chat/sessions", headers=headers)
+        self.assertEqual(res.status_code, 200, res.text)
+        ids = {x["id"] for x in res.json()}
+        self.assertNotIn(str(sess_b), ids)
+
     def test_ingestion_jobs_list_scoped_no_foreign_job_ids(self) -> None:
         ua, _ub, ws_a, ws_b, _doc_b, _sess_b = self._seed_two_workspaces()
         db = SessionLocal()

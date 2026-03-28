@@ -28,6 +28,7 @@ PLAN_LIMITS: dict[str, dict[str, int | None]] = {
         "monthly_request_limit": 2_000,
         "monthly_token_limit": 2_000_000,
         "monthly_upload_bytes_limit": 536_870_912,  # 512 MiB
+        "monthly_rerank_limit": 2_000,
         "max_documents": 50,
         "max_concurrent_ingestion_jobs": 2,
         "max_pdf_pages": 150,
@@ -36,6 +37,7 @@ PLAN_LIMITS: dict[str, dict[str, int | None]] = {
         "monthly_request_limit": 50_000,
         "monthly_token_limit": 20_000_000,
         "monthly_upload_bytes_limit": 5_368_709_120,  # 5 GiB
+        "monthly_rerank_limit": 50_000,
         "max_documents": 10_000,
         "max_concurrent_ingestion_jobs": 8,
         "max_pdf_pages": 2000,
@@ -44,6 +46,7 @@ PLAN_LIMITS: dict[str, dict[str, int | None]] = {
         "monthly_request_limit": 500_000,
         "monthly_token_limit": 200_000_000,
         "monthly_upload_bytes_limit": 53_687_091_200,  # 50 GiB
+        "monthly_rerank_limit": 500_000,
         "max_documents": None,
         "max_concurrent_ingestion_jobs": 32,
         "max_pdf_pages": None,
@@ -73,6 +76,7 @@ def effective_rate_limits_for_plan(plan_slug: str) -> dict[str, int]:
         "per_ip": max(10, int(settings.rate_limit_per_ip_per_minute * m)),
         "upload_user": max(3, int(settings.rate_limit_upload_per_user_per_minute * m)),
         "auth_ip": max(3, int(settings.rate_limit_auth_per_ip_per_minute * m)),
+        "rag_user": max(5, int(settings.rate_limit_rag_per_user_per_minute * m)),
     }
 
 
@@ -178,13 +182,39 @@ def _sum_events(
     return int(value or 0)
 
 
+def _audit_quota_denied(
+    db: Session,
+    *,
+    workspace_id: uuid.UUID,
+    user_id: uuid.UUID | None,
+    reason: str,
+) -> None:
+    try:
+        from app.services.audit import write_audit_log
+
+        write_audit_log(
+            db,
+            event_type="quota.denied",
+            workspace_id=workspace_id,
+            user_id=user_id,
+            target_type="workspace",
+            target_id=str(workspace_id),
+            metadata={"reason": reason},
+        )
+        db.flush()
+    except Exception:
+        pass
+
+
 def assert_quota(
     db: Session,
     *,
     workspace_id: uuid.UUID,
+    user_id: uuid.UUID | None = None,
     request_increment: int = 0,
     token_increment: int = 0,
     upload_bytes_increment: int = 0,
+    rerank_increment: int = 0,
 ) -> None:
     quota = get_or_create_quota(db, workspace_id)
     start, end = month_window()
@@ -200,7 +230,25 @@ def assert_quota(
         )
         if current_requests + int(request_increment) > int(quota.monthly_request_limit):
             _log_quota_violation(workspace_id, "monthly_requests")
+            _audit_quota_denied(db, workspace_id=workspace_id, user_id=user_id, reason="monthly_requests")
             raise HTTPException(status_code=429, detail="Workspace monthly request quota exceeded")
+
+    if rerank_increment > 0:
+        slug = (quota.plan_slug or "free").lower()
+        cap = _defaults_for_plan(slug).get("monthly_rerank_limit")
+        if cap is not None:
+            current_rr = _sum_events(
+                db,
+                workspace_id=workspace_id,
+                event_types=(EVENT_RERANK,),
+                unit="count",
+                from_dt=start,
+                to_dt=end,
+            )
+            if current_rr + int(rerank_increment) > int(cap):
+                _log_quota_violation(workspace_id, "monthly_rerank")
+                _audit_quota_denied(db, workspace_id=workspace_id, user_id=user_id, reason="monthly_rerank")
+                raise HTTPException(status_code=429, detail="Workspace monthly rerank quota exceeded")
 
     if token_increment > 0:
         current_tokens = _sum_events(
@@ -213,6 +261,7 @@ def assert_quota(
         )
         if current_tokens + int(token_increment) > int(quota.monthly_token_limit):
             _log_quota_violation(workspace_id, "monthly_tokens")
+            _audit_quota_denied(db, workspace_id=workspace_id, user_id=user_id, reason="monthly_tokens")
             raise HTTPException(status_code=429, detail="Workspace monthly token quota exceeded")
 
     if upload_bytes_increment > 0:
@@ -225,6 +274,7 @@ def assert_quota(
             )
             if int(n or 0) >= int(cap_docs):
                 _log_quota_violation(workspace_id, "document_cap")
+                _audit_quota_denied(db, workspace_id=workspace_id, user_id=user_id, reason="document_cap")
                 raise HTTPException(status_code=403, detail="Workspace document limit reached for this plan")
         current_bytes = _sum_events(
             db,
@@ -236,6 +286,7 @@ def assert_quota(
         )
         if current_bytes + int(upload_bytes_increment) > int(quota.monthly_upload_bytes_limit):
             _log_quota_violation(workspace_id, "monthly_upload_bytes")
+            _audit_quota_denied(db, workspace_id=workspace_id, user_id=user_id, reason="monthly_upload_bytes")
             raise HTTPException(status_code=429, detail="Workspace monthly upload quota exceeded")
 
 

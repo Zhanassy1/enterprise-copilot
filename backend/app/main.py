@@ -235,6 +235,20 @@ def create_app() -> FastAPI:
                     )
                 )
 
+        _pfx = settings.api_v1_prefix.rstrip("/")
+        if method_u == "POST" and user_token and (
+            path == f"{_pfx}/search"
+            or ("/chat/sessions/" in path and path.endswith("/messages"))
+        ):
+            if is_rate_limited("rag_user", user_token, limit=int(rl["rag_user"])):
+                return _finish(
+                    JSONResponse(
+                        status_code=429,
+                        content={"detail": "Rate limit exceeded for search/chat (RAG)"},
+                        headers={"X-Request-Id": request_id},
+                    )
+                )
+
         if is_rate_limited("ip", ip, limit=int(rl["per_ip"])):
             # #region agent log
             _dbg515("H4", "main.py:middleware", "rate_limit_ip", {"path": path})

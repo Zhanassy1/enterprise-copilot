@@ -22,7 +22,7 @@
 
 ## Rate limits
 
-- Global per-IP and per-user limits apply in middleware; auth and upload endpoints have stricter buckets. Tune in `Settings` (`rate_limit_*`).
+- Global per-IP and per-user limits apply in middleware; auth and upload endpoints have stricter buckets; **search/chat (RAG)** use `RATE_LIMIT_RAG_PER_USER_PER_MINUTE` (scaled by plan like other buckets). Tune in `Settings` (`rate_limit_*`).
 
 ## Headers
 
@@ -34,5 +34,5 @@
 
 ## Audit
 
-- Workspace-scoped audit logs: `GET /api/v1/audit/logs` with optional `event_type` (exact match) filter.
-- Quota denials are logged as structured JSON (`event: quota.violation`, logger `app.usage`) rather than always persisting a row (avoids extra DB connections on the hot path).
+- Workspace-scoped audit logs: `GET /api/v1/audit/logs` with optional `event_type` (exact match) filter; owner/admin: `GET /api/v1/audit/admin/logs`.
+- Quota denials: structured log `event: quota.violation` plus, when applicable, persisted `quota.denied` in `AuditLog`.

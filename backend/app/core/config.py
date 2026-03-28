@@ -29,6 +29,8 @@ class Settings(BaseSettings):
     # Stricter limits for brute-force / abuse-prone endpoints (applied in addition to global IP/user limits).
     rate_limit_auth_per_ip_per_minute: int = Field(default=30, ge=3, le=500)
     rate_limit_upload_per_user_per_minute: int = Field(default=30, ge=3, le=500)
+    # Search + chat message POSTs (RAG); scaled by plan in middleware like other limits.
+    rate_limit_rag_per_user_per_minute: int = Field(default=60, ge=5, le=2000)
 
     # CORS
     cors_origins: str = Field(default="http://localhost:5173,http://127.0.0.1:5173")

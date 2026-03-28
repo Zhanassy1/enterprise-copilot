@@ -1,7 +1,11 @@
 # Production-oriented overrides: do not publish PostgreSQL or Redis to the host.
 # Usage: docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
-# Set secrets via environment or a secrets manager — never commit real values.
-# ENVIRONMENT=production enables stricter API behavior (e.g. require X-Workspace-Id) and startup checks.
+#
+# Обязательно задайте через env / secrets manager (не дефолты из dev-compose):
+#   DATABASE_URL, REDIS_URL (с паролем), SECRET_KEY, STORAGE_BACKEND + S3 при необходимости.
+# См. .env.production.example и fail-fast в backend/app/core/startup_checks.py
+#
+# ENVIRONMENT=production включает строгие проверки старта и require X-Workspace-Id (см. настройки).
 
 services:
   db:

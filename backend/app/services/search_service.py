@@ -69,6 +69,7 @@ class SearchService:
         assert_quota(
             self.db,
             workspace_id=workspace_id,
+            user_id=user_id,
             request_increment=1,
             token_increment=query_tokens,
         )
@@ -83,6 +84,12 @@ class SearchService:
         )
         hits = rerank_hits(query, hits, top_n=int(settings.reranker_top_n))
         if settings.reranker_enabled:
+            assert_quota(
+                self.db,
+                workspace_id=workspace_id,
+                user_id=user_id,
+                rerank_increment=1,
+            )
             record_event(
                 self.db,
                 workspace_id=workspace_id,
@@ -115,6 +122,7 @@ class SearchService:
         assert_quota(
             self.db,
             workspace_id=workspace_id,
+            user_id=user_id,
             token_increment=output_tokens,
         )
         record_event(

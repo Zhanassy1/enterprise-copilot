@@ -85,6 +85,7 @@ class ChatService:
         assert_quota(
             self.db,
             workspace_id=workspace_id,
+            user_id=user_id,
             request_increment=1,
             token_increment=query_tokens,
         )
@@ -123,6 +124,7 @@ class ChatService:
         assert_quota(
             self.db,
             workspace_id=workspace_id,
+            user_id=user_id,
             token_increment=output_tokens,
         )
 

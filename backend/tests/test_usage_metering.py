@@ -1,7 +1,8 @@
 import unittest
+import uuid
 from datetime import datetime, timezone
 from types import SimpleNamespace
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 from fastapi import HTTPException
 
@@ -35,6 +36,27 @@ class UsageMeteringTests(unittest.TestCase):
                 )
             self.assertEqual(err.exception.status_code, 429)
 
+    def test_assert_quota_raises_on_rerank_limit(self) -> None:
+        quota = SimpleNamespace(
+            plan_slug="free",
+            monthly_request_limit=1_000_000,
+            monthly_token_limit=1_000_000,
+            monthly_upload_bytes_limit=1_000_000,
+            max_documents=100,
+        )
+        with patch("app.services.usage_metering.get_or_create_quota", return_value=quota), patch(
+            "app.services.usage_metering._sum_events",
+            return_value=2000,
+        ):
+            with self.assertRaises(HTTPException) as err:
+                assert_quota(
+                    db=MagicMock(),
+                    workspace_id=uuid.UUID("00000000-0000-0000-0000-000000000000"),
+                    rerank_increment=1,
+                )
+            self.assertEqual(err.exception.status_code, 429)
+            self.assertIn("rerank", (err.exception.detail or "").lower())
+
     def test_plan_defaults_include_concurrent_job_cap(self) -> None:
         from app.services.usage_metering import PLAN_LIMITS
 
@@ -46,6 +68,7 @@ class UsageMeteringTests(unittest.TestCase):
         team = effective_rate_limits_for_plan("team")
         self.assertGreater(team["per_user"], free["per_user"])
         self.assertGreater(team["per_ip"], free["per_ip"])
+        self.assertGreater(team["rag_user"], free["rag_user"])
 
 
 if __name__ == "__main__":

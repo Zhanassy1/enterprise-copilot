@@ -156,6 +156,7 @@ class DocumentIngestionService:
         assert_quota(
             self.db,
             workspace_id=workspace.id,
+            user_id=user_id,
             request_increment=1,
             upload_bytes_increment=int(stored.size_bytes),
         )

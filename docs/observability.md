@@ -3,6 +3,7 @@
 ## What is available
 
 - Structured JSON request logs in API middleware (`event: http_request`, `request_id`, `path`, `status_code`, `latency_ms`, `client_ip`).
+- Workspace audit rows for quota denials (`event_type: quota.denied`) when enforcement triggers with an open DB session.
 - Request correlation via `X-Request-Id` response header (also echoed on rate-limit and error responses).
 - Prometheus-like metrics endpoint: `/metrics` (HTTP counters and latency sums).
 - Optional Sentry (`SENTRY_DSN`): when `X-Workspace-Id` is present, the tag `workspace_id` is set on the scope for request-scoped errors.
