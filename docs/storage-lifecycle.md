@@ -21,5 +21,6 @@ Enable S3 when running multiple API replicas or when disks should not be the sou
 
 ## Related
 
-- [security.md](security.md) — secrets and S3 credentials.
-- [runbook.md](runbook.md) — operations when ingestion fails.
+- [security.md](security.md) — secrets and S3 credentials  
+- [runbook.md](runbook.md) — operations when ingestion fails  
+- [deployment.md](deployment.md) — `PRODUCTION_REQUIRE_S3_BACKEND` and MinIO  

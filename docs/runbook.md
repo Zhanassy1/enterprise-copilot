@@ -48,3 +48,8 @@
 - **Object storage**: replicate bucket versioning / cross-region replication per your provider; for MinIO use site replication or external backup of volumes.
 - **Alembic**: deploy runs `alembic upgrade head`. For rollback, restore DB from backup taken before the migration, then deploy the previous app image — do not run `downgrade` on production without a DBA-approved plan.
 - **Smoke after migrate**: `GET /readyz` (`db: true`), upload a tiny doc, confirm ingestion reaches `ready`.
+
+## Related
+
+- [deployment.md](deployment.md) — production checklist and compose  
+- [observability.md](observability.md) — metrics and logs  

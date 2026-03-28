@@ -1,5 +1,16 @@
 # Deployment
 
+## Development vs production
+
+| | Dev | Production (primary path) |
+|---|-----|---------------------------|
+| Compose | `docker compose up` — root `docker-compose.yml` | `docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build` |
+| DB/Redis ports | Published to host (e.g. 5433, 6380) for tooling | **Not** published; services only on internal network |
+| Credentials | Default `postgres:postgres` acceptable locally | Strong `POSTGRES_*`, `REDIS_PASSWORD`, `SECRET_KEY`; validated by `startup_checks` when `ENVIRONMENT=production` |
+| Ingestion | Worker + async recommended; optional sync indexing only with `ENVIRONMENT=local` + flags | **Async only** (`INGESTION_ASYNC_ENABLED=1`, `ALLOW_SYNC_INGESTION_FOR_DEV=0`) |
+
+Product-level checklist: [README.md](../README.md) section **Production checklist**.
+
 ## Docker Compose (recommended baseline)
 
 - **Development**: `docker compose up --build` — see root `docker-compose.yml` (Postgres/Redis ports published for local dev; default `postgres` / no Redis password — **not** for public exposure).
@@ -80,3 +91,5 @@ Use the same `STORAGE_BACKEND=s3` as for AWS; point `S3_ENDPOINT_URL` at your Mi
 - [runbook.md](runbook.md)
 - [observability.md](observability.md)
 - [storage-lifecycle.md](storage-lifecycle.md)
+- [email-testing.md](email-testing.md) (SMTP / capture for verify & reset)
+- [testing-database.md](testing-database.md) (CI `SQLALCHEMY_USE_NULLPOOL`)

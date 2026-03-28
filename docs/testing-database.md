@@ -1,5 +1,7 @@
 # Database connections in tests
 
+**See also:** [README.md](../README.md) section **Testing** (CI jobs and when to set this variable).
+
 ## SQLALCHEMY_USE_NULLPOOL (`test-safety` mode)
 
 When `SQLALCHEMY_USE_NULLPOOL=1`, `backend/app/db/session.py` builds the engine with **`NullPool`**: each `Session` checks out a connection and **returns it to the driver on `session.close()`** instead of keeping it in SQLAlchemy’s `QueuePool`.

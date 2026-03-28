@@ -1,18 +1,36 @@
 # Enterprise Copilot
 
-**Production-style, multi-tenant** AI copilot для корпоративных документов: семантический поиск, RAG-чат, summary, **async ingestion** (Celery), **workspace + роли**, **квоты**, **audit**, **observability**, **S3-ready** storage.
+**Multi-tenant AI document platform** для корпоративных PDF/DOCX/TXT: семантический поиск, RAG-чат, summary, **асинхронная индексация** (Celery + PostgreSQL/pgvector), **workspaces и роли**, **квоты и usage metering**, **audit**, **наблюдаемость**, object storage (local / S3).
+
+**Репозиторий:** [github.com/Zhanassy1/enterprise-copilot](https://github.com/Zhanassy1/enterprise-copilot)
 
 [![CI](https://github.com/Zhanassy1/enterprise-copilot/actions/workflows/ci.yml/badge.svg)](https://github.com/Zhanassy1/enterprise-copilot/actions/workflows/ci.yml)
 
-**Документация (индекс):** [deployment](docs/deployment.md) · [security](docs/security.md) · [quotas](docs/quotas.md) · [observability](docs/observability.md) · [runbook](docs/runbook.md) · [storage-lifecycle](docs/storage-lifecycle.md) · [WORKSPACE_ROUTING](docs/WORKSPACE_ROUTING.md) — полная таблица ниже в [Documentation](#documentation).
-
-Статус реализации по дорожной карте: **[docs/IMPLEMENTATION_STATUS.md](docs/IMPLEMENTATION_STATUS.md)**
-
 ---
 
-## Overview
+## Product overview
 
-Сервис изолирует данные по **workspace** (заголовок `X-Workspace-Id`). Пользователь входит по JWT, выбирает workspace, загружает PDF/DOCX/TXT, задаёт вопросы и получает ответы с опорой на фрагменты документов. В **production** тяжёлая обработка (парсинг, chunking, эмбеддинги, pgvector) выполняется **только в worker**, не в HTTP upload.
+Продукт позиционируется как **SaaS-фундамент** для AI over documents: данные изолированы по **workspace**, доступ контролируется ролями (`owner` / `admin` / `member` / `viewer`), лимиты применяются на уровне плана, а тяжёлая обработка документов вынесена из HTTP в **worker**.
+
+**Текущие возможности (backend + UI):**
+
+| Область | Что есть |
+|---------|----------|
+| Tenancy | Заголовок `X-Workspace-Id`, членство в workspace, изоляция в API и в Celery (`workspace_id`) |
+| Документы | Upload → storage → статусы `queued` → … → `ready` / `failed`; список, скачивание, summary, ingestion API |
+| Индексация | Async path в production: **commit строк document/job до постановки в Celery** (`document_ingestion.py`), парсинг/chunking/embeddings в worker |
+| Поиск и чат | Гибридный retrieval, квоты, rate limits по плану |
+| Безопасность | JWT, refresh rotation, logout / logout-all, reuse detection, password reset + revoke refresh; fail-fast `startup_checks` в production |
+| Квоты | Upload, страницы PDF, concurrent jobs, search/chat, rerank, tokens — см. [docs/quotas.md](docs/quotas.md) |
+| Наблюдаемость | Структурные логи, `X-Request-Id`, `/metrics`, опционально Sentry |
+
+**Ограничения production (честно):**
+
+- Нет полноценного биллинга провайдера (Stripe и т.д.) — есть usage/plan stubs и API usage.
+- Frontend: нет отдельного экрана Audit, нет invitations/team management — см. [docs/IMPLEMENTATION_STATUS.md](docs/IMPLEMENTATION_STATUS.md) §19.
+- Email в бою требует реальный SMTP или Mailpit; для тестов есть capture — [docs/email-testing.md](docs/email-testing.md).
+
+**Roadmap / зрелость:** таблица шагов и partial-зоны — **[docs/IMPLEMENTATION_STATUS.md](docs/IMPLEMENTATION_STATUS.md)**.
 
 ---
 
@@ -20,167 +38,133 @@
 
 | Слой | Технологии |
 |------|------------|
-| API | FastAPI, JWT, workspace deps (`owner` / `admin` / `member` / `viewer`) |
+| API | FastAPI, JWT, workspace dependencies |
 | Worker | Celery, очередь `ingestion`, retry/backoff |
 | DB | PostgreSQL + **pgvector** |
-| Cache / queue | Redis |
-| Storage | `local` (dev) или **S3** / MinIO (`storage_key`, presigned URLs) |
+| Queue | Redis (broker для Celery) |
+| Storage | `local` (dev) или **S3** / MinIO |
 | Frontend | Next.js |
 
-**Поток ingestion (фактический код):**
+**Асинхронный ingestion (как в коде):**
 
-1. **HTTP** [`backend/app/api/routers/documents.py`](backend/app/api/routers/documents.py) → [`DocumentIngestionService.upload_document`](backend/app/services/document_ingestion.py): файл в storage (`storage_key`), строка `documents` со статусом **`queued`**, при `INGESTION_ASYNC_ENABLED=1` — строка **`IngestionJob`** (`queued`) и `ingest_document_task.apply_async` в Celery.
-2. **В request-response нет** записи `embedding_vector` в БД: векторы пишутся в **worker** в [`DocumentIndexingService.run`](backend/app/services/document_indexing.py) (`UPDATE document_chunks ... embedding_vector`).
-3. **Worker** [`backend/app/tasks/ingestion.py`](backend/app/tasks/ingestion.py) вызывает индексацию; статусы документа и job: `queued` → `processing` / `retrying` → `ready` или `failed`.
-4. Синхронная индексация в том же процессе, что и upload — только **local dev**: `ENVIRONMENT=local`, `ALLOW_SYNC_INGESTION_FOR_DEV=1`, `INGESTION_ASYNC_ENABLED=0` (см. `document_ingestion.py`).
+1. `POST /api/v1/documents/upload` сохраняет файл, создаёт `Document` (`queued`) и `IngestionJob` (`queued`), **коммитит** их в БД, затем вызывает `ingest_document_task.apply_async` ([`document_ingestion.py`](backend/app/services/document_ingestion.py)).
+2. В том же HTTP-запросе **нет** записи векторов: эмбеддинги и chunking выполняет worker ([`document_indexing.py`](backend/app/services/document_indexing.py), [`tasks/ingestion.py`](backend/app/tasks/ingestion.py)).
+3. Статусы: `queued` → `processing` / `retrying` → `ready` или `failed` (и у документа, и у job).
+4. **Только dev:** синхронная индексация в процессе API при `ENVIRONMENT=local`, `INGESTION_ASYNC_ENABLED=0`, `ALLOW_SYNC_INGESTION_FOR_DEV=1` — в production запрещено `startup_checks`.
 
-**Поток RAG:** search/chat фильтруют чанки по `workspace_id`; учитываются квоты и rate limits (см. [docs/quotas.md](docs/quotas.md)).
-
-### Статусы document / job (API)
-
-| Статус | Где задаётся | HTTP |
-|--------|----------------|------|
-| `queued`, `processing`, `retrying`, `ready`, `failed` | поле `documents.status`, `ingestion_jobs.status` ([`backend/app/models/document.py`](backend/app/models/document.py)) | `GET /api/v1/documents/{id}` — в ответе `DocumentOut.status`; `GET /api/v1/documents/{id}/ingestion` — последний [`IngestionJob`](backend/app/api/routers/documents.py) (`get_document_ingestion_job`); список задач: `GET /api/v1/ingestion/jobs` ([`backend/app/api/routers/ingestion.py`](backend/app/api/routers/ingestion.py), фильтр `?status=`). |
-
-В production upload не выполняет индексацию в HTTP: только storage + запись строк + постановка Celery (см. выше и [`startup_checks.py`](backend/app/core/startup_checks.py)).
+Инвентарь tenant-scope: **[docs/WORKSPACE_ROUTING.md](docs/WORKSPACE_ROUTING.md)**.
 
 ---
 
-## Development setup
-
-**Docker (рекомендуется):** Postgres и Redis с пробросом портов на хост, API, worker, frontend.
+## Dev setup
 
 ```bash
 docker compose up --build
 ```
 
-- UI: http://localhost:3000  
-- API: http://localhost:8000 — [OpenAPI](http://localhost:8000/docs), [healthz](http://localhost:8000/healthz)  
+| Сервис | URL |
+|--------|-----|
+| UI | http://localhost:3000 |
+| API | http://localhost:8000 |
+| OpenAPI | http://localhost:8000/docs |
+| Health | http://localhost:8000/healthz |
 
-Шаблон env для локальной разработки: [env/.env.example](env/.env.example) → скопировать в `backend/.env`. Закоммиченный dev-контекст для контейнеров: [backend/.env.docker](backend/.env.docker).
+Шаблоны env: [env/.env.example](env/.env.example) → `backend/.env`; для контейнеров: [backend/.env.docker](backend/.env.docker).
 
-**Без Docker:** `backend/` — venv, `pip install -r requirements.txt`, `alembic upgrade head`, `uvicorn app.main:app --reload`. `frontend/` — `npm install`, `npm run dev`.
+**Без Docker:** в `backend/` — venv, `pip install -r requirements.txt`, `alembic upgrade head`, `uvicorn app.main:app --reload`; в `frontend/` — `npm install`, `npm run dev`.
 
-**Доступ с другого устройства в LAN:** пересоберите frontend с API base вашей машины, например:
-
-```bash
-docker compose build --build-arg NEXT_PUBLIC_API_BASE=http://<IP_ПК>:8000/api/v1 frontend
-docker compose up -d frontend
-```
-
-(или задайте переменные сборки в `docker-compose.yml` под ваш сценарий.)
+`docker-compose.yml` **публикует** порты Postgres (5433) и Redis (6380) на хост — удобно для dev, **не** как модель публичного production.
 
 ---
 
 ## Production setup
 
-Базовый `docker compose up` **публикует** порты БД/Redis — только для разработки. Для продакшена используйте overlay без внешних портов БД/Redis и **обязательные** секреты:
+**Основной путь:** overlay без открытых портов БД/Redis наружу:
 
 ```bash
 docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
 ```
 
-Требуются в окружении или `.env` рядом с compose: `POSTGRES_USER`, `POSTGRES_PASSWORD`, `DATABASE_URL` (хост `db`, те же креды), `REDIS_PASSWORD`, `REDIS_URL`, `SECRET_KEY`. Подробно: [docs/deployment.md](docs/deployment.md), шаблон: [.env.production.example](.env.production.example).
+Подробности переменных, TLS, MinIO: **[docs/deployment.md](docs/deployment.md)**. Шаблон: **[.env.production.example](.env.production.example)**.
 
-TLS и доверие к `X-Forwarded-*` — на reverse proxy; см. [docs/security.md](docs/security.md). Старт API в `ENVIRONMENT=production` с небезопасным конфигом **запрещён** (fail-fast в `startup_checks`).
+Старт с `ENVIRONMENT=production` и небезопасным конфигом **блокируется** ([`startup_checks.py`](backend/app/core/startup_checks.py)).
+
+### Production checklist
+
+| Область | Действие |
+|---------|----------|
+| Secrets | `SECRET_KEY` (не default), креды БД/Redis/S3 из secrets manager |
+| Database | `DATABASE_URL` с TLS при необходимости; не `localhost` / не `postgres:postgres` в prod |
+| Redis | Пароль в URL или `rediss://`; см. startup checks |
+| Storage | Для SaaS: `STORAGE_BACKEND=s3` при `PRODUCTION_REQUIRE_S3_BACKEND=1` |
+| Reverse proxy | TLS termination; `USE_FORWARDED_HEADERS` + `TRUSTED_PROXY_IPS` |
+| Health | `/healthz`, `/readyz` за балансировщиком |
+| Migrations | `alembic upgrade head` до или при старте API/worker |
+| Worker | Celery worker с той же `REDIS_URL` и очередью `ingestion` |
+| Sentry / metrics | `SENTRY_DSN` опционально; `/metrics` при `observability_metrics_enabled` |
 
 ---
 
 ## Security
 
-Секреты, CORS, rate limits, proxy / `TRUSTED_PROXY_IPS`, заголовки в production — **[docs/security.md](docs/security.md)**. Refresh tokens, rotation, logout, audit событий входа — в коде и в security-доке.
+Секреты, proxy, rate limits, заголовки, audit: **[docs/security.md](docs/security.md)**.
 
 ---
 
 ## Quotas
 
-Планы **free / pro / team**, лимиты на upload, concurrent jobs, запросы search/chat/rerank, токены — **[docs/quotas.md](docs/quotas.md)**. Enforcement в API и worker; превышение — ответы 429 и события audit.
+Планы, enforcement, 429: **[docs/quotas.md](docs/quotas.md)**.
 
 ---
 
 ## Observability
 
-Структурированные логи, `X-Request-Id`, Sentry (опционально), `/metrics` — **[docs/observability.md](docs/observability.md)**. Операционные сценарии: **[docs/runbook.md](docs/runbook.md)**.
+Логи, request id, метрики, Sentry: **[docs/observability.md](docs/observability.md)**. Операции: **[docs/runbook.md](docs/runbook.md)**.
 
 ---
 
-## Storage
+## Storage lifecycle
 
-`storage_key`, local vs S3/MinIO, дедуп, soft-delete, политика AV — **[docs/storage-lifecycle.md](docs/storage-lifecycle.md)**. В production при `PRODUCTION_REQUIRE_S3_BACKEND=1` требуется `STORAGE_BACKEND=s3` (см. `startup_checks`).
-
----
-
-## Runbook
-
-Инциденты (503 БД, очередь Celery, 429, бэкапы, миграции) — **[docs/runbook.md](docs/runbook.md)**.
+Local vs S3, дедуп, soft-delete: **[docs/storage-lifecycle.md](docs/storage-lifecycle.md)**.
 
 ---
 
-## Documentation
+## Testing
+
+| Режим | Команда / условие |
+|-------|-------------------|
+| Unit (без Postgres) | `cd backend && python -m unittest discover -s tests -v` — интеграционные тесты *skipped* |
+| Integration | `RUN_INTEGRATION_TESTS=1` + `DATABASE_URL` на Postgres; опционально `SQLALCHEMY_USE_NULLPOOL=1` — см. [docs/testing-database.md](docs/testing-database.md) |
+| Async smoke | Job **backend-async-smoke** в [.github/workflows/ci.yml](.github/workflows/ci.yml); локально `RUN_ASYNC_PIPELINE_SMOKE=1` |
+| Email HTTP e2e | `tests/test_email_e2e_flow.py` при `RUN_INTEGRATION_TESTS=1` — [docs/email-testing.md](docs/email-testing.md) |
+
+Windows: [scripts/test-integration.ps1](scripts/test-integration.ps1).
+
+При `RUN_INTEGRATION_TESTS=1` отключаются in-memory rate limits для auth в middleware ([`main.py`](backend/app/main.py)).
+
+```bash
+cd frontend && npm run lint && npm run build
+```
+
+---
+
+## Documentation index
 
 | Документ | Содержание |
 |----------|------------|
-| [docs/IMPLEMENTATION_STATUS.md](docs/IMPLEMENTATION_STATUS.md) | Статус шагов дорожной карты (SaaS maturity) |
-| [docs/deployment.md](docs/deployment.md) | Compose dev/prod, TLS, MinIO/S3, миграции |
-| [docs/security.md](docs/security.md) | Секреты, proxy, rate limits, заголовки |
+| [docs/deployment.md](docs/deployment.md) | Dev vs prod compose, TLS, S3/MinIO, миграции, checklist |
+| [docs/security.md](docs/security.md) | Секреты, proxy, rate limits, audit |
 | [docs/quotas.md](docs/quotas.md) | Планы, лимиты, enforcement |
-| [docs/observability.md](docs/observability.md) | Логи, Sentry, метрики |
-| [docs/runbook.md](docs/runbook.md) | Операции, backup/restore, алерты |
-| [docs/storage-lifecycle.md](docs/storage-lifecycle.md) | Объекты, S3, дедуп, retention |
-| [docs/WORKSPACE_ROUTING.md](docs/WORKSPACE_ROUTING.md) | Инвентарь API и Celery: tenant scope |
-| [docs/architecture.md](docs/architecture.md) | Обзор системы |
-| [docs/email-testing.md](docs/email-testing.md) | Тестовый SMTP / capture / Mailpit, e2e `test_email_e2e_flow.py` |
-| [docs/testing-database.md](docs/testing-database.md) | `SQLALCHEMY_USE_NULLPOOL`, ResourceWarning в тестах vs production pool |
+| [docs/observability.md](docs/observability.md) | Логи, Sentry, `/metrics` |
+| [docs/runbook.md](docs/runbook.md) | Инциденты, backup, очередь |
+| [docs/storage-lifecycle.md](docs/storage-lifecycle.md) | Объекты, retention, AV |
+| [docs/WORKSPACE_ROUTING.md](docs/WORKSPACE_ROUTING.md) | Инвентарь API / Celery по workspace |
+| [docs/architecture.md](docs/architecture.md) | Обзор компонентов |
+| [docs/email-testing.md](docs/email-testing.md) | Capture, Mailpit, e2e тесты |
+| [docs/testing-database.md](docs/testing-database.md) | NullPool, ResourceWarning в тестах |
+| [docs/IMPLEMENTATION_STATUS.md](docs/IMPLEMENTATION_STATUS.md) | Дорожная карта SaaS |
 
-Шаблоны env: [.env.example](.env.example) (указатель), [env/.env.example](env/.env.example), [backend/.env.example](backend/.env.example), [.env.production.example](.env.production.example).
-
----
-
-## Tests
-
-**Unit (без Postgres):** из `backend/` — `py -3 -m unittest discover -s tests -v` — интеграционные классы будут *skipped*.
-
-**Integration (PostgreSQL):** поднять тестовую БД и прогнать весь suite (cross-workspace и API flow **не** skipped):
-
-```bash
-# из корня репозитория — контейнер db_test, порт хоста 5434 (см. docker-compose.yml profile test)
-docker compose --profile test up -d db_test
-
-# из backend/
-set DATABASE_URL=postgresql+psycopg://postgres:postgres@127.0.0.1:5434/enterprise_copilot_test
-set RUN_INTEGRATION_TESTS=1
-py -3 -m alembic upgrade head
-py -3 -m unittest discover -s tests -v
-```
-
-Windows: `scripts/test-integration.ps1` делает то же (alembic + полный discover). CI: job `backend-integration` в `.github/workflows/ci.yml` — сервис Postgres на `:5433`, `RUN_INTEGRATION_TESTS=1`, полный `unittest discover`.
-
-При `RUN_INTEGRATION_TESTS=1` middleware **не применяет** in-memory rate limits (много логинов с одного IP в одном процессе) — см. `backend/app/main.py` (`_skip_rl_for_integration`).
-
-Полный e2e email (register → capture → verify-email → reset-password → login): `tests/test_email_e2e_flow.py` при `RUN_INTEGRATION_TESTS=1` (см. [docs/email-testing.md](docs/email-testing.md)).
-
-`SQLALCHEMY_USE_NULLPOOL=1` — режим тестов без пула (см. [docs/testing-database.md](docs/testing-database.md)); в CI jobs `backend-integration` / `backend-async-smoke` и в `scripts/test-integration.ps1`.
-
-**Async ingestion smoke** (Celery eager, документ доходит до `ready`/`failed`): job `backend-async-smoke` в `.github/workflows/ci.yml`; локально нужны Postgres + Redis и переменные:
-
-```bash
-docker compose --profile test up -d db_test
-docker compose up -d redis
-set DATABASE_URL=postgresql+psycopg://postgres:postgres@127.0.0.1:5434/enterprise_copilot_test
-set REDIS_URL=redis://127.0.0.1:6380/0
-set RUN_ASYNC_PIPELINE_SMOKE=1
-set RUN_INTEGRATION_TESTS=1
-set INGESTION_ASYNC_ENABLED=1
-py -3 -m alembic upgrade head
-py -3 -m unittest tests.test_ingestion_async_pipeline -v
-```
-
-Почта без реального SMTP: `EMAIL_CAPTURE_MODE=1` (только non-production) — см. [docs/email-testing.md](docs/email-testing.md).
-
-```bash
-cd frontend
-npm run lint && npm run build
-```
+Шаблоны env: [.env.example](.env.example), [env/.env.example](env/.env.example), [backend/.env.example](backend/.env.example), [.env.production.example](.env.production.example).
 
 ---
 
@@ -188,13 +172,12 @@ npm run lint && npm run build
 
 ```text
 enterprise-copilot/
-├── backend/           # FastAPI, Celery worker, Alembic, tests
+├── backend/           # FastAPI, Celery, Alembic, tests
 ├── frontend/          # Next.js
-├── docs/              # Deployment, security, quotas, runbook, …
-├── env/               # Dev .env example
+├── docs/
 ├── docker-compose.yml
 ├── docker-compose.prod.yml
 └── README.md
 ```
 
-Остановка Docker: `docker compose down`.
+`docker compose down` — остановка dev-стека.

@@ -33,3 +33,8 @@ Global limits from settings (`rate_limit_*`) are scaled by **plan** via `effecti
 ## API
 
 - `GET /api/v1/billing/usage` returns plan limits and current month totals for the active workspace.
+
+## Related
+
+- [README.md](../README.md) — product overview and quota-aware platform context  
+- [security.md](security.md) — rate limits and audit on denials  

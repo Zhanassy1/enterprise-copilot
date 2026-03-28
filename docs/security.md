@@ -37,3 +37,8 @@
 - Workspace-scoped audit logs: `GET /api/v1/audit/logs` with optional `event_type` (exact match) filter; owner/admin: `GET /api/v1/audit/admin/logs`.
 - Quota denials: structured log `event: quota.violation` plus, when applicable, persisted `quota.denied` in `AuditLog`.
 - Auth: successful login `auth.login`; **failed login** `auth.login_failed` (no password in metadata; IP in metadata) — `backend/app/api/routers/auth.py`.
+
+## Related
+
+- [deployment.md](deployment.md) — TLS and production compose  
+- [email-testing.md](email-testing.md) — verify/reset flows without production SMTP (capture mode)  

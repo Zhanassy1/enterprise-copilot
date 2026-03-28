@@ -22,3 +22,8 @@
 - High 5xx error rate for 5 minutes.
 - Ingestion failed jobs above threshold.
 - Sudden drop in `ready` ingestion throughput.
+
+## Related
+
+- [runbook.md](runbook.md) — operational responses  
+- [README.md](../README.md) — Testing / CI jobs (`backend-integration`, `backend-async-smoke`)  

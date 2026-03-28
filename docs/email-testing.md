@@ -2,6 +2,8 @@
 
 Production sends mail via **SMTP** (`smtp_host`, `smtp_port`, …). For automated tests and local dev without a real SMTP relay, use one of the options below.
 
+**Product context:** [README.md](../README.md) (Storage / Security / Testing).
+
 ## 1. In-memory capture (`EMAIL_CAPTURE_MODE`)
 
 When `EMAIL_CAPTURE_MODE=1` (or `true`), the app **does not** open SMTP; outbound messages are appended to an in-memory buffer exposed by `app.services.email_service`:

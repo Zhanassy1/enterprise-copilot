@@ -1,81 +1,29 @@
-# Архитектура проекта Enterprise Copilot
+# Архитектура Enterprise Copilot
 
-## Общее описание
-Enterprise Copilot — это AI-система для работы с бизнес-документами.
+Система для поиска и ответов по корпоративным документам с **изоляцией по workspace** и **асинхронной индексацией** в production.
 
-Пользователь загружает документы, система обрабатывает их, разбивает на части, создает embeddings, сохраняет их в векторное хранилище и затем использует для поиска и ответов на вопросы.
+## Поток данных (production)
 
-## Общий поток работы
-1. Пользователь загружает PDF или DOCX
-2. Backend извлекает текст
-3. Текст разбивается на chunks
-4. Для chunks создаются embeddings
-5. Chunks сохраняются в vector storage
-6. Пользователь выполняет поиск или задает вопрос
-7. Система находит релевантные chunks
-8. LLM формирует ответ
-9. Ответ возвращается пользователю с указанием источников
+1. Пользователь загружает файл через API (`POST /documents/upload`).
+2. API сохраняет объект в storage, пишет строки `documents` и `ingestion_jobs`, **коммитит** транзакцию, ставит задачу Celery `ingest_document_task` (не индексирует в HTTP).
+3. **Worker** извлекает текст, режет на chunks, считает embeddings, пишет в PostgreSQL (**pgvector**).
+4. Поиск и чат обращаются к чанкам с фильтром `workspace_id`; применяются квоты и rate limits.
 
-## Основные компоненты
+В **local dev** опционально доступна синхронная индексация в процессе API (флаги `ENVIRONMENT=local`, `ALLOW_SYNC_INGESTION_FOR_DEV`, `INGESTION_ASYNC_ENABLED=0`) — не используется в production.
 
-### Frontend
-- Авторизация
-- Загрузка документов
-- Список документов
-- Поиск
-- Чат
-- Summary
+## Компоненты
 
-### Backend
-- Auth API
-- Document API
-- Search API
-- Chat API
-- Summary API
+| Компонент | Роль |
+|-----------|------|
+| Frontend (Next.js) | Auth, документы, поиск, чат, billing/jobs UI |
+| API (FastAPI) | JWT, workspace deps, upload metadata, RAG |
+| Worker (Celery) | Ingestion, retry, опционально maintenance |
+| PostgreSQL | Данные, pgvector |
+| Redis | Broker Celery |
+| Object storage | Local или S3/MinIO (`storage_key`) |
 
-### Database
-- Users
-- Documents
-- Document Chunks
-- Chat Sessions
-- Chat Messages
+## Связанные документы
 
-### ML / NLP Layer
-- Embedding model
-- Vector search
-- Retrieval
-- LLM generation
-
-## Простая схема
-
-```text
-[ Пользователь ]
-      |
-      v
-[ Frontend (React) ]
-      |
-      v
-[ Backend (FastAPI) ]
-      |
-      +-------------------+
-      |                   |
-      v                   v
-[ PostgreSQL ]      [ Redis / Jobs ]
-      |
-      v
-[ Document Chunks ]
-      |
-      v
-[ Embeddings ]
-      |
-      v
-[ Vector Store ]
-      |
-      v
-[ Retrieval ]
-      |
-      v
-[ LLM ]
-      |
-      v
-[ Ответ с источниками ]
+- [WORKSPACE_ROUTING.md](WORKSPACE_ROUTING.md) — маршруты и tenant scope  
+- [deployment.md](deployment.md) — dev vs prod  
+- [storage-lifecycle.md](storage-lifecycle.md) — хранение файлов  

@@ -5,7 +5,7 @@
 | # | Шаг | Статус |
 |---|-----|--------|
 | **Этап 1** | | |
-| 1 | README: позиционирование production-style SaaS, async flow, без legacy MVP-формулировок | **Done** |
+| 1 | README: product entrypoint, async ingestion, docs index, roadmap | **Done** |
 | 2 | Индекс документации (`docs/*`, навигация) | **Done** |
 | **Этап 2** | | |
 | 3 | Dev `docker-compose.yml` / prod overlay, внутренние DB/Redis/worker, без dev credentials в prod | **Done** |
