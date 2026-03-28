@@ -96,7 +96,13 @@ def validate_production_settings(settings: Settings) -> None:
         if rerr:
             raise RuntimeError(f"Production configuration invalid ({label}): {rerr}")
 
-    if settings.storage_backend.lower().strip() == "s3":
+    sb = settings.storage_backend.lower().strip()
+    if settings.production_require_s3_backend and sb != "s3":
+        raise RuntimeError(
+            "Production configuration invalid: STORAGE_BACKEND must be s3 when PRODUCTION_REQUIRE_S3_BACKEND=1"
+        )
+
+    if sb == "s3":
         required = {
             "s3_bucket": settings.s3_bucket,
             "s3_access_key_id": settings.s3_access_key_id,

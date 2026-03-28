@@ -116,6 +116,50 @@ class IngestionTaskUnitTests(unittest.TestCase):
         finally:
             ingest_document_task.pop_request()
 
+    def test_workspace_mismatch_marks_failed(self) -> None:
+        """Celery kwargs workspace_id must match document.workspace_id (SaaS isolation)."""
+        job_ws = uuid.uuid4()
+        doc_ws = uuid.uuid4()
+        document_id = uuid.uuid4()
+        dedup_key = f"{job_ws}:{document_id}"
+        job = SimpleNamespace(
+            id=uuid.uuid4(),
+            document_id=document_id,
+            workspace_id=job_ws,
+            deduplication_key=dedup_key,
+            status="queued",
+            attempts=0,
+            error_message=None,
+            locked_at=None,
+            completed_at=None,
+            retry_after_seconds=None,
+            dead_lettered_at=None,
+            celery_task_id=None,
+            last_retry_at=None,
+            available_at=None,
+        )
+        doc = SimpleNamespace(
+            id=document_id,
+            workspace_id=doc_ws,
+            status="queued",
+            error_message=None,
+        )
+        fake_db = _FakeDb([job, doc])
+        ingest_document_task.push_request(id="task-ws-mismatch")
+        try:
+            with patch("app.tasks.ingestion.SessionLocal", return_value=fake_db):
+                out = ingest_document_task.run(
+                    document_id=str(document_id),
+                    workspace_id=str(job_ws),
+                    ingestion_job_id=str(job.id),
+                    deduplication_key=dedup_key,
+                )
+            self.assertEqual(out["status"], "failed")
+            self.assertEqual(out["reason"], "workspace_mismatch")
+            self.assertEqual(job.error_message, "Workspace mismatch")
+        finally:
+            ingest_document_task.pop_request()
+
 
 if __name__ == "__main__":
     unittest.main()

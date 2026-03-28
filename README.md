@@ -23,6 +23,7 @@ Enterprise Copilot — это AI-ассистент для бизнеса, ко�
 - [docs/runbook.md](docs/runbook.md) — 503 БД, Celery, метрики
 - [docs/observability.md](docs/observability.md) — логи, Sentry, `/metrics`
 - [docs/storage-lifecycle.md](docs/storage-lifecycle.md) — local vs S3, дедуп, AV
+- [docs/WORKSPACE_ROUTING.md](docs/WORKSPACE_ROUTING.md) — инвентарь роутеров и Celery: scope по `workspace_id`
 
 Шаблон env для продакшена (только плейсхолдеры): [.env.production.example](.env.production.example)
 
@@ -100,7 +101,7 @@ npm run dev -- --host
 docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
 ```
 
-Секреты и переменные: [.env.production.example](.env.production.example). TLS — на reverse proxy; для корректного client IP за прокси задайте `USE_FORWARDED_HEADERS` и `TRUSTED_PROXY_IPS` (см. [docs/security.md](docs/security.md)).
+Overlay **требует** в окружении или `.env` рядом с compose: `POSTGRES_USER`, `POSTGRES_PASSWORD`, `DATABASE_URL` (с теми же кредами, хост `db`), `REDIS_PASSWORD`, `REDIS_URL` (с тем же паролем), `SECRET_KEY` — иначе `compose` не соберёт конфиг. Подробно: [docs/deployment.md](docs/deployment.md) и [.env.production.example](.env.production.example). TLS — на reverse proxy; для корректного client IP за прокси задайте `USE_FORWARDED_HEADERS` и `TRUSTED_PROXY_IPS` (см. [docs/security.md](docs/security.md)).
 
 Проверка после деплоя:
 - `http://localhost:3000` — frontend
@@ -163,6 +164,7 @@ npm run build
 | [docs/runbook.md](docs/runbook.md) | 503 БД, очередь, 429, backup/restore |
 | [docs/observability.md](docs/observability.md) | Логи, Sentry, `/metrics` |
 | [docs/storage-lifecycle.md](docs/storage-lifecycle.md) | `storage_key`, S3, дедуп, soft-delete, AV |
+| [docs/WORKSPACE_ROUTING.md](docs/WORKSPACE_ROUTING.md) | Роутеры и фоновые задачи: tenant scope |
 
 ## Описание проекта
 Во многих компаниях сотрудники тратят много времени на:

@@ -2,10 +2,27 @@
 
 ## Docker Compose (recommended baseline)
 
-- **Development**: `docker compose up --build` — see root `docker-compose.yml` (Postgres/Redis ports published for local dev).
-- **Production-style**: `docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d` — removes published DB/Redis ports; set secrets via environment or a secrets manager.
+- **Development**: `docker compose up --build` — see root `docker-compose.yml` (Postgres/Redis ports published for local dev; default `postgres` / no Redis password — **not** for public exposure).
+- **Production-style**: `docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build` — does **not** publish DB/Redis ports; **overrides** dev database/redis credentials. Required variables (fail at `compose config` if missing):
+
+| Variable | Purpose |
+|----------|---------|
+| `POSTGRES_USER` | DB superuser name (must match user in `DATABASE_URL`) |
+| `POSTGRES_PASSWORD` | DB password (must match `DATABASE_URL`) |
+| `DATABASE_URL` | e.g. `postgresql+psycopg://USER:PASS@db:5432/enterprise_copilot` — host **`db`** is the compose service name; must **not** use `postgres:postgres` (backend `startup_checks` rejects it in `ENVIRONMENT=production`) |
+| `REDIS_PASSWORD` | Passed to `redis-server --requirepass` |
+| `REDIS_URL` | e.g. `redis://:REDIS_PASSWORD@redis:6379/0` — same password as `REDIS_PASSWORD` |
+| `SECRET_KEY` | Long random string (`openssl rand -hex 32`) |
+
+Optional: `POSTGRES_DB` (default `enterprise_copilot`).
+
+**First deploy** with a new DB volume: empty `pgdata` volume picks up `POSTGRES_*`. If you previously ran dev compose on the same volume, rotate credentials only after `docker compose down -v` or use a dedicated volume name for production.
 
 Copy `.env.production.example` to your orchestration layer and replace placeholders. Never commit real secrets.
+
+### `PRODUCTION_REQUIRE_S3_BACKEND`
+
+When `PRODUCTION_REQUIRE_S3_BACKEND=1`, the API refuses to start unless `STORAGE_BACKEND=s3` and S3 settings are present — use for SaaS-style object storage. Omit or `0` for staging with local storage (still use non-dev `DATABASE_URL` / `REDIS_URL` / `SECRET_KEY`).
 
 ## TLS
 

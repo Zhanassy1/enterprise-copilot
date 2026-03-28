@@ -138,6 +138,79 @@ class CrossWorkspaceAccessTests(unittest.TestCase):
         finally:
             db.close()
 
+    def _seed_owner_and_viewer(self) -> tuple[uuid.UUID, uuid.UUID, str]:
+        """owner user, workspace, viewer user email (viewer-only role in that workspace)."""
+        db = SessionLocal()
+        try:
+            roles = ensure_default_roles(db)
+            uid_owner = uuid.uuid4()
+            uid_viewer = uuid.uuid4()
+            email_o = f"owner_{uid_owner.hex[:8]}@example.com"
+            email_v = f"viewer_{uid_viewer.hex[:8]}@example.com"
+            owner = User(
+                id=uid_owner,
+                email=email_o,
+                password_hash=hash_password("CrossWsTest1!"),
+                full_name="Owner",
+            )
+            viewer = User(
+                id=uid_viewer,
+                email=email_v,
+                password_hash=hash_password("CrossWsTest1!"),
+                full_name="Viewer",
+            )
+            db.add(owner)
+            db.add(viewer)
+            db.flush()
+            ws = Workspace(
+                id=uuid.uuid4(),
+                name="WS owner+viewer",
+                owner_user_id=owner.id,
+                personal_for_user_id=owner.id,
+            )
+            db.add(ws)
+            db.flush()
+            db.add(
+                WorkspaceMember(
+                    id=uuid.uuid4(),
+                    workspace_id=ws.id,
+                    user_id=owner.id,
+                    role_id=roles["owner"].id,
+                )
+            )
+            db.add(
+                WorkspaceMember(
+                    id=uuid.uuid4(),
+                    workspace_id=ws.id,
+                    user_id=viewer.id,
+                    role_id=roles["viewer"].id,
+                )
+            )
+            db.commit()
+            return ws.id, viewer.id, email_v
+        finally:
+            db.close()
+
+    def test_viewer_can_list_documents_but_cannot_upload(self) -> None:
+        ws_id, _vid, email_v = self._seed_owner_and_viewer()
+        login = self.client.post(
+            "/api/v1/auth/login",
+            json={"email": email_v, "password": "CrossWsTest1!"},
+        )
+        self.assertEqual(login.status_code, 200, login.text)
+        token = login.json()["access_token"]
+        headers = {"Authorization": f"Bearer {token}", "X-Workspace-Id": str(ws_id)}
+        list_res = self.client.get("/api/v1/documents", headers=headers)
+        self.assertEqual(list_res.status_code, 200, list_res.text)
+        up_res = self.client.post(
+            "/api/v1/documents/upload",
+            headers=headers,
+            files={"file": ("note.txt", b"hello world", "text/plain")},
+        )
+        self.assertEqual(up_res.status_code, 403, up_res.text)
+        detail = str(up_res.json().get("detail") or "").lower()
+        self.assertTrue("role" in detail or "insufficient" in detail, msg=up_res.text)
+
     def test_user_cannot_delete_or_summarize_foreign_document(self) -> None:
         ua, _ub, ws_a, _ws_b, doc_b_id, _sess_b = self._seed_two_workspaces()
 

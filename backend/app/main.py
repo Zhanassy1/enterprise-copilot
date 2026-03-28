@@ -396,6 +396,23 @@ def create_app() -> FastAPI:
             lines.append(f"celery_ingestion_retries_total {_ing_metrics.ingestion_retries_total}")
         except Exception:
             pass
+        try:
+            from sqlalchemy import func, select
+
+            from app.db.session import SessionLocal
+            from app.models.document import IngestionJob
+
+            db = SessionLocal()
+            try:
+                rows = db.execute(
+                    select(IngestionJob.status, func.count(IngestionJob.id)).group_by(IngestionJob.status)
+                ).all()
+                for st, cnt in rows:
+                    lines.append(f'ingestion_jobs_total{{status="{st}"}} {int(cnt)}')
+            finally:
+                db.close()
+        except Exception:
+            pass
         body = "\n".join(lines) + ("\n" if lines else "")
         return Response(content=body, media_type="text/plain; version=0.0.4; charset=utf-8")
 
