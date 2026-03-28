@@ -21,7 +21,7 @@
 | 10 | Usage ledger (`usage_events`, billing stubs) | **Done** |
 | **Этап 6** | | |
 | 11 | Refresh tokens, rotation, logout, reuse detection | **Done** |
-| 12 | Email verification, password reset, revoke refresh on reset | **Partial** — `EMAIL_CAPTURE_MODE`, `docs/email-testing.md`, `test_email_capture.py`; integration auth в `test_api_integration.py`; полный SMTP/Mailpit — см. док |
+| 12 | Email verification, password reset, revoke refresh on reset | **Done** (HTTP e2e с capture) — `tests/test_email_e2e_flow.py` + `test_email_capture.py`; production SMTP/Mailpit — см. `docs/email-testing.md` |
 | 13 | Upload validation (MIME, sniffing, size, pages, encrypted PDF, double ext) | **Done** |
 | 14 | Rate limits по группам (auth, upload, RAG), plan-aware | **Done** |
 | **Этап 7** | | |

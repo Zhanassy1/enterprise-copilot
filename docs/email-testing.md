@@ -13,7 +13,12 @@ When `EMAIL_CAPTURE_MODE=1` (or `true`), the app **does not** open SMTP; outboun
 
 **Unit tests:** `backend/tests/test_email_capture.py` patches `settings.email_capture_mode` and asserts tokens appear in the captured body.
 
-**Integration idea:** register a user with capture on, read the verification link from `get_captured_emails()[0]["body"]`, then call `POST /api/v1/auth/verify-email` — optional extension when you add a dedicated test module.
+**Full HTTP e2e (PostgreSQL):** `backend/tests/test_email_e2e_flow.py` — `RUN_INTEGRATION_TESTS=1`, patches `email_capture_mode`, runs:
+
+1. `POST /auth/register` → capture verification mail → parse `token=` → `POST /auth/verify-email` → `{"ok": true}`
+2. `POST /auth/request-password-reset` → capture → `POST /auth/reset-password` → old password rejected, new password login succeeds
+
+Same env/DB setup as `test_api_integration.py` (see README Tests).
 
 ## 2. Fake SMTP sink (Mailpit / MailHog)
 
@@ -37,4 +42,8 @@ Then exercise the real `send_email()` path (no capture mode) and verify delivery
 
 ## 4. CI
 
-CI does **not** require SMTP. Use `EMAIL_CAPTURE_MODE` in a test-only job or patch `settings` in unit tests (see `test_email_capture.py`).
+CI does **not** require SMTP. Integration job runs `unittest discover` with `RUN_INTEGRATION_TESTS=1`; the e2e module above is included when that env is set.
+
+## 5. Pool mode for tests
+
+See **[docs/testing-database.md](testing-database.md)** for `SQLALCHEMY_USE_NULLPOOL` (why integration CI sets it, and when `ResourceWarning` without it is expected).

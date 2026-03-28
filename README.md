@@ -129,7 +129,8 @@ TLS и доверие к `X-Forwarded-*` — на reverse proxy; см. [docs/sec
 | [docs/storage-lifecycle.md](docs/storage-lifecycle.md) | Объекты, S3, дедуп, retention |
 | [docs/WORKSPACE_ROUTING.md](docs/WORKSPACE_ROUTING.md) | Инвентарь API и Celery: tenant scope |
 | [docs/architecture.md](docs/architecture.md) | Обзор системы |
-| [docs/email-testing.md](docs/email-testing.md) | Тестовый SMTP / capture / Mailpit, план e2e для verify/reset |
+| [docs/email-testing.md](docs/email-testing.md) | Тестовый SMTP / capture / Mailpit, e2e `test_email_e2e_flow.py` |
+| [docs/testing-database.md](docs/testing-database.md) | `SQLALCHEMY_USE_NULLPOOL`, ResourceWarning в тестах vs production pool |
 
 Шаблоны env: [.env.example](.env.example) (указатель), [env/.env.example](env/.env.example), [backend/.env.example](backend/.env.example), [.env.production.example](.env.production.example).
 
@@ -156,7 +157,9 @@ Windows: `scripts/test-integration.ps1` делает то же (alembic + пол
 
 При `RUN_INTEGRATION_TESTS=1` middleware **не применяет** in-memory rate limits (много логинов с одного IP в одном процессе) — см. `backend/app/main.py` (`_skip_rl_for_integration`).
 
-Для прогона без `ResourceWarning` от пула psycopg в CI и локально: `SQLALCHEMY_USE_NULLPOOL=1` (см. `backend/app/db/session.py`) — уже выставлено в jobs `backend-integration` / `backend-async-smoke` и в `scripts/test-integration.ps1`.
+Полный e2e email (register → capture → verify-email → reset-password → login): `tests/test_email_e2e_flow.py` при `RUN_INTEGRATION_TESTS=1` (см. [docs/email-testing.md](docs/email-testing.md)).
+
+`SQLALCHEMY_USE_NULLPOOL=1` — режим тестов без пула (см. [docs/testing-database.md](docs/testing-database.md)); в CI jobs `backend-integration` / `backend-async-smoke` и в `scripts/test-integration.ps1`.
 
 **Async ingestion smoke** (Celery eager, документ доходит до `ready`/`failed`): job `backend-async-smoke` в `.github/workflows/ci.yml`; локально нужны Postgres + Redis и переменные:
 
