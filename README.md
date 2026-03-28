@@ -36,6 +36,14 @@
 
 **Поток RAG:** search/chat фильтруют чанки по `workspace_id`; учитываются квоты и rate limits (см. [docs/quotas.md](docs/quotas.md)).
 
+### Статусы document / job (API)
+
+| Статус | Где задаётся | HTTP |
+|--------|----------------|------|
+| `queued`, `processing`, `retrying`, `ready`, `failed` | поле `documents.status`, `ingestion_jobs.status` ([`backend/app/models/document.py`](backend/app/models/document.py)) | `GET /api/v1/documents/{id}` — в ответе `DocumentOut.status`; `GET /api/v1/documents/{id}/ingestion` — последний [`IngestionJob`](backend/app/api/routers/documents.py) (`get_document_ingestion_job`); список задач: `GET /api/v1/ingestion/jobs` ([`backend/app/api/routers/ingestion.py`](backend/app/api/routers/ingestion.py), фильтр `?status=`). |
+
+В production upload не выполняет индексацию в HTTP: только storage + запись строк + постановка Celery (см. выше и [`startup_checks.py`](backend/app/core/startup_checks.py)).
+
 ---
 
 ## Development setup
@@ -122,7 +130,7 @@ TLS и доверие к `X-Forwarded-*` — на reverse proxy; см. [docs/sec
 | [docs/WORKSPACE_ROUTING.md](docs/WORKSPACE_ROUTING.md) | Инвентарь API и Celery: tenant scope |
 | [docs/architecture.md](docs/architecture.md) | Обзор системы |
 
-Шаблоны env: [.env.production.example](.env.production.example), [env/.env.example](env/.env.example).
+Шаблоны env: [.env.example](.env.example) (указатель), [env/.env.example](env/.env.example), [backend/.env.example](backend/.env.example), [.env.production.example](.env.production.example).
 
 ---
 

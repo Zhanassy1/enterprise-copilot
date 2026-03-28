@@ -7,6 +7,7 @@ import os
 import uuid
 import unittest
 from datetime import datetime, timezone
+from unittest.mock import patch
 
 from fastapi.testclient import TestClient
 from sqlalchemy import select
@@ -191,6 +192,126 @@ class CrossWorkspaceAccessTests(unittest.TestCase):
         finally:
             db.close()
 
+    def _seed_owner_member_workspace(self) -> tuple[uuid.UUID, str]:
+        """Workspace with owner + member (member can upload)."""
+        db = SessionLocal()
+        try:
+            roles = ensure_default_roles(db)
+            uid_owner = uuid.uuid4()
+            uid_member = uuid.uuid4()
+            email_o = f"own_m_{uid_owner.hex[:8]}@example.com"
+            email_m = f"mem_{uid_member.hex[:8]}@example.com"
+            owner = User(
+                id=uid_owner,
+                email=email_o,
+                password_hash=hash_password("CrossWsTest1!"),
+                full_name="Owner",
+            )
+            member = User(
+                id=uid_member,
+                email=email_m,
+                password_hash=hash_password("CrossWsTest1!"),
+                full_name="Member",
+            )
+            db.add(owner)
+            db.add(member)
+            db.flush()
+            ws = Workspace(
+                id=uuid.uuid4(),
+                name="WS owner+member",
+                owner_user_id=owner.id,
+                personal_for_user_id=owner.id,
+            )
+            db.add(ws)
+            db.flush()
+            db.add(
+                WorkspaceMember(
+                    id=uuid.uuid4(),
+                    workspace_id=ws.id,
+                    user_id=owner.id,
+                    role_id=roles["owner"].id,
+                )
+            )
+            db.add(
+                WorkspaceMember(
+                    id=uuid.uuid4(),
+                    workspace_id=ws.id,
+                    user_id=member.id,
+                    role_id=roles["member"].id,
+                )
+            )
+            db.commit()
+            return ws.id, email_m
+        finally:
+            db.close()
+
+    def _seed_owner_admin_workspace_with_document(self) -> tuple[uuid.UUID, str, uuid.UUID]:
+        """owner + admin in same workspace; one document owned by owner. Returns ws_id, email_admin, doc_id."""
+        db = SessionLocal()
+        try:
+            roles = ensure_default_roles(db)
+            uid_owner = uuid.uuid4()
+            uid_admin = uuid.uuid4()
+            email_o = f"own_a_{uid_owner.hex[:8]}@example.com"
+            email_a = f"adm_{uid_admin.hex[:8]}@example.com"
+            owner = User(
+                id=uid_owner,
+                email=email_o,
+                password_hash=hash_password("CrossWsTest1!"),
+                full_name="Owner",
+            )
+            admin = User(
+                id=uid_admin,
+                email=email_a,
+                password_hash=hash_password("CrossWsTest1!"),
+                full_name="Admin",
+            )
+            db.add(owner)
+            db.add(admin)
+            db.flush()
+            ws = Workspace(
+                id=uuid.uuid4(),
+                name="WS owner+admin",
+                owner_user_id=owner.id,
+                personal_for_user_id=owner.id,
+            )
+            db.add(ws)
+            db.flush()
+            db.add(
+                WorkspaceMember(
+                    id=uuid.uuid4(),
+                    workspace_id=ws.id,
+                    user_id=owner.id,
+                    role_id=roles["owner"].id,
+                )
+            )
+            db.add(
+                WorkspaceMember(
+                    id=uuid.uuid4(),
+                    workspace_id=ws.id,
+                    user_id=admin.id,
+                    role_id=roles["admin"].id,
+                )
+            )
+            db.flush()
+            doc = Document(
+                id=uuid.uuid4(),
+                owner_id=owner.id,
+                workspace_id=ws.id,
+                filename="seed.txt",
+                content_type="text/plain",
+                storage_key="/tmp/cross_ws_admin_del_placeholder",
+                status="ready",
+                file_size_bytes=5,
+                created_at=datetime.now(timezone.utc),
+                updated_at=datetime.now(timezone.utc),
+            )
+            db.add(doc)
+            db.commit()
+            return ws.id, email_a, doc.id
+        finally:
+            db.close()
+
     def test_viewer_can_list_documents_but_cannot_upload(self) -> None:
         ws_id, _vid, email_v = self._seed_owner_and_viewer()
         login = self.client.post(
@@ -210,6 +331,44 @@ class CrossWorkspaceAccessTests(unittest.TestCase):
         self.assertEqual(up_res.status_code, 403, up_res.text)
         detail = str(up_res.json().get("detail") or "").lower()
         self.assertTrue("role" in detail or "insufficient" in detail, msg=up_res.text)
+
+    def test_member_can_upload_document_async_enqueued(self) -> None:
+        ws_id, email_m = self._seed_owner_member_workspace()
+        login = self.client.post(
+            "/api/v1/auth/login",
+            json={"email": email_m, "password": "CrossWsTest1!"},
+        )
+        self.assertEqual(login.status_code, 200, login.text)
+        token = login.json()["access_token"]
+        headers = {"Authorization": f"Bearer {token}", "X-Workspace-Id": str(ws_id)}
+        with (
+            patch("app.services.document_ingestion.settings.ingestion_async_enabled", True),
+            patch("app.services.document_ingestion.ingest_document_task.apply_async") as mock_apply,
+            patch("app.services.document_ingestion.scan_uploaded_file_safe"),
+            patch("app.services.document_ingestion.record_event"),
+        ):
+            res = self.client.post(
+                "/api/v1/documents/upload",
+                headers=headers,
+                files={"file": ("note.txt", b"hello world", "text/plain")},
+            )
+        self.assertEqual(res.status_code, 200, res.text)
+        self.assertEqual(res.json().get("document", {}).get("status"), "queued")
+        mock_apply.assert_called_once()
+
+    def test_admin_can_delete_workspace_document(self) -> None:
+        ws_id, email_adm, doc_id = self._seed_owner_admin_workspace_with_document()
+        login = self.client.post(
+            "/api/v1/auth/login",
+            json={"email": email_adm, "password": "CrossWsTest1!"},
+        )
+        self.assertEqual(login.status_code, 200, login.text)
+        token = login.json()["access_token"]
+        headers = {"Authorization": f"Bearer {token}", "X-Workspace-Id": str(ws_id)}
+        del_res = self.client.delete(f"/api/v1/documents/{doc_id}", headers=headers)
+        self.assertEqual(del_res.status_code, 200, del_res.text)
+        get_res = self.client.get(f"/api/v1/documents/{doc_id}", headers=headers)
+        self.assertEqual(get_res.status_code, 404, get_res.text)
 
     def test_user_cannot_delete_or_summarize_foreign_document(self) -> None:
         ua, _ub, ws_a, _ws_b, doc_b_id, _sess_b = self._seed_two_workspaces()
