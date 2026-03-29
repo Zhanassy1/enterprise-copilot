@@ -12,8 +12,13 @@ import { SummaryDialog } from "@/components/documents/summary-dialog";
 import { DeleteConfirmDialog } from "@/components/documents/delete-confirm-dialog";
 import { DocumentEmptyState } from "@/components/documents/document-empty-state";
 import { Skeleton } from "@/components/ui/skeleton";
+import { useWorkspace } from "@/components/workspace/workspace-provider";
+import { WorkspaceContextStrip } from "@/components/workspace/workspace-context-strip";
+import { canWriteInWorkspace } from "@/lib/workspace-role";
 
 export default function DocumentsPage() {
+  const { currentWorkspace } = useWorkspace();
+  const canMutate = canWriteInWorkspace(currentWorkspace?.role);
   const { documents, loading, error, uploadDocument, deleteDocument, getSummary, refresh } =
     useDocuments();
 
@@ -93,6 +98,7 @@ export default function DocumentsPage() {
               doc={doc}
               onSummary={handleSummary}
               onDelete={handleDeleteClick}
+              canMutate={canMutate}
             />
           ))}
         </div>

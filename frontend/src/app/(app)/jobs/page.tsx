@@ -8,6 +8,7 @@ import { PageHeader } from "@/components/shared/page-header";
 import { ProductErrorBanner } from "@/components/shared/product-error-banner";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
+import { WorkspaceContextStrip } from "@/components/workspace/workspace-context-strip";
 
 const STATUSES = ["queued", "processing", "retrying", "ready", "failed"] as const;
 
@@ -35,8 +36,11 @@ export default function JobsPage() {
     <div className="space-y-6">
       <PageHeader
         title="Очередь обработки"
-        description="Задачи индексации после загрузки: в очереди → индексация или повтор → готово либо ошибка. Статус документа в каталоге совпадает с задачей здесь."
+        description="Задачи индексации (jobs) только для текущего workspace: в очереди → индексация или повтор → готово либо ошибка. Статус на карточке документа ссылается на ту же очередь."
       />
+      <div className="mt-1">
+        <WorkspaceContextStrip area="задачи индексации ниже относятся к этому workspace" />
+      </div>
       <Card className="border-dashed bg-muted/20">
         <CardHeader className="pb-2">
           <CardTitle className="text-sm font-medium">Статусы задачи (job)</CardTitle>

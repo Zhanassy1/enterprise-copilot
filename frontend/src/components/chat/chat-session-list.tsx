@@ -14,6 +14,8 @@ interface ChatSessionListProps {
   loading: boolean;
   onSelect: (id: string) => void;
   onCreate: () => void;
+  /** Роль «наблюдатель» не может создавать сессии (API 403) */
+  canCreateSessions?: boolean;
 }
 
 export function ChatSessionList({
@@ -22,6 +24,7 @@ export function ChatSessionList({
   loading,
   onSelect,
   onCreate,
+  canCreateSessions = true,
 }: ChatSessionListProps) {
   return (
     <div className="flex h-full flex-col">
@@ -38,7 +41,9 @@ export function ChatSessionList({
             Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-14 rounded-xl" />)
           ) : sessions.length === 0 ? (
             <div className="px-2 py-8 text-center text-xs text-muted-foreground">
-              Пока нет диалогов. Нажмите «+», чтобы начать новый чат по документам пространства.
+              {canCreateSessions
+                ? "Пока нет диалогов. Нажмите «+», чтобы начать новый чат по документам этого workspace."
+                : "Нет диалогов. Роль «наблюдатель» не может создавать новые диалоги в этом workspace."}
             </div>
           ) : (
             sessions.map((s) => (

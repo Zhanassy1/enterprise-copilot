@@ -27,6 +27,7 @@ export default function PricingPage() {
             {marketingPlans.map((p) => (
               <Card
                 key={p.slug}
+                id={`pricing-plan-${p.slug}`}
                 className={
                   p.highlight ? "border-primary shadow-lg ring-2 ring-primary/15 lg:scale-[1.02]" : "border-border/80"
                 }
@@ -60,7 +61,7 @@ export default function PricingPage() {
           </div>
         </section>
 
-        <section className="border-y bg-muted/25 px-4 py-12 sm:px-6">
+        <section id="pricing-comparison" className="scroll-mt-8 border-y bg-muted/25 px-4 py-12 sm:px-6">
           <div className="mx-auto max-w-4xl">
             <h2 className="text-xl font-semibold">Сравнение в двух словах</h2>
             <div className="mt-6 overflow-x-auto rounded-xl border bg-card">

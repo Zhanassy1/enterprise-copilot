@@ -8,8 +8,13 @@ import { ChatWindow } from "@/components/chat/chat-window";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { PanelLeftOpen } from "lucide-react";
+import { useWorkspace } from "@/components/workspace/workspace-provider";
+import { WorkspaceContextStrip } from "@/components/workspace/workspace-context-strip";
+import { canWriteInWorkspace } from "@/lib/workspace-role";
 
 export default function ChatPage() {
+  const { currentWorkspace } = useWorkspace();
+  const canChatWrite = canWriteInWorkspace(currentWorkspace?.role);
   const {
     sessions,
     activeSessionId,
@@ -46,6 +51,7 @@ export default function ChatPage() {
           loading={loadingSessions}
           onSelect={handleSelect}
           onCreate={handleCreate}
+          canCreateSessions={canChatWrite}
         />
       </div>
 
@@ -61,6 +67,7 @@ export default function ChatPage() {
             loading={loadingSessions}
             onSelect={handleSelect}
             onCreate={handleCreate}
+            canCreateSessions={canChatWrite}
           />
         </SheetContent>
       </Sheet>
@@ -73,9 +80,12 @@ export default function ChatPage() {
           </div>
         ) : null}
         <div className="hidden border-b px-4 py-2 md:block">
-          <p className="text-xs text-muted-foreground">
-            Диалог по документам текущего рабочего пространства: ответы с источниками из проиндексированных файлов.
-          </p>
+          <WorkspaceContextStrip area="диалоги и источники — только в этом workspace" />
+          {!canChatWrite ? (
+            <p className="mt-2 text-xs text-amber-800 dark:text-amber-200">
+              Роль «наблюдатель»: можно просматривать существующие диалоги, но создание и отправка сообщений отключены (политика API).
+            </p>
+          ) : null}
         </div>
         <div className="flex items-center gap-2 border-b px-4 py-2 md:hidden">
           <Button
@@ -96,6 +106,7 @@ export default function ChatPage() {
             sending={sending}
             hasSession={!!activeSessionId}
             onSend={(msg) => sendMessage(msg)}
+            canSend={canChatWrite}
           />
         </div>
       </div>

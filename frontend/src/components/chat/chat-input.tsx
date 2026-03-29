@@ -8,9 +8,17 @@ import { Textarea } from "@/components/ui/textarea";
 interface ChatInputProps {
   onSend: (message: string) => void;
   disabled: boolean;
+  /** Только на время запроса — не смешивать с «наблюдатель» */
+  loading?: boolean;
+  placeholder?: string;
 }
 
-export function ChatInput({ onSend, disabled }: ChatInputProps) {
+export function ChatInput({
+  onSend,
+  disabled,
+  loading = false,
+  placeholder = "Задайте вопрос по документам…",
+}: ChatInputProps) {
   const [text, setText] = useState("");
 
   const handleSubmit = () => {
@@ -33,21 +41,13 @@ export function ChatInput({ onSend, disabled }: ChatInputProps) {
         value={text}
         onChange={(e) => setText(e.target.value)}
         onKeyDown={handleKeyDown}
-        placeholder="Задайте вопрос по документам…"
+        placeholder={placeholder}
         rows={1}
         className="min-h-[44px] max-h-[120px] resize-none"
         disabled={disabled}
       />
-      <Button
-        size="icon"
-        onClick={handleSubmit}
-        disabled={disabled || !text.trim()}
-      >
-        {disabled ? (
-          <Loader2 className="h-4 w-4 animate-spin" />
-        ) : (
-          <SendHorizontal className="h-4 w-4" />
-        )}
+      <Button size="icon" onClick={handleSubmit} disabled={disabled || !text.trim()}>
+        {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <SendHorizontal className="h-4 w-4" />}
       </Button>
     </div>
   );

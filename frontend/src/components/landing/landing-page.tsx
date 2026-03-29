@@ -258,15 +258,33 @@ export function LandingPage() {
           <div className="mx-auto max-w-3xl text-center">
             <h2 className="text-xl font-semibold">Видео-демо</h2>
             <p className="mt-2 text-sm text-muted-foreground">
-              Здесь появится встроенный ролик (например с YouTube или Vimeo), когда будет запись сценария регистрация →
-              документ → поиск. Пока — заготовка под будущий embed.
-            </p>
-            <div className="mt-6 flex aspect-video max-h-64 items-center justify-center rounded-xl border-2 border-dashed border-muted-foreground/30 bg-muted/40 text-sm text-muted-foreground">
-              Слот под demo video — см.{" "}
-              <a href={siteUrls.demoMedia} className="ml-1 text-foreground underline" target="_blank" rel="noreferrer">
+              Встроенный плеер появляется, если задан <code className="rounded bg-muted px-1">NEXT_PUBLIC_DEMO_VIDEO_EMBED_URL</code>{" "}
+              (URL для iframe: YouTube embed, Vimeo и т.д.). Пока без URL — заготовка; сценарий записи — в{" "}
+              <a href={siteUrls.demoMedia} className="text-foreground underline" target="_blank" rel="noreferrer">
                 docs/DEMO_MEDIA.md
               </a>
-            </div>
+              .
+            </p>
+            {process.env.NEXT_PUBLIC_DEMO_VIDEO_EMBED_URL ? (
+              <div className="mx-auto mt-6 aspect-video w-full max-w-3xl overflow-hidden rounded-xl border bg-black shadow-sm">
+                <iframe
+                  src={process.env.NEXT_PUBLIC_DEMO_VIDEO_EMBED_URL}
+                  title="Enterprise Copilot — демо"
+                  className="h-full w-full"
+                  allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+                  allowFullScreen
+                />
+              </div>
+            ) : (
+              <div className="mt-6 flex aspect-video max-h-64 items-center justify-center rounded-xl border-2 border-dashed border-muted-foreground/30 bg-muted/40 text-sm text-muted-foreground">
+                Слот под demo video — см.{" "}
+                <a href={siteUrls.demoMedia} className="ml-1 text-foreground underline" target="_blank" rel="noreferrer">
+                  docs/DEMO_MEDIA.md
+                </a>
+                {" "}
+                и README (секция «Демо-видео»).
+              </div>
+            )}
           </div>
         </section>
 

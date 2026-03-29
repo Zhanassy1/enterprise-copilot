@@ -15,6 +15,7 @@ import {
   AccordionItem,
   AccordionTrigger,
 } from "@/components/ui/accordion";
+import { WorkspaceContextStrip } from "@/components/workspace/workspace-context-strip";
 
 export default function SearchPage() {
   const { result, loading, error, search } = useSearch();
@@ -28,8 +29,12 @@ export default function SearchPage() {
     <>
       <PageHeader
         title="Поиск"
-        description="Семантический поиск по всем проиндексированным документам текущего рабочего пространства."
+        description="Семантический поиск только по проиндексированным документам выбранного workspace — без доступа к чужим пространствам."
       />
+
+      <div className="mt-4">
+        <WorkspaceContextStrip area="индекс и ответы поиска — в границах этого workspace" />
+      </div>
 
       {error && !dismissed ? (
         <div className="mt-6">

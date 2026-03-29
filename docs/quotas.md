@@ -1,6 +1,6 @@
 # Quotas and usage
 
-**Продуктовый контекст:** планы **free / pro / team** задают лимиты **рабочего пространства (workspace)**. Те же цифры на маркетинговой главной, на **http://localhost:3000/pricing** (в dev) и на странице приложения «План и лимиты». Конфиг для UI: `frontend/src/config/plan-marketing.ts`. Термины: [product-glossary.md](product-glossary.md). Источник в коде — `usage_metering`.
+**Продуктовый контекст:** планы **free / pro / team** задают лимиты **рабочего пространства (workspace)**. Те же цифры — на маркетинговой главной, на **http://localhost:3000/pricing** (в dev) и в приложении на «План и лимиты»: там же **прогресс по квотам** из API и **сравнение планов** (эталон из `plan-marketing.ts`). Конфиг карточек: `frontend/src/config/plan-marketing.ts`. Термины: [product-glossary.md](product-glossary.md). Источник лимитов в коде — `usage_metering`.
 
 ## Plans
 
@@ -34,7 +34,8 @@ Global limits from settings (`rate_limit_*`) are scaled by **plan** via `effecti
 
 ## API
 
-- `GET /api/v1/billing/usage` returns plan limits and current month totals for the active workspace.
+- `GET /api/v1/billing/usage` возвращает для активного **workspace** (заголовок `X-Workspace-Id`): `plan_slug`, месячные потолки **requests / tokens / upload bytes**, текущие **document_count** и **max_documents** (или `null`, если без потолка), а также накопленное использование за календарный месяц **UTC** по тем же трём счётчикам.
+- В этом ответе **нет** отдельных полей для **rerank**, **параллельных задач индексации (jobs)** и **max PDF pages** — они остаются на уровне конфигурации плана и проверок в worker/API. В приложении страница «План и лимиты» показывает счётчики честно: блок «Что не показывает этот экран» отсылает сюда.
 
 ## Related
 

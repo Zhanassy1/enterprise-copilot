@@ -39,6 +39,11 @@
 
 - Terminal failures write `ingestion.failed` audit events and set document status `failed`.
 - Check worker logs and antivirus (ClamAV) if enabled; see [observability.md](observability.md).
+- В приложении страница **«Аудит»** позволяет быстро отфильтровать `ingestion.failed` и `quota.denied` (серверный фильтр по типу + локальные фильтры по времени среди загруженных записей). Расширенный лимит выдачи — под учёткой **owner/admin**.
+
+## Audit / security review (UI)
+
+- Для разборов инцидентов: UI «Аудит» → тип `auth.login_failed`, `workspace.access_denied`, `quota.denied`; при необходимости смотрите таблицу `audit_logs` в БД. Подробности API и ограничений фильтров — [security.md](security.md).
 
 ## TLS / proxy
 

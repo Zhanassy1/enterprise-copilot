@@ -14,6 +14,7 @@ interface ChatWindowProps {
   sending: boolean;
   hasSession: boolean;
   onSend: (message: string) => void;
+  canSend?: boolean;
 }
 
 export function ChatWindow({
@@ -22,6 +23,7 @@ export function ChatWindow({
   sending,
   hasSession,
   onSend,
+  canSend = true,
 }: ChatWindowProps) {
   const bottomRef = useRef<HTMLDivElement>(null);
 
@@ -57,7 +59,14 @@ export function ChatWindow({
           </div>
         )}
       </ScrollArea>
-      <ChatInput onSend={onSend} disabled={sending || loadingMessages} />
+      <ChatInput
+        onSend={onSend}
+        disabled={!canSend || sending || loadingMessages}
+        loading={sending || loadingMessages}
+        placeholder={
+          canSend ? undefined : "Роль «наблюдатель»: отправка сообщений в чат недоступна"
+        }
+      />
     </div>
   );
 }

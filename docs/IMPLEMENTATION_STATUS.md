@@ -45,12 +45,12 @@
 
 ### 19 — Frontend SaaS: почему Partial
 
-Уже есть: **workspace switcher** (`frontend/src/components/layout/workspace-switcher.tsx`) с подписью ролей (владелец / администратор / участник / наблюдатель), **landing** (`frontend/src/components/landing/landing-page.tsx`, корень `/`), страницы **документы / поиск / чат / billing / jobs / audit** (`frontend/src/app/(app)/`), клиент ходит с `X-Workspace-Id`, billing и jobs отражают multi-tenant сценарий. **Audit:** маршрут `/audit`, список событий и вкладка расширенного просмотра для owner/admin (`frontend/src/app/(app)/audit/page.tsx`).
+Уже есть: **workspace switcher** (карточка текущего workspace, бейдж роли, восстановление при битом id — `workspace-provider.tsx` + `workspace-switcher.tsx`), **landing**, страницы **документы / поиск / чат / команда / billing / jobs / audit**, контекстные плашки «данные этого workspace», частично **role-aware** действия (viewer: без загрузки/удаления документов, без создания чатов и отправки сообщений). **`/team`:** ролевые подсказки и честные плейсхолдеры без фейкового списка участников/приглашений, пока API не расширен.
 
 Не доведено до «полного SaaS-шела»:
 
-1. **Навигация не полностью role-aware** — сайдбар общий для ролей; ограничения viewer (например upload) обрабатываются **на API (403)**, а не везде скрытием кнопок во фронте.
-2. **Нет UI для team / members / invitations** — бэкенд workspace API минимален (список workspace); отдельных экранов приглашений и управления участниками нет.
+1. **Сайдбар** по-прежнему общий — остальные роли могут видеть пункты, но часть действий ограничена UI/API.
+2. **Нет API и UI для реального списка участников / приглашений** — только заготовка на `/team`.
 3. **Нет широкого e2e-покрытия** фронта (Playwright в зависимостях; smoke — узкий сценарий).
 
-Итого: **audit и product landing** закрывают часть gap; **team UX и role-aware действия** — следующий слой; шаг 19 остаётся **Partial**.
+Итого: шаг 19 остаётся **Partial**, но **multi-tenant контекст в UI** заметно усилен.

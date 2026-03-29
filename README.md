@@ -29,7 +29,7 @@
 
 ### Платформенный блок (одним абзацем)
 
-Продукт позиционируется как **почти полноценный SaaS-фундамент**: не только API, но и **веб-UI** — маркетинговая главная и `/pricing`, затем приложение (документы, поиск, чат, план и лимиты, очередь обработки, аудит). Внешний биллинг — в roadmap; планы и usage отражаются через API и UI.
+Продукт позиционируется как **почти полноценный SaaS-фундамент**: не только API, но и **веб-UI** — маркетинговая главная и `/pricing`, затем приложение с **переключателем workspace** (роль, границы данных), страницей **«Команда»** (ролевые подсказки и честные плейсхолдеры до API участников/приглашений), документы, поиск, чат, **план и лимиты**, очередь обработки, аудит. Внешний биллинг — в roadmap; планы и usage отражаются через API и UI ([docs/quotas.md](docs/quotas.md)).
 
 ---
 
@@ -42,6 +42,8 @@
 3. **Документы** → загрузить PDF/DOCX; открыть **Очередь обработки** — увидеть задачу индексации в статусе «В очереди» / «Индексация», затем «Готово».
 4. **Поиск** или **Чат** — задать вопрос по содержимому; проверить источники в ответе.
 5. **План и лимиты** — план workspace и счётчики месяца; **Аудит** — события (при наличии действий); при необходимости сравнить лимиты с [docs/quotas.md](docs/quotas.md).
+
+**Визуально по шагам:** готовые кадры в [docs/assets/screenshots/](docs/assets/screenshots/) — см. инвентарь в [docs/assets/SCREENSHOTS.md](docs/assets/SCREENSHOTS.md). Развёрнутый голосовой сценарий на 3–5 минут: [docs/DEMO_MEDIA.md](docs/DEMO_MEDIA.md#demo-script-4min).
 
 ---
 
@@ -64,11 +66,38 @@
 
 ## Демо-видео
 
-Слот под встраиваемый ролик на маркетинговой главной и шаги подготовки записи: **[docs/DEMO_MEDIA.md](docs/DEMO_MEDIA.md)**.
+- Сценарий записи и таймкоды: **[docs/DEMO_MEDIA.md](docs/DEMO_MEDIA.md)**.
+- **Локальный UI:** задайте **`NEXT_PUBLIC_DEMO_VIDEO_EMBED_URL`** (URL для iframe, напр. YouTube embed) — на главной появится плеер в блоке «Видео-демо».
+- Пока ролика нет — ниже можно вставить тот же embed вручную (замените `src`):
+
+```html
+<!-- Demo video embed placeholder — замените VIDEO_ID -->
+<iframe width="560" height="315" src="https://www.youtube.com/embed/VIDEO_ID" title="Enterprise Copilot demo" allow="fullscreen" allowfullscreen></iframe>
+```
+
+<a id="screenshots"></a>
 
 ## Скриншоты
 
-Готовые скриншоты в репозиторий не вшиты (зависят от окружения). План размещения и имена файлов: **[docs/assets/SCREENSHOTS.md](docs/assets/SCREENSHOTS.md)**. После съёмки добавьте изображения в `docs/assets/screenshots/` и обновите README ссылками.
+Снято Playwright-спекой `frontend/e2e/demo-screenshots.spec.ts` → **`docs/assets/screenshots/`** (подробности: **[docs/assets/SCREENSHOTS.md](docs/assets/SCREENSHOTS.md)**). Команда: `cd frontend && npm run demo:screenshots` (нужны UI + API; для кадра **summary** и документа в статусе «Готово» см. `DEMO_SCREENSHOTS_WITH_INGEST=1` и worker в SCREENSHOTS).
+
+| Landing | Pricing | Documents |
+|:-------:|:-------:|:---------:|
+| ![Landing](docs/assets/screenshots/landing.png) | ![Pricing](docs/assets/screenshots/pricing.png) | ![Documents](docs/assets/screenshots/documents.png) |
+
+| Jobs | Billing | Search |
+|:----:|:-------:|:------:|
+| ![Jobs](docs/assets/screenshots/jobs.png) | ![Billing](docs/assets/screenshots/billing.png) | ![Search](docs/assets/screenshots/search.png) |
+
+| Chat | Audit |
+|:----:|:-----:|
+| ![Chat](docs/assets/screenshots/chat.png) | ![Audit](docs/assets/screenshots/audit.png) |
+
+<a id="demo-script"></a>
+
+## Демо (сценарий 3–5 минут)
+
+Пошаговый сценарий для записи экрана или живого прогона: **[docs/DEMO_MEDIA.md — скрипт ~4 мин](docs/DEMO_MEDIA.md#demo-script-4min)** (login → workspace → upload → очередь → поиск → чат → summary → план/usage → аудит). Таблица «Демо-сценарий» выше — краткая версия того же flow.
 
 ---
 

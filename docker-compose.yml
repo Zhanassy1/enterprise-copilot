@@ -102,6 +102,10 @@ services:
       context: ./frontend
       args:
         NEXT_PUBLIC_API_BASE: http://localhost:${HOST_API_PORT:-8000}/api/v1
+    environment:
+      # Клиент ходит на тот же origin (/api/v1 → rewrite на api), чтобы логин работал и по localhost, и по IP в LAN.
+      NEXT_PUBLIC_API_BASE: /api/v1
+      API_INTERNAL_URL: http://api:8000
     ports:
       - "3000:3000"
     # Dev: как у api — исходники с хоста, иначе новые маршруты (например /pricing) пропадут до полного rebuild образа.

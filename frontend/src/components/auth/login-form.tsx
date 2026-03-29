@@ -25,12 +25,12 @@ export function LoginForm() {
   });
 
   const onSubmit = async (data: LoginValues) => {
-    const ok = await login(data.email, data.password);
-    if (ok) {
+    const result = await login(data.email, data.password);
+    if (result.ok) {
       toast.success("Вы вошли в систему");
       router.push("/documents");
     } else {
-      toast.error("Неверный email или пароль");
+      toast.error(result.error.trim() || "Не удалось войти.");
     }
   };
 

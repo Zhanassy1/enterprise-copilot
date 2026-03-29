@@ -13,9 +13,11 @@ interface DocumentCardProps {
   doc: DocumentOut;
   onSummary: (id: string) => void;
   onDelete: (id: string) => void;
+  /** false для роли «наблюдатель»: удаление и загрузка запрещены API */
+  canMutate?: boolean;
 }
 
-export function DocumentCard({ doc, onSummary, onDelete }: DocumentCardProps) {
+export function DocumentCard({ doc, onSummary, onDelete, canMutate = true }: DocumentCardProps) {
   return (
     <Card className="transition-shadow hover:shadow-md">
       <CardContent className="flex items-start gap-4 p-5">
@@ -52,10 +54,11 @@ export function DocumentCard({ doc, onSummary, onDelete }: DocumentCardProps) {
           <Button
             variant="ghost"
             size="icon"
-            title="Удалить"
-            onClick={() => onDelete(doc.id)}
+            title={canMutate ? "Удалить" : "Наблюдатель: удаление недоступно"}
+            disabled={!canMutate}
+            onClick={() => canMutate && onDelete(doc.id)}
           >
-            <Trash2 className="h-4 w-4 text-destructive" />
+            <Trash2 className={canMutate ? "h-4 w-4 text-destructive" : "h-4 w-4 text-muted-foreground"} />
           </Button>
         </div>
       </CardContent>

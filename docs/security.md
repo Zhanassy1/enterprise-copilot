@@ -36,9 +36,13 @@
 
 ## Audit
 
-- Workspace-scoped audit logs: `GET /api/v1/audit/logs` with optional `event_type` (exact match) filter; owner/admin: `GET /api/v1/audit/admin/logs`.
+- Workspace-scoped audit logs: `GET /api/v1/audit/logs` with optional `event_type` (exact match) filter; owner/admin: `GET /api/v1/audit/admin/logs` (больший `limit`, см. роутер).
+- **Веб-UI** («Аудит»): показывает журнал только для текущего workspace (`X-Workspace-Id`). Сервер фильтрует **только** по `limit` и точному `event_type`; фильтры по участнику (`user_id`), типу цели (`target_type`), `target_id` и **диапазону дат** применяются **в браузере** среди уже загруженных строк (верхняя плашка в UI объясняет degraded mode). Режим «Расширенный» в UI соответствует `GET /audit/admin/logs` и доступен **owner/admin**; участник и наблюдатель получают 403 при прямом вызове админ-маршрута.
+- Продуктовые подписи событий (login failed, quota denied, cross-workspace и т.д.) в UI: `frontend/src/lib/audit-event-labels.ts` — без изменения контракта API.
 - Quota denials: structured log `event: quota.violation` plus, when applicable, persisted `quota.denied` in `AuditLog`.
 - Auth: successful login `auth.login`; **failed login** `auth.login_failed` (no password in metadata; IP in metadata) — `backend/app/api/routers/auth.py`.
+- Cross-workspace: `workspace.access_denied` при попытке доступа к workspace без членства (`deps.py`).
+- Удаление документа: `document.deleted`; провал индексации: `ingestion.failed` (см. worker).
 
 ## Related
 
