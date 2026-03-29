@@ -87,17 +87,20 @@ export default function ChatPage() {
             </p>
           ) : null}
         </div>
-        <div className="flex items-center gap-2 border-b px-4 py-2 md:hidden">
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={() => setPanelOpen(true)}
-          >
-            <PanelLeftOpen className="h-4 w-4" />
-          </Button>
-          <span className="text-sm font-medium">
-            {sessions.find((s) => s.id === activeSessionId)?.title ?? "Чат"}
-          </span>
+        <div className="flex flex-col gap-2 border-b px-4 py-2 md:hidden">
+          <div className="flex items-center gap-2">
+            <Button variant="ghost" size="icon" onClick={() => setPanelOpen(true)}>
+              <PanelLeftOpen className="h-4 w-4" />
+            </Button>
+            <span className="text-sm font-medium">
+              {sessions.find((s) => s.id === activeSessionId)?.title ?? "Чат"}
+            </span>
+          </div>
+          {!canChatWrite ? (
+            <p className="text-xs text-amber-800 dark:text-amber-200">
+              Наблюдатель: можно открыть существующие диалоги, отправка сообщений и новые сессии отключены.
+            </p>
+          ) : null}
         </div>
         <div className="flex-1 overflow-hidden">
           <ChatWindow

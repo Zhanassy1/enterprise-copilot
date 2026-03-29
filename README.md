@@ -8,6 +8,18 @@
 
 **Это SaaS?** Да, в смысле **многоарендного B2B-продукта**: отдельные **рабочие пространства (workspace)** с ролями и квотами, веб-приложение и API. Развёртывание — под ваш контроль (Docker / облако), не обязательно публичный мультитенант-хостинг. Термины: **[docs/product-glossary.md](docs/product-glossary.md)**.
 
+<a id="demo-quick-1min"></a>
+
+### Демо за 1 минуту
+
+| Скорость | Что сделать |
+|----------|-------------|
+| **~20 сек** | Прокрутить [скриншоты](#screenshots) или открыть [docs/assets/SCREENSHOTS.md](docs/assets/SCREENSHOTS.md) — landing, `/pricing`, документы, jobs, billing, поиск, чат, аудит. |
+| **~1 мин** | Поднять стек `docker compose up --build`, открыть **http://localhost:3000**, на маркетинговой главной — блок **«Демо за одну минуту»** (`/#demo-quick-1min`), затем **Регистрация** → приложение → **workspace** в переключателе → **Документы**. |
+| **Видео** | Сценарий записи и таймкоды: **[docs/DEMO_MEDIA.md](docs/DEMO_MEDIA.md#demo-quick-1min)**; встроенный плеер на главной при `NEXT_PUBLIC_DEMO_VIDEO_EMBED_URL` — см. [#demo-video](#demo-video). |
+
+Расширенный чек-лист: [#evaluator-five-minutes](#evaluator-five-minutes).
+
 ---
 
 ## Что это и для кого
@@ -97,7 +109,7 @@
 
 ## Демо (сценарий 3–5 минут)
 
-Пошаговый сценарий для записи экрана или живого прогона: **[docs/DEMO_MEDIA.md — скрипт ~4 мин](docs/DEMO_MEDIA.md#demo-script-4min)** (login → workspace → upload → очередь → поиск → чат → summary → план/usage → аудит). Таблица «Демо-сценарий» выше — краткая версия того же flow.
+Коротко (1 мин): **[docs/DEMO_MEDIA.md#demo-quick-1min](docs/DEMO_MEDIA.md#demo-quick-1min)**. Развёрнутый сценарий записи: **[docs/DEMO_MEDIA.md — ~4 мин](docs/DEMO_MEDIA.md#demo-script-4min)** (login → workspace → upload → очередь → поиск → чат → summary → план/usage → аудит). Таблица «Демо-сценарий» выше — краткая версия того же flow.
 
 ---
 
@@ -107,13 +119,13 @@
 |-----------|---------------------|
 | **Работает** | Auth, workspace scope, upload, async ingestion, поиск и чат с источниками, summary, квоты, rate limits по плану, audit API + UI, billing usage API + UI (без live-провайдера оплаты). |
 | **Почти production-ready** | Compose overlay, startup checks, метрики, runbook, S3 storage path — при правильных секретах и worker. |
-| **Ограничения** | Нет полноценного **Stripe/инвойсов**; нет UI приглашений и полного team management; **роль viewer** ограничивается API (403), не всеми дизейблами во фронте. Подробнее: [docs/IMPLEMENTATION_STATUS.md](docs/IMPLEMENTATION_STATUS.md). |
+| **Ограничения** | Нет полноценного **Stripe/инвойсов**; нет живого API **приглашений** — на странице «Команда» честный placeholder и неактивная кнопка до backend. **Роль viewer:** загрузка/удаление документов, новые диалоги и отправка в чате **отключены в UI** + плашки на ключевых экранах; остальные отказы — по ответам API. Подробнее: [docs/IMPLEMENTATION_STATUS.md](docs/IMPLEMENTATION_STATUS.md). |
 
 ### Roadmap (кратко)
 
 | Горизонт | Направления |
 |----------|-------------|
-| **Near-term** | Внешний биллинг, приглашения в workspace, role-aware UX (кнопки по ролям), e2e Playwright. |
+| **Near-term** | Внешний биллинг, API и UI **приглашений** в workspace, расширение e2e Playwright. |
 | **Long-term** | SSO, расширенный admin tenant, сравнение документов, расширенная аналитика. |
 
 Детализация по шагам зрелости: **[docs/IMPLEMENTATION_STATUS.md](docs/IMPLEMENTATION_STATUS.md)**.

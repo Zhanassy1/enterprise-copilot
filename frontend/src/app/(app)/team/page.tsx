@@ -101,8 +101,21 @@ export default function TeamPage() {
           <CardContent className="space-y-3 text-sm text-muted-foreground">
             <p>
               Поток приглашений (ссылка, срок действия, принятие в workspace) <strong className="text-foreground">в backend не реализован</strong>.
-              Кнопка «Пригласить» здесь отсутствует, чтобы не создавать ложные ожидания.
+              Ниже — продуктовая кнопка в состоянии «скоро»: она намеренно неактивна и подписана, чтобы не имитировать готовый
+              email-flow.
             </p>
+            {admin ? (
+              <div className="rounded-lg border border-dashed border-muted-foreground/35 bg-muted/30 p-3">
+                <Button type="button" variant="secondary" size="sm" className="gap-2" disabled>
+                  <Mail className="h-4 w-4 opacity-60" aria-hidden />
+                  Пригласить по email
+                </Button>
+                <p className="mt-2 text-xs">
+                  API приглашений нет — после появления маршрутов кнопка станет активной. Сейчас новых участников подключает
+                  оператор или выдача учётных записей вне этого UI.
+                </p>
+              </div>
+            ) : null}
             <p className="text-xs">
               Онбординг новых людей сейчас — через учётные данные и выдачу доступа оператором (или будущий модуль
               invitations). См. roadmap в репозитории.

@@ -115,14 +115,20 @@ export default function PricingPage() {
         <section className="mx-auto max-w-4xl px-4 py-12 text-center sm:px-6">
           <h2 className="text-lg font-semibold">Готовы попробовать?</h2>
           <p className="mt-2 text-sm text-muted-foreground">
-            Регистрация бесплатна. После входа выберите workspace и откройте «План и лимиты», чтобы увидеть свой план.
+            Регистрация бесплатна. После входа выберите рабочее пространство (workspace) и откройте раздел{" "}
+            <strong className="text-foreground">«План и лимиты»</strong> (<code className="rounded bg-muted px-1 font-mono text-xs">/billing</code>) —
+            там фактический тариф, остатки квот и прогресс по лимитам; повышение плана — через сценарий смены данных workspace
+            (внешний биллинг в roadmap).
           </p>
           <div className="mt-6 flex flex-wrap justify-center gap-3">
             <Button size="lg" asChild>
-              <Link href="/register">Создать аккаунт</Link>
+              <Link href="/register">Создать аккаунт · Free</Link>
+            </Button>
+            <Button size="lg" variant="secondary" asChild>
+              <Link href="/login">Уже есть аккаунт · Войти</Link>
             </Button>
             <Button size="lg" variant="outline" asChild>
-              <Link href="/">На главную</Link>
+              <Link href="/#demo-quick-1min">Демо за 1 минуту</Link>
             </Button>
           </div>
         </section>

@@ -16,9 +16,12 @@ import { toErrorMessage } from "@/lib/api-client";
 
 interface UploadDialogProps {
   onUpload: (file: File) => Promise<unknown>;
+  /** Для роли viewer: кнопка без диалога, с подсказкой (API запретит upload). */
+  disabled?: boolean;
+  disabledReason?: string;
 }
 
-export function UploadDialog({ onUpload }: UploadDialogProps) {
+export function UploadDialog({ onUpload, disabled, disabledReason }: UploadDialogProps) {
   const [open, setOpen] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [dragActive, setDragActive] = useState(false);
@@ -49,6 +52,20 @@ export function UploadDialog({ onUpload }: UploadDialogProps) {
     },
     [handleFile]
   );
+
+  if (disabled) {
+    return (
+      <div className="flex max-w-xs flex-col items-end gap-1 text-right">
+        <Button type="button" disabled title={disabledReason ?? "Загрузка недоступна для вашей роли"}>
+          <Upload className="h-4 w-4" />
+          Загрузить
+        </Button>
+        {disabledReason ? (
+          <p className="text-xs text-muted-foreground">{disabledReason}</p>
+        ) : null}
+      </div>
+    );
+  }
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>

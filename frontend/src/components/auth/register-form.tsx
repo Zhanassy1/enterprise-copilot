@@ -25,12 +25,12 @@ export function RegisterForm() {
   });
 
   const onSubmit = async (data: RegisterValues) => {
-    const ok = await registerUser(data.email, data.password, data.full_name);
-    if (ok) {
+    const res = await registerUser(data.email, data.password, data.full_name);
+    if (res.ok) {
       toast.success("Аккаунт создан. Войдите в систему.");
       router.push("/login");
     } else {
-      toast.error("Ошибка регистрации. Попробуйте другой email.");
+      toast.error(res.error);
     }
   };
 

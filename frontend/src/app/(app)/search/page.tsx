@@ -16,6 +16,7 @@ import {
   AccordionTrigger,
 } from "@/components/ui/accordion";
 import { WorkspaceContextStrip } from "@/components/workspace/workspace-context-strip";
+import { WorkspaceViewerBanner } from "@/components/workspace/workspace-viewer-banner";
 
 export default function SearchPage() {
   const { result, loading, error, search } = useSearch();
@@ -32,8 +33,9 @@ export default function SearchPage() {
         description="Семантический поиск только по проиндексированным документам выбранного workspace — без доступа к чужим пространствам."
       />
 
-      <div className="mt-4">
+      <div className="mt-4 space-y-3">
         <WorkspaceContextStrip area="индекс и ответы поиска — в границах этого workspace" />
+        <WorkspaceViewerBanner detail="Поиск и просмотр источников доступны в режиме чтения. Запросы поиска учитываются в месячной квоте workspace так же, как у остальных ролей." />
       </div>
 
       {error && !dismissed ? (

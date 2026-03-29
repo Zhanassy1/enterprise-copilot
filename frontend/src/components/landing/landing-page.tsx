@@ -133,6 +133,79 @@ export function LandingPage() {
               Оплата банковской картой через провайдера в планах на будущее. Сейчас в интерфейсе отображаются план и использование
               без списаний.
             </p>
+            <p className="mx-auto mt-4 max-w-lg text-center text-sm text-muted-foreground">
+              <Link href="#demo-quick-1min" className="font-medium text-foreground underline-offset-4 hover:underline">
+                Демо за 1 минуту
+              </Link>
+              {" — "}
+              скриншоты, Docker или сценарий видео.
+            </p>
+          </div>
+        </section>
+
+        <section id="demo-quick-1min" className="scroll-mt-28 border-b bg-muted/25 px-4 py-12 sm:px-6">
+          <div className="mx-auto max-w-3xl">
+            <h2 className="text-center text-xl font-semibold sm:text-2xl">Демо за одну минуту</h2>
+            <p className="mt-2 text-center text-sm text-muted-foreground">
+              Выберите путь: только визуал из репозитория, быстрый локальный прогон или чек-лист для записи ролика.
+            </p>
+            <ol className="mt-6 list-decimal space-y-3 pl-5 text-sm text-muted-foreground">
+              <li>
+                <span className="font-medium text-foreground">Только посмотреть UI:</span> откройте{" "}
+                <a
+                  href={siteUrls.demoScreenshots}
+                  className="text-foreground underline underline-offset-2"
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  README → Скриншоты
+                </a>{" "}
+                или инвентарь{" "}
+                <a
+                  href={`${siteUrls.githubRepo}/blob/main/docs/assets/SCREENSHOTS.md`}
+                  className="text-foreground underline underline-offset-2"
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  docs/assets/SCREENSHOTS.md
+                </a>{" "}
+                (landing, тарифы, документы, очередь jobs, billing, поиск, чат, аудит).
+              </li>
+              <li>
+                <span className="font-medium text-foreground">Руки на приложении:</span>{" "}
+                <code className="rounded bg-muted px-1.5 py-0.5 font-mono text-xs">docker compose up --build</code> →{" "}
+                <span className="text-foreground">http://localhost:3000</span> → регистрация → workspace → «Документы». Подробнее:{" "}
+                <a
+                  href={siteUrls.demoQuick1Min}
+                  className="text-foreground underline underline-offset-2"
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  README, блок «1 минута»
+                </a>
+                .
+              </li>
+              <li>
+                <span className="font-medium text-foreground">Запись видео:</span>{" "}
+                <a href={siteUrls.demoMedia} className="text-foreground underline underline-offset-2" target="_blank" rel="noreferrer">
+                  docs/DEMO_MEDIA.md
+                </a>{" "}
+                — сокращённый сценарий и развёрнутый тайминг; на этой странице ниже — слот плеера при{" "}
+                <code className="rounded bg-muted px-1 py-0.5 font-mono text-[11px]">NEXT_PUBLIC_DEMO_VIDEO_EMBED_URL</code>.
+              </li>
+            </ol>
+            <div className="mt-8 flex flex-wrap justify-center gap-3">
+              <Button variant="secondary" asChild>
+                <a href={siteUrls.demoScreenshots} target="_blank" rel="noreferrer">
+                  Скриншоты на GitHub
+                </a>
+              </Button>
+              <Button variant="outline" asChild>
+                <a href={siteUrls.demoQuick1Min} target="_blank" rel="noreferrer">
+                  README: чек-лист 1′
+                </a>
+              </Button>
+            </div>
           </div>
         </section>
 
@@ -259,9 +332,14 @@ export function LandingPage() {
             <h2 className="text-xl font-semibold">Видео-демо</h2>
             <p className="mt-2 text-sm text-muted-foreground">
               Встроенный плеер появляется, если задан <code className="rounded bg-muted px-1">NEXT_PUBLIC_DEMO_VIDEO_EMBED_URL</code>{" "}
-              (URL для iframe: YouTube embed, Vimeo и т.д.). Пока без URL — заготовка; сценарий записи — в{" "}
+              (URL для iframe: YouTube embed, Vimeo и т.д.). Пока без URL — заготовка; сценарий записи (короткий и полный) — в{" "}
               <a href={siteUrls.demoMedia} className="text-foreground underline" target="_blank" rel="noreferrer">
                 docs/DEMO_MEDIA.md
+              </a>
+              {" "}
+              и в README:{" "}
+              <a href={siteUrls.demoQuick1Min} className="text-foreground underline" target="_blank" rel="noreferrer">
+                #demo-quick-1min
               </a>
               .
             </p>
@@ -276,13 +354,20 @@ export function LandingPage() {
                 />
               </div>
             ) : (
-              <div className="mt-6 flex aspect-video max-h-64 items-center justify-center rounded-xl border-2 border-dashed border-muted-foreground/30 bg-muted/40 text-sm text-muted-foreground">
-                Слот под demo video — см.{" "}
-                <a href={siteUrls.demoMedia} className="ml-1 text-foreground underline" target="_blank" rel="noreferrer">
+              <div className="mt-6 flex aspect-video max-h-64 items-center justify-center rounded-xl border-2 border-dashed border-muted-foreground/30 bg-muted/40 px-4 text-center text-sm text-muted-foreground">
+                Слот под demo video —{" "}
+                <a href={siteUrls.demoMedia} className="text-foreground underline" target="_blank" rel="noreferrer">
                   docs/DEMO_MEDIA.md
                 </a>
-                {" "}
-                и README (секция «Демо-видео»).
+                , README{" "}
+                <a href={siteUrls.demoQuick1Min} className="text-foreground underline" target="_blank" rel="noreferrer">
+                  #demo-quick-1min
+                </a>
+                ,{" "}
+                <a href={siteUrls.demoScreenshots} className="text-foreground underline" target="_blank" rel="noreferrer">
+                  #screenshots
+                </a>
+                .
               </div>
             )}
           </div>

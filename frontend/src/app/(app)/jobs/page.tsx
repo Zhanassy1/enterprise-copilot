@@ -9,6 +9,7 @@ import { ProductErrorBanner } from "@/components/shared/product-error-banner";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { WorkspaceContextStrip } from "@/components/workspace/workspace-context-strip";
+import { WorkspaceViewerBanner } from "@/components/workspace/workspace-viewer-banner";
 
 const STATUSES = ["queued", "processing", "retrying", "ready", "failed"] as const;
 
@@ -38,8 +39,9 @@ export default function JobsPage() {
         title="Очередь обработки"
         description="Задачи индексации (jobs) только для текущего workspace: в очереди → индексация или повтор → готово либо ошибка. Статус на карточке документа ссылается на ту же очередь."
       />
-      <div className="mt-1">
+      <div className="mt-1 space-y-3">
         <WorkspaceContextStrip area="задачи индексации ниже относятся к этому workspace" />
+        <WorkspaceViewerBanner detail="Очередь доступна для наблюдения. Перезапуск и администрирование задач, если появятся в API, будут скрыты или помечены до выдачи прав." />
       </div>
       <Card className="border-dashed bg-muted/20">
         <CardHeader className="pb-2">

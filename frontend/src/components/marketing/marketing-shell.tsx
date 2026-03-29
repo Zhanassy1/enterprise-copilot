@@ -12,6 +12,12 @@ export function MarketingShell({ children }: { children: React.ReactNode }) {
           </Link>
           <nav className="flex items-center gap-1 sm:gap-2">
             <Link
+              href="/#demo-quick-1min"
+              className="hidden rounded-md px-2 py-1.5 text-sm text-muted-foreground hover:bg-muted hover:text-foreground sm:inline"
+            >
+              Демо 1′
+            </Link>
+            <Link
               href="/pricing"
               className="hidden rounded-md px-2 py-1.5 text-sm text-muted-foreground hover:bg-muted hover:text-foreground sm:inline"
             >
@@ -58,6 +64,9 @@ export function MarketingShell({ children }: { children: React.ReactNode }) {
               </Link>
               <a href={siteUrls.githubGlossary} className="text-muted-foreground hover:text-foreground" target="_blank" rel="noreferrer">
                 Глоссарий
+              </a>
+              <a href={siteUrls.demoQuick1Min} className="text-muted-foreground hover:text-foreground" target="_blank" rel="noreferrer">
+                Демо 1 мин (README)
               </a>
               <a href={siteUrls.evaluatorGuide} className="text-muted-foreground hover:text-foreground" target="_blank" rel="noreferrer">
                 Оценка за 5 минут

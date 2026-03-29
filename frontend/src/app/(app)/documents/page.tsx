@@ -14,6 +14,7 @@ import { DocumentEmptyState } from "@/components/documents/document-empty-state"
 import { Skeleton } from "@/components/ui/skeleton";
 import { useWorkspace } from "@/components/workspace/workspace-provider";
 import { WorkspaceContextStrip } from "@/components/workspace/workspace-context-strip";
+import { WorkspaceViewerBanner } from "@/components/workspace/workspace-viewer-banner";
 import { canWriteInWorkspace } from "@/lib/workspace-role";
 
 export default function DocumentsPage() {
@@ -73,8 +74,19 @@ export default function DocumentsPage() {
       <PageHeader
         title="Документы"
         description="Каталог файлов текущего рабочего пространства: загрузка, статусы индексации, краткое содержание."
-        action={<UploadDialog onUpload={uploadDocument} />}
+        action={
+          <UploadDialog
+            onUpload={uploadDocument}
+            disabled={!canMutate}
+            disabledReason="У наблюдателя (viewer) нет права загрузки в этом workspace — только просмотр каталога и действий без изменения данных."
+          />
+        }
       />
+
+      <div className="mt-4 space-y-3">
+        <WorkspaceContextStrip area="каталог и операции с файлами ниже относятся к этому workspace" />
+        <WorkspaceViewerBanner detail="Загрузка и удаление документов отключены в интерфейсе. Краткое содержание по уже проиндексированным файлам можно открыть, если политика API разрешает чтение." />
+      </div>
 
       {error ? (
         <div className="mt-4">
@@ -89,7 +101,7 @@ export default function DocumentsPage() {
           ))}
         </div>
       ) : documents.length === 0 ? (
-        <DocumentEmptyState />
+        <DocumentEmptyState canUpload={canMutate} />
       ) : (
         <div className="mt-6 grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
           {documents.map((doc) => (

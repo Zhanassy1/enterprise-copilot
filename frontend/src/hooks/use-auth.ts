@@ -44,15 +44,20 @@ export function useAuth() {
   }, []);
 
   const register = useCallback(
-    async (email: string, password: string, fullName?: string) => {
+    async (
+      email: string,
+      password: string,
+      fullName?: string
+    ): Promise<{ ok: true } | { ok: false; error: string }> => {
       setLoading(true);
       setError(null);
       try {
         await api.register(email, password, fullName);
-        return true;
+        return { ok: true };
       } catch (err) {
-        setError(toErrorMessage(err));
-        return false;
+        const msg = toErrorMessage(err);
+        setError(msg);
+        return { ok: false, error: msg };
       } finally {
         setLoading(false);
       }

@@ -1,6 +1,20 @@
 # Демо-материалы (видео и скриншоты)
 
-План для **almost-full SaaS** презентации репозитория и продукта.
+План для презентации репозитория и продукта: от **1 минуты** (entrypoint) до **4 минут** полного записанного демо.
+
+<a id="demo-quick-1min"></a>
+
+## Смотреть продукт за 1 минуту
+
+**Цель:** зритель понимает, *где* смотреть демо, без догадок.
+
+| Путь | Действие |
+|------|----------|
+| **A. Только визуал** | В корневом **[README.md](../README.md#screenshots)** — таблица PNG (`docs/assets/screenshots/`). Детали съёмки: **[SCREENSHOTS.md](assets/SCREENSHOTS.md)**. |
+| **B. Руки на UI** | `docker compose up --build` → **http://localhost:3000** → на главной гостя блок **«Демо за одну минуту»** (`/#demo-quick-1min`) → **Регистрация** → убедиться, что выбран **workspace** → **Документы** (пустой каталог или загрузка, если роль не viewer). |
+| **C. Видео** | Запись по скрипту ниже; выложить ролик → `NEXT_PUBLIC_DEMO_VIDEO_EMBED_URL` на маркетинговой главной; дублировать embed в **[README.md](../README.md#demo-video)**. |
+
+Текст для спикера (**45–60 сек**, голос поверх скриншотов): *«Это multi-tenant copilot: свой workspace, роли owner/admin/member/viewer, документы индексируются в фоне — очередь jobs, поиск и чат с источниками, план и квоты на billing, аудит. Репозиторий уже с готовыми скриншотами или docker compose за минуту — см. README.»*
 
 <a id="demo-script-4min"></a>
 
@@ -46,4 +60,4 @@
 
 ## README
 
-В корневом README есть якоря **#evaluator-five-minutes**, **#demo-video**, **#screenshots** (секции «Скриншоты» и «Демо») со ссылками на этот файл и на `docs/assets/SCREENSHOTS.md`.
+В корневом README есть якоря **#demo-quick-1min**, **#evaluator-five-minutes**, **#demo-video**, **#screenshots** — с отсылками сюда и в `docs/assets/SCREENSHOTS.md`.

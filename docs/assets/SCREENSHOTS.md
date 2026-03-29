@@ -32,8 +32,8 @@
 
 ## Где используются
 
-- **[README.md](../../README.md)** — секция «Скриншоты», быстрый визуальный обзор для evaluators.
-- **[docs/DEMO_MEDIA.md](../DEMO_MEDIA.md)** — сценарий живого демо; те же экраны в том же порядке, что и скриншоты.
+- **[README.md](../../README.md)** — секции **[#screenshots](../../README.md#screenshots)** и **[#demo-quick-1min](../../README.md#demo-quick-1min)** (визуал без запуска стека).
+- **[docs/DEMO_MEDIA.md](../DEMO_MEDIA.md)** — сценарий живого демо и блок «1 минута»; те же экраны, что в таблице выше.
 - Презентации / PR / портфолио — прямые пути `docs/assets/screenshots/*.png` из корня репозитория (GitHub рендерит в Markdown).
 
 ## Как снять автоматически
