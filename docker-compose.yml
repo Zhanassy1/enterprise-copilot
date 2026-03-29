@@ -104,6 +104,10 @@ services:
         NEXT_PUBLIC_API_BASE: http://localhost:${HOST_API_PORT:-8000}/api/v1
     ports:
       - "3000:3000"
+    # Dev: как у api — исходники с хоста, иначе новые маршруты (например /pricing) пропадут до полного rebuild образа.
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
     depends_on:
       api:
         condition: service_healthy
