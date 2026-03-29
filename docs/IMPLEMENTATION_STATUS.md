@@ -31,7 +31,7 @@
 | 17 | Audit events + admin-safe API | **Done** |
 | 18 | Observability: structured logs, request id, Sentry tags, `/metrics`, runbook | **Done** |
 | **Этап 9** | | |
-| 19 | Workspace UI: switcher, billing, role-aware nav, audit (admin) | **Partial** — см. [ниже](#19-frontend-saas-почему-partial) |
+| 19 | Workspace UI: switcher, billing, role-aware nav, audit (admin) | **Partial** — см. [ниже](#19-frontend-saas-почему-partial); audit UI — **Done** |
 | 20 | Jobs UI: список, статусы, ошибки | **Done** |
 | **Этап 10** | | |
 | 21 | Billing-ready: usage summary, plan, quotas API | **Done** |
@@ -45,13 +45,12 @@
 
 ### 19 — Frontend SaaS: почему Partial
 
-Уже есть: **workspace switcher** (`WorkspaceSwitcher`), страницы **документы / поиск / чат / billing / jobs**, клиент ходит с `X-Workspace-Id`, billing и jobs отражают multi-tenant сценарий.
+Уже есть: **workspace switcher** (`frontend/src/components/layout/workspace-switcher.tsx`) с подписью ролей (владелец / администратор / участник / наблюдатель), **landing** (`frontend/src/components/landing/landing-page.tsx`, корень `/`), страницы **документы / поиск / чат / billing / jobs / audit** (`frontend/src/app/(app)/`), клиент ходит с `X-Workspace-Id`, billing и jobs отражают multi-tenant сценарий. **Audit:** маршрут `/audit`, список событий и вкладка расширенного просмотра для owner/admin (`frontend/src/app/(app)/audit/page.tsx`).
 
 Не доведено до «полного SaaS-шела»:
 
-1. **Нет отдельной страницы Audit** — в `api-client` есть `listAuditLogs` / `listAuditLogsAdmin`, но в `frontend/src/app` нет маршрута вроде `/audit` и пункта в сайдбаре; админский просмотр логов не выведен в UI.
-2. **Навигация не role-aware** — сайдбар одинаков для всех ролей; ограничения viewer (например upload) обрабатываются **на API (403)**, а не скрытием/дизейблом действий во фронте.
-3. **Нет UI для team / members / invitations** — бэкенд workspace API сейчас минимален (список workspace); отдельных экранов приглашений, ролей участников, billing-организации как в классическом B2B SaaS нет.
-4. **Нет e2e-покрытия** фронта (Playwright есть в зависимостях, сценарии multi-workspace можно расширять).
+1. **Навигация не полностью role-aware** — сайдбар общий для ролей; ограничения viewer (например upload) обрабатываются **на API (403)**, а не везде скрытием кнопок во фронте.
+2. **Нет UI для team / members / invitations** — бэкенд workspace API минимален (список workspace); отдельных экранов приглашений и управления участниками нет.
+3. **Нет широкого e2e-покрытия** фронта (Playwright в зависимостях; smoke — узкий сценарий).
 
-Итого: ядро tenant-aware UI есть, но **админский audit, управление командой и UX по ролям** — следующий слой; поэтому шаг 19 помечен **Partial**.
+Итого: **audit и product landing** закрывают часть gap; **team UX и role-aware действия** — следующий слой; шаг 19 остаётся **Partial**.

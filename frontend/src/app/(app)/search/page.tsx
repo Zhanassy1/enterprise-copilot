@@ -19,7 +19,10 @@ export default function SearchPage() {
 
   return (
     <>
-      <PageHeader title="Поиск" description="Семантический поиск по документам" />
+      <PageHeader
+        title="Поиск"
+        description="Семантический поиск по всем проиндексированным документам текущего workspace."
+      />
 
       <div className="mt-8">
         <SearchBar onSearch={search} loading={loading} />

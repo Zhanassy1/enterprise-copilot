@@ -1,5 +1,7 @@
 # Storage and lifecycle
 
+**Продуктовый контекст:** загрузки документов хранятся в local или S3; политика влияет на multi-replica API и retention. [deployment.md](deployment.md) — `PRODUCTION_REQUIRE_S3_BACKEND`.
+
 ## Backends
 
 - **Local** (`STORAGE_BACKEND=local`): files under `upload_dir` (resolved under the backend root). Default for development.

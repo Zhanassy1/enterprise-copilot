@@ -20,7 +20,13 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
     }
   }, [router]);
 
-  if (!checked) return null;
+  if (!checked) {
+    return (
+      <div className="flex h-screen items-center justify-center bg-background text-sm text-muted-foreground">
+        Загрузка приложения…
+      </div>
+    );
+  }
 
   return (
     <div className="flex h-screen overflow-hidden">

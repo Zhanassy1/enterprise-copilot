@@ -1,5 +1,7 @@
 # Quotas and usage
 
+**Продуктовый контекст:** планы **free / pro / team** задают лимиты workspace; те же ориентиры на маркетинговом landing и на странице «План и лимиты» во фронте согласованы с таблицей ниже (источник истины в коде — `usage_metering`).
+
 ## Plans
 
 Default plan limits are defined in code (`PLAN_LIMITS` / `PLAN_DOCUMENT_CAP` in `usage_metering`). Each workspace has a `WorkspaceQuota` row; billing may adjust limits per customer.

@@ -1,5 +1,7 @@
 # Database connections in tests
 
+**Продуктовый контекст:** настройки пула соединений для стабильных интеграционных тестов backend — не часть пользовательского продукта, но влияют на качество релизов.
+
 **See also:** [README.md](../README.md) section **Testing** (CI jobs and when to set this variable).
 
 ## SQLALCHEMY_USE_NULLPOOL (`test-safety` mode)

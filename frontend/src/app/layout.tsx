@@ -6,8 +6,9 @@ import "./globals.css";
 const inter = Inter({ subsets: ["latin", "cyrillic"] });
 
 export const metadata: Metadata = {
-  title: "Enterprise Copilot",
-  description: "AI-ассистент для работы с бизнес-документами",
+  title: "Enterprise Copilot — AI по корпоративным документам",
+  description:
+    "Multi-tenant поиск и чат по PDF/DOCX с изоляцией workspace, асинхронной индексацией и квотами по плану.",
 };
 
 export default function RootLayout({

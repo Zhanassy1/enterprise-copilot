@@ -1,5 +1,7 @@
 # Security
 
+**Продуктовый контекст:** политика секретов и доверия к proxy относится ко всему жизненному циклу auth и audit в Enterprise Copilot. См. также [README.md](../README.md) (ограничения production).
+
 ## Secrets
 
 - Generate `SECRET_KEY` with a CSPRNG (`openssl rand -hex 32`). Never ship default `dev-secret-change-me` in production.

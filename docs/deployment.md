@@ -1,5 +1,7 @@
 # Deployment
 
+**Продуктовый контекст:** Enterprise Copilot — multi-tenant AI-платформа для документов; этот документ описывает, как безопасно выкатывать API, worker и зависимости (Postgres, Redis, S3). Обзор возможностей и лимитов: [README.md](../README.md), [quotas.md](quotas.md).
+
 ## Development vs production
 
 | | Dev | Production (primary path) |

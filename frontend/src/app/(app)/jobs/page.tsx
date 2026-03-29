@@ -2,14 +2,16 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { api, toErrorMessage, type IngestionJobOut } from "@/lib/api-client";
+import { ingestionJobStatusLabel } from "@/lib/product-terminology";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { PageHeader } from "@/components/shared/page-header";
 import { Button } from "@/components/ui/button";
+import { Skeleton } from "@/components/ui/skeleton";
 
 const STATUSES = ["queued", "processing", "retrying", "ready", "failed"] as const;
 
 export default function JobsPage() {
-  const [tab, setTab] = useState<(typeof STATUSES)[number]>("failed");
+  const [tab, setTab] = useState<(typeof STATUSES)[number]>("queued");
   const [jobs, setJobs] = useState<IngestionJobOut[]>([]);
   const [err, setErr] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -31,8 +33,8 @@ export default function JobsPage() {
   return (
     <div className="space-y-6">
       <PageHeader
-        title="Очередь ingestion"
-        description="Статусы задач: queued → processing / retrying → ready или failed."
+        title="Очередь обработки"
+        description="Задачи индексации после загрузки: в очереди → индексация / повтор → готово или ошибка. Статусы документа в списке файлов синхронизированы с job."
       />
       <div className="flex flex-wrap gap-2">
         {STATUSES.map((s) => (
@@ -41,34 +43,46 @@ export default function JobsPage() {
             type="button"
             variant={tab === s ? "default" : "outline"}
             size="sm"
-            className="font-mono text-xs"
+            className="text-xs"
             onClick={() => setTab(s)}
           >
-            {s}
+            {ingestionJobStatusLabel(s)}
+            <span className="ml-1 font-mono text-[10px] opacity-70">({s})</span>
           </Button>
         ))}
       </div>
-      {loading && <p className="text-sm text-muted-foreground">Загрузка…</p>}
+      {loading && (
+        <div className="space-y-3">
+          <Skeleton className="h-28 w-full rounded-xl" />
+          <Skeleton className="h-28 w-full rounded-xl" />
+        </div>
+      )}
       {err && <p className="text-sm text-destructive">{err}</p>}
       <div className="space-y-3">
         {!loading && jobs.length === 0 && !err && (
-          <p className="text-sm text-muted-foreground">Нет задач со статусом «{tab}».</p>
+          <p className="text-sm text-muted-foreground">
+            Нет задач со статусом «{ingestionJobStatusLabel(tab)}». Загрузите документ или переключите фильтр.
+          </p>
         )}
-        {jobs.map((j) => (
-          <Card key={j.id}>
-            <CardHeader>
-              <CardTitle className="font-mono text-xs">{j.id}</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-1 text-sm">
-              <div>document: {j.document_id}</div>
-              <div>status: {j.status}</div>
-              <div>attempts: {j.attempts}</div>
-              {j.error_message && (
-                <pre className="whitespace-pre-wrap rounded bg-muted p-2 text-xs">{j.error_message}</pre>
-              )}
-            </CardContent>
-          </Card>
-        ))}
+        {!loading &&
+          jobs.map((j) => (
+            <Card key={j.id}>
+              <CardHeader>
+                <CardTitle className="font-mono text-xs">{j.id}</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-1 text-sm">
+                <div>Документ: {j.document_id}</div>
+                <div>
+                  Статус: {ingestionJobStatusLabel(j.status)}{" "}
+                  <span className="font-mono text-xs text-muted-foreground">({j.status})</span>
+                </div>
+                <div>Попытки: {j.attempts}</div>
+                {j.error_message && (
+                  <pre className="whitespace-pre-wrap rounded bg-muted p-2 text-xs">{j.error_message}</pre>
+                )}
+              </CardContent>
+            </Card>
+          ))}
       </div>
     </div>
   );

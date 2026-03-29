@@ -76,6 +76,10 @@ export function LoginForm() {
             <Link href="/register" className="font-medium text-foreground underline-offset-4 hover:underline">
               Зарегистрироваться
             </Link>
+            {" · "}
+            <Link href="/" className="font-medium text-foreground underline-offset-4 hover:underline">
+              О продукте
+            </Link>
           </p>
         </CardFooter>
       </form>

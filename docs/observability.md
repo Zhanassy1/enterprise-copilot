@@ -1,5 +1,7 @@
 # Observability Setup
 
+**Продуктовый контекст:** наблюдаемость связывает пользовательские действия, квоты и эксплуатацию; см. [runbook.md](runbook.md) и [README.md](../README.md).
+
 ## What is available
 
 - Structured JSON request logs in API middleware (`event: http_request`, `request_id`, `path`, `status_code`, `latency_ms`, `client_ip`).

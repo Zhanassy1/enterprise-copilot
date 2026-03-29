@@ -7,6 +7,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { fileTypeLabel, formatDate } from "@/lib/utils";
 import { BookOpen, Trash2 } from "lucide-react";
 import type { DocumentOut } from "@/lib/api-client";
+import { documentStatusLabel, ingestionJobStatusLabel } from "@/lib/product-terminology";
 
 interface DocumentCardProps {
   doc: DocumentOut;
@@ -24,17 +25,17 @@ export function DocumentCard({ doc, onSummary, onDelete }: DocumentCardProps) {
           <div className="mt-0.5 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
             <span>{formatDate(doc.created_at)}</span>
             {doc.status && (
-              <span className="rounded-md bg-muted px-1.5 py-0.5 font-mono text-[10px] text-foreground/90">
-                {doc.status}
+              <span className="rounded-md bg-muted px-1.5 py-0.5 text-[10px] font-medium text-foreground/90" title={doc.status}>
+                {documentStatusLabel(doc.status)}
               </span>
             )}
             {doc.ingestion_job_status ? (
               <Link
                 href="/jobs"
-                className="font-mono text-[10px] text-primary underline-offset-2 hover:underline"
-                title="Очередь ingestion"
+                className="text-[10px] text-primary underline-offset-2 hover:underline"
+                title={`Статус job: ${doc.ingestion_job_status}`}
               >
-                job:{doc.ingestion_job_status}
+                {ingestionJobStatusLabel(doc.ingestion_job_status)}
               </Link>
             ) : null}
           </div>

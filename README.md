@@ -1,58 +1,98 @@
 # Enterprise Copilot
 
-**Multi-tenant AI document platform** для корпоративных PDF/DOCX/TXT: семантический поиск, RAG-чат, summary, **асинхронная индексация** (Celery + PostgreSQL/pgvector), **workspaces и роли**, **квоты и usage metering**, **audit**, **наблюдаемость**, object storage (local / S3).
+**Multi-tenant AI copilot для бизнес-документов:** семантический поиск, RAG-чат и краткие summary по PDF/DOCX/TXT с **изоляцией по workspace**, **асинхронной индексацией** (Celery + PostgreSQL/pgvector), **квотами по плану** и **аудитом** событий.
 
-**Репозиторий:** [github.com/Zhanassy1/enterprise-copilot](https://github.com/Zhanassy1/enterprise-copilot)
+Репозиторий: [github.com/Zhanassy1/enterprise-copilot](https://github.com/Zhanassy1/enterprise-copilot)
 
 [![CI](https://github.com/Zhanassy1/enterprise-copilot/actions/workflows/ci.yml/badge.svg)](https://github.com/Zhanassy1/enterprise-copilot/actions/workflows/ci.yml)
 
 ---
 
-## Product overview
+## Что это и для кого
 
-Продукт позиционируется как **SaaS-фундамент** для AI over documents: данные изолированы по **workspace**, доступ контролируется ролями (`owner` / `admin` / `member` / `viewer`), лимиты применяются на уровне плана, а тяжёлая обработка документов вынесена из HTTP в **worker**.
+| | |
+|--|--|
+| **Продукт** | Платформа для команд, которым нужно быстро находить факты в договорах, политиках и отчётах, не читая сотни страниц вручную. |
+| **Для кого** | Компании и продуктовые команды, которые готовы к self-hosted или облачному развёртыванию с контролем данных и лимитов. |
+| **Проблемы** | Долгий поиск в документах, разрозненные файлы, риск «галлюцинаций» без источников — закрываются RAG с цитатами, workspace scope и статусами обработки. |
 
-**Текущие возможности (backend + UI):**
+### Ключевые возможности
 
-| Область | Что есть |
-|---------|----------|
-| Tenancy | Заголовок `X-Workspace-Id`, членство в workspace, изоляция в API и в Celery (`workspace_id`) |
-| Документы | Upload → storage → статусы `queued` → … → `ready` / `failed`; список, скачивание, summary, ingestion API |
-| Индексация | Async path в production: **commit строк document/job до постановки в Celery** (`document_ingestion.py`), парсинг/chunking/embeddings в worker |
-| Поиск и чат | Гибридный retrieval, квоты, rate limits по плану |
-| Безопасность | JWT, refresh rotation, logout / logout-all, reuse detection, password reset + revoke refresh; fail-fast `startup_checks` в production |
-| Квоты | Upload, страницы PDF, concurrent jobs, search/chat, rerank, tokens — см. [docs/quotas.md](docs/quotas.md) |
-| Наблюдаемость | Структурные логи, `X-Request-Id`, `/metrics`, опционально Sentry |
+- **Multi-tenant AI copilot** — данные и векторный индекс разделены по **workspace**; доступ по ролям **owner / admin / member / viewer**.
+- **Async ingestion** — загрузка по HTTP коммитит метаданные и job, индексация в **worker** (не в запросе); статусы **queued → processing / retrying → ready | failed** у документа и job.
+- **Workspace isolation** — API и Celery задачи привязаны к `workspace_id`; клиент передаёт **`X-Workspace-Id`**.
+- **Quota-aware platform** — лимиты запросов, токенов LLM, загрузок, параллельных job и страниц PDF по **плану** (free / pro / team); см. [docs/quotas.md](docs/quotas.md).
+- **Auth / security lifecycle** — JWT, refresh rotation, logout / logout-all, password reset с revoke refresh, failed-login audit, production **startup_checks**.
+- **Observability / runbook** — структурные логи, `X-Request-Id`, `/metrics`, опционально Sentry; операции — [docs/runbook.md](docs/runbook.md), [docs/observability.md](docs/observability.md).
 
-**Ограничения production (честно):**
+### Платформенный блок (одним абзацем)
 
-- Нет полноценного биллинга провайдера (Stripe и т.д.) — есть usage/plan stubs и API usage.
-- Frontend: нет отдельного экрана Audit, нет invitations/team management — см. [docs/IMPLEMENTATION_STATUS.md](docs/IMPLEMENTATION_STATUS.md) §19.
-- Email в бою требует реальный SMTP или Mailpit; для тестов есть capture — [docs/email-testing.md](docs/email-testing.md).
-
-**Roadmap / зрелость:** таблица шагов и partial-зоны — **[docs/IMPLEMENTATION_STATUS.md](docs/IMPLEMENTATION_STATUS.md)**.
+Продукт позиционируется как **почти полноценный SaaS-фундамент**: не только API, но и **веб-UI** (landing, документы, поиск, чат, план и лимиты, очередь обработки, аудит). Внешний биллинг (Stripe и т.д.) — в roadmap; планы и usage отражаются через API и UI.
 
 ---
 
-## Architecture
+## Быстрая оценка за 5 минут (evaluator guide)
+
+1. `docker compose up --build` — открыть UI **http://localhost:3000** (landing), **Регистрация** → **Вход**.
+2. Убедиться, что выбран **workspace** (переключатель в боковой панели); при первом входе подставляется доступный workspace.
+3. **Документы** → загрузить PDF/DOCX; открыть **Очередь обработки** — увидеть job в статусе «В очереди» / «Индексация», затем «Готово».
+4. **Поиск** или **Чат** — задать вопрос по содержимому; проверить источники в ответе.
+5. **План и лимиты** — план workspace и счётчики месяца; **Аудит** — события (при наличии действий); при необходимости сравнить лимиты с [docs/quotas.md](docs/quotas.md).
+
+---
+
+## Демо-сценарий (сквозной flow)
+
+| Шаг | Действие |
+|-----|----------|
+| 1 | Регистрация и вход |
+| 2 | Выбор / получение **workspace** (список из API; создание новых workspace — по мере развития продукта) |
+| 3 | Загрузка документа |
+| 4 | **Асинхронная обработка** — job в UI и статус на карточке документа |
+| 5 | Поиск, чат, summary по документу |
+| 6 | Квоты и безопасность — лимиты на странице плана; аудит; ops — логи и метрики по [docs/observability.md](docs/observability.md) |
+
+---
+
+## Скриншоты
+
+Готовые скриншоты в репозиторий не вшиты (зависят от окружения). План размещения и имена файлов: **[docs/assets/SCREENSHOTS.md](docs/assets/SCREENSHOTS.md)**. После съёмки добавьте изображения в `docs/assets/screenshots/` и обновите README ссылками.
+
+---
+
+## Текущие возможности и ограничения
+
+| Состояние | Что имеется в виду |
+|-----------|---------------------|
+| **Работает** | Auth, workspace scope, upload, async ingestion, поиск и чат с источниками, summary, квоты, rate limits по плану, audit API + UI, billing usage API + UI (без live-провайдера оплаты). |
+| **Почти production-ready** | Compose overlay, startup checks, метрики, runbook, S3 storage path — при правильных секретах и worker. |
+| **Ограничения** | Нет полноценного **Stripe/инвойсов**; нет UI приглашений и полного team management; **роль viewer** ограничивается API (403), не всеми дизейблами во фронте. Подробнее: [docs/IMPLEMENTATION_STATUS.md](docs/IMPLEMENTATION_STATUS.md). |
+
+### Roadmap (кратко)
+
+| Горизонт | Направления |
+|----------|-------------|
+| **Near-term** | Внешний биллинг, приглашения в workspace, role-aware UX (кнопки по ролям), e2e Playwright. |
+| **Long-term** | SSO, расширенный admin tenant, сравнение документов, расширенная аналитика. |
+
+Детализация по шагам зрелости: **[docs/IMPLEMENTATION_STATUS.md](docs/IMPLEMENTATION_STATUS.md)**.
+
+---
+
+## Архитектура (кратко)
 
 | Слой | Технологии |
 |------|------------|
 | API | FastAPI, JWT, workspace dependencies |
 | Worker | Celery, очередь `ingestion`, retry/backoff |
 | DB | PostgreSQL + **pgvector** |
-| Queue | Redis (broker для Celery) |
+| Queue | Redis (broker Celery) |
 | Storage | `local` (dev) или **S3** / MinIO |
-| Frontend | Next.js |
+| Frontend | Next.js (landing + приложение) |
 
-**Асинхронный ingestion (как в коде):**
+**Асинхронный ingestion:** `POST /api/v1/documents/upload` сохраняет файл, создаёт `Document` и `IngestionJob`, **коммитит**, затем `ingest_document_task.apply_async` ([`document_ingestion.py`](backend/app/services/document_ingestion.py)). Векторы пишет worker ([`document_indexing.py`](backend/app/services/document_indexing.py), [`tasks/ingestion.py`](backend/app/tasks/ingestion.py)). В **production** синхронная индексация в HTTP запрещена (`startup_checks`).
 
-1. `POST /api/v1/documents/upload` сохраняет файл, создаёт `Document` (`queued`) и `IngestionJob` (`queued`), **коммитит** их в БД, затем вызывает `ingest_document_task.apply_async` ([`document_ingestion.py`](backend/app/services/document_ingestion.py)).
-2. В том же HTTP-запросе **нет** записи векторов: эмбеддинги и chunking выполняет worker ([`document_indexing.py`](backend/app/services/document_indexing.py), [`tasks/ingestion.py`](backend/app/tasks/ingestion.py)).
-3. Статусы: `queued` → `processing` / `retrying` → `ready` или `failed` (и у документа, и у job).
-4. **Только dev:** синхронная индексация в процессе API при `ENVIRONMENT=local`, `INGESTION_ASYNC_ENABLED=0`, `ALLOW_SYNC_INGESTION_FOR_DEV=1` — в production запрещено `startup_checks`.
-
-Инвентарь tenant-scope: **[docs/WORKSPACE_ROUTING.md](docs/WORKSPACE_ROUTING.md)**.
+Инвентарь tenant-scope: **[docs/WORKSPACE_ROUTING.md](docs/WORKSPACE_ROUTING.md)**. Обзор компонентов: **[docs/architecture.md](docs/architecture.md)**.
 
 ---
 
@@ -73,19 +113,17 @@ docker compose up --build
 
 **Без Docker:** в `backend/` — venv, `pip install -r requirements.txt`, `alembic upgrade head`, `uvicorn app.main:app --reload`; в `frontend/` — `npm install`, `npm run dev`.
 
-`docker-compose.yml` **публикует** порты Postgres (5433) и Redis (6380) на хост — удобно для dev, **не** как модель публичного production.
+`docker-compose.yml` **публикует** порты Postgres (5433) и Redis (6380) на хост для разработки — **не** как модель публичного production.
 
 ---
 
 ## Production setup
 
-**Основной путь:** overlay без открытых портов БД/Redis наружу:
-
 ```bash
 docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
 ```
 
-Подробности переменных, TLS, MinIO: **[docs/deployment.md](docs/deployment.md)**. Шаблон: **[.env.production.example](.env.production.example)**.
+Подробности: **[docs/deployment.md](docs/deployment.md)**. Шаблон: **[.env.production.example](.env.production.example)**.
 
 Старт с `ENVIRONMENT=production` и небезопасным конфигом **блокируется** ([`startup_checks.py`](backend/app/core/startup_checks.py)).
 
@@ -105,27 +143,23 @@ docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
 
 ---
 
-## Security
+## Документация
 
-Секреты, proxy, rate limits, заголовки, audit: **[docs/security.md](docs/security.md)**.
+| Документ | Содержание |
+|----------|------------|
+| [docs/deployment.md](docs/deployment.md) | Dev vs prod compose, TLS, S3/MinIO, миграции |
+| [docs/security.md](docs/security.md) | Секреты, proxy, rate limits, audit |
+| [docs/quotas.md](docs/quotas.md) | Планы free/pro/team, enforcement, 429 |
+| [docs/observability.md](docs/observability.md) | Логи, Sentry, `/metrics` |
+| [docs/runbook.md](docs/runbook.md) | Инциденты, backup, очередь |
+| [docs/storage-lifecycle.md](docs/storage-lifecycle.md) | Объекты, retention, дедуп |
+| [docs/email-testing.md](docs/email-testing.md) | SMTP, capture, e2e |
+| [docs/testing-database.md](docs/testing-database.md) | NullPool, интеграционные тесты |
+| [docs/IMPLEMENTATION_STATUS.md](docs/IMPLEMENTATION_STATUS.md) | Зрелость и roadmap |
+| [docs/assets/SCREENSHOTS.md](docs/assets/SCREENSHOTS.md) | План скриншотов для README |
+| [docs/WORKSPACE_ROUTING.md](docs/WORKSPACE_ROUTING.md) | API / Celery по workspace |
 
----
-
-## Quotas
-
-Планы, enforcement, 429: **[docs/quotas.md](docs/quotas.md)**.
-
----
-
-## Observability
-
-Логи, request id, метрики, Sentry: **[docs/observability.md](docs/observability.md)**. Операции: **[docs/runbook.md](docs/runbook.md)**.
-
----
-
-## Storage lifecycle
-
-Local vs S3, дедуп, soft-delete: **[docs/storage-lifecycle.md](docs/storage-lifecycle.md)**.
+Шаблоны env: [.env.example](.env.example), [env/.env.example](env/.env.example), [backend/.env.example](backend/.env.example), [.env.production.example](.env.production.example).
 
 ---
 
@@ -148,32 +182,12 @@ cd frontend && npm run lint && npm run build
 
 ---
 
-## Documentation index
-
-| Документ | Содержание |
-|----------|------------|
-| [docs/deployment.md](docs/deployment.md) | Dev vs prod compose, TLS, S3/MinIO, миграции, checklist |
-| [docs/security.md](docs/security.md) | Секреты, proxy, rate limits, audit |
-| [docs/quotas.md](docs/quotas.md) | Планы, лимиты, enforcement |
-| [docs/observability.md](docs/observability.md) | Логи, Sentry, `/metrics` |
-| [docs/runbook.md](docs/runbook.md) | Инциденты, backup, очередь |
-| [docs/storage-lifecycle.md](docs/storage-lifecycle.md) | Объекты, retention, AV |
-| [docs/WORKSPACE_ROUTING.md](docs/WORKSPACE_ROUTING.md) | Инвентарь API / Celery по workspace |
-| [docs/architecture.md](docs/architecture.md) | Обзор компонентов |
-| [docs/email-testing.md](docs/email-testing.md) | Capture, Mailpit, e2e тесты |
-| [docs/testing-database.md](docs/testing-database.md) | NullPool, ResourceWarning в тестах |
-| [docs/IMPLEMENTATION_STATUS.md](docs/IMPLEMENTATION_STATUS.md) | Дорожная карта SaaS |
-
-Шаблоны env: [.env.example](.env.example), [env/.env.example](env/.env.example), [backend/.env.example](backend/.env.example), [.env.production.example](.env.production.example).
-
----
-
-## Repository layout
+## Структура репозитория
 
 ```text
 enterprise-copilot/
 ├── backend/           # FastAPI, Celery, Alembic, tests
-├── frontend/          # Next.js
+├── frontend/          # Next.js (landing + app)
 ├── docs/
 ├── docker-compose.yml
 ├── docker-compose.prod.yml

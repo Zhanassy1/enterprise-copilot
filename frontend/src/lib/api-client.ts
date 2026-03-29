@@ -254,10 +254,19 @@ export const api = {
 
   listBillingLedger: () => request<BillingLedgerOut[]>("/billing/ledger"),
 
-  listAuditLogs: () => request<AuditLogOut[]>("/audit/logs"),
+  listAuditLogs: (limit = 50, eventType?: string | null) => {
+    const p = new URLSearchParams();
+    p.set("limit", String(limit));
+    if (eventType?.trim()) p.set("event_type", eventType.trim());
+    return request<AuditLogOut[]>(`/audit/logs?${p.toString()}`);
+  },
 
-  listAuditLogsAdmin: (limit = 100) =>
-    request<AuditLogOut[]>(`/audit/admin/logs?limit=${encodeURIComponent(String(limit))}`),
+  listAuditLogsAdmin: (limit = 100, eventType?: string | null) => {
+    const p = new URLSearchParams();
+    p.set("limit", String(limit));
+    if (eventType?.trim()) p.set("event_type", eventType.trim());
+    return request<AuditLogOut[]>(`/audit/admin/logs?${p.toString()}`);
+  },
 
   listIngestionJobs: (status?: string) => {
     const q = status ? `?status=${encodeURIComponent(status)}` : "";

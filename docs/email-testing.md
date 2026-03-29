@@ -1,5 +1,7 @@
 # Email flows (verification / password reset) — test and local strategies
 
+**Продуктовый контекст:** подтверждение email и сброс пароля — часть auth lifecycle; в production нужен реальный SMTP или эквивалент.
+
 Production sends mail via **SMTP** (`smtp_host`, `smtp_port`, …). For automated tests and local dev without a real SMTP relay, use one of the options below.
 
 **Product context:** [README.md](../README.md) (Storage / Security / Testing).

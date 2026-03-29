@@ -1,5 +1,7 @@
 # Operations runbook
 
+**Продуктовый контекст:** ответы на типичные инциденты для развёртывания Enterprise Copilot (async ingestion, RAG, квоты). Метрики: [observability.md](observability.md).
+
 ## API returns 503 / Database unavailable
 
 - Check Postgres connectivity from the API container: `GET /readyz` (expects `db: true`).

@@ -8,8 +8,8 @@ export function DocumentEmptyState() {
       </div>
       <h3 className="text-lg font-medium">Нет документов</h3>
       <p className="mt-1 max-w-sm text-sm text-muted-foreground">
-        Загрузите первый документ, чтобы начать работу. Поддерживаются PDF, DOCX
-        и TXT файлы.
+        Загрузите первый документ — индексация выполнится в фоне; статус виден на карточке и в «Очереди обработки». Форматы:
+        PDF, DOCX, TXT.
       </p>
     </div>
   );
