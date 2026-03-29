@@ -90,33 +90,32 @@ export default function BillingPage() {
 
       <WorkspaceContextStrip area="план, лимиты и счётчики usage относятся к этому workspace" />
 
-      <Card className="border-primary/25 bg-primary/5">
+      <Card className="border-primary/30 bg-gradient-to-br from-primary/8 via-background to-background">
         <CardHeader className="pb-2">
-          <CardTitle className="text-base">Апгрейд плана (коммерческий сценарий)</CardTitle>
+          <CardTitle className="text-base">Нужен больший план?</CardTitle>
+          <p className="text-sm text-muted-foreground">
+            Free подходит для пилота, Pro — для ежедневной работы команды, Team — для высокой нагрузки и крупных корпусов
+            документов. Сравните лимиты и выберите следующую ступень — дальше согласуйте смену данных workspace с
+            администратором развёртывания (онлайн-оплата в продукте запланирована отдельно).
+          </p>
         </CardHeader>
-        <CardContent className="space-y-2 text-sm text-muted-foreground">
-          <p>
-            Сравните публичные уровни <span className="font-medium text-foreground">Free · Pro · Team</span> и лимиты на{" "}
-            <Link href="/pricing#pricing-comparison" className="font-medium text-foreground underline underline-offset-2">
-              странице тарифов
-            </Link>
-            . В этой сборке оплата и автосмена плана в продукте не подключены: фактический тариф workspace задаётся данными
-            на стороне развёртывания или администратором.
-          </p>
-          <p>
-            Если вы нагрузочно упираетесь в квоты, зафиксируйте текущий расход ниже и согласуйте повышение лимитов с
-            владельцем инстанса (или дождитесь внешнего биллинга из roadmap).
-          </p>
-          <div className="flex flex-wrap gap-2 pt-1">
+        <CardContent className="space-y-3 text-sm text-muted-foreground">
+          <div className="flex flex-wrap gap-2">
             <Button size="sm" asChild>
+              <Link href="/pricing#pricing-comparison" className="inline-flex items-center gap-1.5">
+                Сравнить все планы
+                <ExternalLink className="h-3.5 w-3.5 opacity-70" aria-hidden />
+              </Link>
+            </Button>
+            <Button size="sm" variant="secondary" asChild>
               <Link href="/pricing#pricing-plan-pro" className="inline-flex items-center gap-1.5">
-                Смотреть Pro
+                Фокус на Pro
                 <ExternalLink className="h-3.5 w-3.5 opacity-70" aria-hidden />
               </Link>
             </Button>
             <Button size="sm" variant="outline" asChild>
               <Link href="/pricing#pricing-plan-team" className="inline-flex items-center gap-1.5">
-                Смотреть Team
+                Фокус на Team
                 <ExternalLink className="h-3.5 w-3.5 opacity-70" aria-hidden />
               </Link>
             </Button>
@@ -154,15 +153,27 @@ export default function BillingPage() {
         <>
           {alerts.length > 0 ? (
             <div
-              className="flex gap-3 rounded-xl border border-destructive/50 bg-destructive/10 p-4 text-sm text-destructive"
+              className="space-y-3 rounded-xl border border-destructive/50 bg-destructive/10 p-4 text-sm text-destructive"
               role="alert"
             >
-              <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0" aria-hidden />
-              <ul className="list-inside list-disc space-y-1">
-                {alerts.map((a) => (
-                  <li key={a}>{a}</li>
-                ))}
-              </ul>
+              <div className="flex gap-3">
+                <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0" aria-hidden />
+                <ul className="list-inside list-disc space-y-1">
+                  {alerts.map((a) => (
+                    <li key={a}>{a}</li>
+                  ))}
+                </ul>
+              </div>
+              <div className="flex flex-wrap gap-2 border-t border-destructive/25 pt-3">
+                <Button size="sm" variant="outline" asChild>
+                  <Link href="/pricing#pricing-comparison">Сравнить планы и лимиты</Link>
+                </Button>
+                {upgrade ? (
+                  <Button size="sm" asChild>
+                    <Link href={planHref}>Рекомендуемый апгрейд: {planDisplayName(upgrade)}</Link>
+                  </Button>
+                ) : null}
+              </div>
             </div>
           ) : null}
 
@@ -171,9 +182,19 @@ export default function BillingPage() {
               <div>
                 <CardTitle className="text-xl">Текущий план workspace</CardTitle>
                 <p className="mt-1 text-sm text-muted-foreground">
-                  В ответе API: <span className="font-mono text-xs">{normalizePlanSlug(data.plan_slug)}</span> (
-                  {planDisplayName(data.plan_slug)}). Потолки ниже — из этого же ответа.
+                  Активный тариф: <span className="font-semibold text-foreground">{planDisplayName(data.plan_slug)}</span>{" "}
+                  (<span className="font-mono text-xs">{normalizePlanSlug(data.plan_slug)}</span>). Счётчики и потолки ниже
+                  — из того же ответа API, без догадок.
                 </p>
+                {upgrade ? (
+                  <p className="mt-2 text-sm font-medium text-primary">
+                    Рекомендация: при росте нагрузки посмотрите {planDisplayName(upgrade)} — шире лимиты на тех же функциях.
+                  </p>
+                ) : (
+                  <p className="mt-2 text-sm text-muted-foreground">
+                    Уже на верхнем публичном уровне (Team) — дальнейший рост обсуждается с командой продукта под вашу нагрузку.
+                  </p>
+                )}
               </div>
               <div className="flex flex-wrap gap-2">
                 {upgrade ? (
@@ -249,11 +270,12 @@ export default function BillingPage() {
 
           <Card className="border-dashed">
             <CardHeader>
-              <CardTitle className="text-base">Оплата</CardTitle>
+              <CardTitle className="text-base">Оплата и учёт</CardTitle>
             </CardHeader>
             <CardContent className="text-sm text-muted-foreground">
-              Оплата картой или по счёту через внешнего провайдера — в планах продукта. Сейчас план и квоты workspace
-              задаются данными системы; таблица списаний (ledger) может быть пустой до подключения биллинга.
+              Сейчас <span className="font-medium text-foreground">план и квоты</span> задаются конфигурацией вашего
+              развёртывания — UI показывает лимиты и расход прозрачно. Подключение Stripe, счетов или enterprise-договора
+              привяжет те же экраны к живому биллингу; таблица ledger заполнится, когда начнёт поступать провайдер.
             </CardContent>
           </Card>
 

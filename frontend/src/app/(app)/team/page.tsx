@@ -9,8 +9,16 @@ import { Button } from "@/components/ui/button";
 import { useWorkspace } from "@/components/workspace/workspace-provider";
 import { WorkspaceContextStrip } from "@/components/workspace/workspace-context-strip";
 import { workspaceRoleLabel } from "@/lib/product-terminology";
-import { isOwnerOrAdmin } from "@/lib/workspace-role";
+import { isOwnerOrAdmin, normalizeWorkspaceRole } from "@/lib/workspace-role";
 import { siteUrls } from "@/lib/site-urls";
+
+const ROLE_KEYS = ["owner", "admin", "member", "viewer"] as const;
+
+function roleColumnKey(role: string): (typeof ROLE_KEYS)[number] | null {
+  const r = normalizeWorkspaceRole(role);
+  if (r === "owner" || r === "admin" || r === "member" || r === "viewer") return r;
+  return null;
+}
 
 const ROLE_MATRIX: { cap: string; owner: string; admin: string; member: string; viewer: string }[] = [
   {
@@ -68,15 +76,36 @@ export default function TeamPage() {
   const { currentWorkspace } = useWorkspace();
   const role = currentWorkspace?.role ?? "";
   const admin = isOwnerOrAdmin(role);
+  const colKey = currentWorkspace ? roleColumnKey(currentWorkspace.role) : null;
 
   return (
     <div className="space-y-6">
       <PageHeader
         title="Команда и доступ"
-        description="Рабочее пространство (workspace): изолированный контур данных и ролей. Переключатель в сайдбаре задаёт контекст для API и UI. Участников и приглашения показываем ниже — без фиктивных строк, пока нет отдельных маршрутов."
+        description="Один workspace — один изолированный контур: документы, квоты и аудит не пересекаются с другими пространствами. Ниже — кто вы, какие действия доступны ролям и где появятся список коллег и приглашения, когда API будет расширен."
       />
 
       <WorkspaceContextStrip area="роль, матрица прав и блоки ниже относятся к этому workspace" />
+
+      <Card className="border-border/80 bg-muted/20">
+        <CardHeader className="pb-2">
+          <CardTitle className="text-base">Как читать этот экран</CardTitle>
+        </CardHeader>
+        <CardContent className="grid gap-3 text-sm text-muted-foreground sm:grid-cols-3">
+          <p>
+            <span className="font-medium text-foreground">Владелец и администратор</span> — контур безопасности и
+            соответствия: аудит, план, контроль доступа; приглашения сюда же, когда появится backend.
+          </p>
+          <p>
+            <span className="font-medium text-foreground">Участник</span> — полный рабочий цикл с файлами, поиском и
+            чатом в пределах квот и политики API.
+          </p>
+          <p>
+            <span className="font-medium text-foreground">Наблюдатель</span> — контроль и чтение без изменения данных;
+            отдельные кнопки в приложении отключены намеренно.
+          </p>
+        </CardContent>
+      </Card>
 
       {currentWorkspace ? (
         <Card>
@@ -90,11 +119,17 @@ export default function TeamPage() {
             </Badge>
           </CardHeader>
           <CardContent className="space-y-3 text-sm text-muted-foreground">
-            {admin ? (
+            {role.toLowerCase() === "owner" ? (
               <p>
-                Как <span className="font-medium text-foreground">владелец</span> или{" "}
-                <span className="font-medium text-foreground">администратор</span> вы отвечаете за границы данных и
-                журнал аудита; после появления API участников сможете выдавать приглашения из этого экрана.
+                <span className="font-medium text-foreground">Владелец</span> задаёт верхний уровень доверия к этому
+                workspace: политика доступа, контроль событий в аудите и согласование плана; при появлении API —
+                раздача доступа коллегам из этого же раздела.
+              </p>
+            ) : null}
+            {role.toLowerCase() === "admin" ? (
+              <p>
+                <span className="font-medium text-foreground">Администратор</span> ведёт операционную безопасность и
+                разбор инцидентов (аудит, лимиты); сценарии приглашений сойдутся с владельцем после подключения API.
               </p>
             ) : null}
             {role.toLowerCase() === "member" ? (
@@ -122,13 +157,18 @@ export default function TeamPage() {
 
       <Card>
         <CardHeader className="pb-2">
-          <CardTitle className="text-base">Матрица ролей (справочно)</CardTitle>
+          <CardTitle className="text-base">Матрица ролей</CardTitle>
           <p className="text-sm text-muted-foreground">
-            Согласовано с продуктовым UI и политикой API. Термины:{" "}
+            Одна таблица — ожидаемое поведение продукта; детали терминов:{" "}
             <Link href={siteUrls.githubGlossary} className="underline underline-offset-2" target="_blank" rel="noreferrer">
               docs/product-glossary.md
             </Link>
             .
+            {colKey ? (
+              <span className="mt-1 block text-xs font-medium text-primary">
+                Подсвечена колонка вашей текущей роли.
+              </span>
+            ) : null}
           </p>
         </CardHeader>
         <CardContent className="overflow-x-auto">
@@ -136,20 +176,29 @@ export default function TeamPage() {
             <thead>
               <tr className="border-b bg-muted/50 text-[11px] font-medium text-foreground">
                 <th className="p-2.5 pr-3">Возможность</th>
-                <th className="p-2.5">Владелец</th>
-                <th className="p-2.5">Админ</th>
-                <th className="p-2.5">Участник</th>
-                <th className="p-2.5">Наблюдатель</th>
+                {ROLE_KEYS.map((k) => (
+                  <th
+                    key={k}
+                    className={`p-2.5 ${colKey === k ? "bg-primary/15 text-primary" : ""}`}
+                  >
+                    {k === "owner" ? "Владелец" : k === "admin" ? "Админ" : k === "member" ? "Участник" : "Наблюдатель"}
+                  </th>
+                ))}
               </tr>
             </thead>
             <tbody className="text-muted-foreground">
               {ROLE_MATRIX.map((row) => (
                 <tr key={row.cap} className="border-b border-border/70">
                   <td className="p-2.5 pr-3 text-foreground">{row.cap}</td>
-                  <td className="p-2.5">{row.owner}</td>
-                  <td className="p-2.5">{row.admin}</td>
-                  <td className="p-2.5">{row.member}</td>
-                  <td className="p-2.5">{row.viewer}</td>
+                  {ROLE_KEYS.map((k) => {
+                    const val =
+                      k === "owner" ? row.owner : k === "admin" ? row.admin : k === "member" ? row.member : row.viewer;
+                    return (
+                      <td key={k} className={`p-2.5 ${colKey === k ? "bg-primary/10 font-medium text-foreground" : ""}`}>
+                        {val}
+                      </td>
+                    );
+                  })}
                 </tr>
               ))}
             </tbody>
@@ -164,12 +213,16 @@ export default function TeamPage() {
               <Users className="h-4 w-4" aria-hidden />
               Участники workspace
             </CardTitle>
+            <p className="text-xs text-muted-foreground">
+              Сейчас в каталоге отображается только ваша учётная запись — это ожидаемое состояние до маршрута списка
+              участников.
+            </p>
           </CardHeader>
           <CardContent className="space-y-4 text-sm text-muted-foreground">
             <p>
-              Публичный список пользователей и смена ролей через <strong className="text-foreground">REST API этой версии</strong>{" "}
-              не предоставляются — клиент знает только вашу роль и имя workspace из{" "}
-              <code className="rounded bg-muted px-1">GET /workspaces</code>.
+              Общий список людей и смена ролей появятся при расширении API; до этого момента приложение опирается на{" "}
+              <code className="rounded bg-muted px-1">GET /workspaces</code> и показывает только вашу роль и имя
+              пространства — без вымышленных строк.
             </p>
             <div className="overflow-x-auto rounded-lg border bg-card">
               <table className="w-full min-w-[20rem] text-left text-xs">
@@ -205,8 +258,7 @@ export default function TeamPage() {
             <div className="flex items-start gap-2 rounded-lg bg-muted/50 p-3 text-xs">
               <Info className="mt-0.5 h-4 w-4 shrink-0 text-foreground" aria-hidden />
               <p>
-                Честный product-ready placeholder: таблица показывает структуру SaaS, пока backend не отдаёт колонки «кто в
-                workspace».
+                Интерфейс готов: как только backend начнёт отдавать участников, строки заполнятся без смены макета.
               </p>
             </div>
           </CardContent>
@@ -221,10 +273,14 @@ export default function TeamPage() {
           </CardHeader>
           <CardContent className="space-y-4 text-sm text-muted-foreground">
             <p>
-              Поток приглашений (письмо, срок ссылки, принятие в workspace) в{" "}
-              <strong className="text-foreground">backend не реализован</strong>. Ниже — очередь исходящих приглашений в
-              «продуктовом» виде: пусто и явно подписано.
+              Исходящие приглашения (email, срок ссылки, принятие) подключаются на стороне API. Ниже — та же таблица, что
+              будет в продукте: пока очередь пуста и это явно видно.
             </p>
+            <ul className="list-inside list-disc space-y-1 text-xs text-muted-foreground">
+              <li>Этап 1: маршрут создания приглашения и запись в очереди.</li>
+              <li>Этап 2: письмо и переход по ссылке для входа в workspace.</li>
+              <li>До запуска: новых людей добавляет оператор развёртывания (учётные записи и доступ).</li>
+            </ul>
             <div className="overflow-x-auto rounded-lg border bg-card">
               <table className="w-full min-w-[20rem] text-left text-xs">
                 <thead>
@@ -236,8 +292,8 @@ export default function TeamPage() {
                 </thead>
                 <tbody>
                   <tr>
-                    <td className="p-3 text-center italic text-muted-foreground" colSpan={3}>
-                      Нет данных API — приглашения не создавались
+                    <td className="p-3 text-center text-muted-foreground" colSpan={3}>
+                      Исходящих приглашений нет — очередь готова к первой записи из API
                     </td>
                   </tr>
                 </tbody>

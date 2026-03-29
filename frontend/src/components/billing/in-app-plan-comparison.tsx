@@ -38,9 +38,9 @@ export function InAppPlanComparison({ currentPlanSlug }: InAppPlanComparisonProp
     <section id="plan-comparison" className="scroll-mt-8 space-y-4">
       <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
         <div>
-          <h2 className="text-lg font-semibold tracking-tight">Сравнение планов</h2>
+          <h2 className="text-lg font-semibold tracking-tight">Три уровня — один продукт</h2>
           <p className="mt-1 max-w-2xl text-sm text-muted-foreground">
-            Free, Pro и Team — эталонные лимиты продукта (как в{" "}
+            Free, Pro и Team — публичная шкала ёмкости; полная детализация в{" "}
             <a
               href={siteUrls.githubQuotas}
               className="text-foreground underline underline-offset-2"
@@ -71,8 +71,12 @@ export function InAppPlanComparison({ currentPlanSlug }: InAppPlanComparisonProp
       <div className="flex gap-2 rounded-lg border border-dashed border-muted-foreground/35 bg-muted/30 p-3 text-sm text-muted-foreground">
         <Info className="mt-0.5 h-4 w-4 shrink-0 text-foreground/70" aria-hidden />
         <p>
-          Оплата и автоматическое переключение плана в продукте пока не подключены: тариф в данных workspace задаёт
-          администратор или процесс онбординга. Страница <Link href="/pricing" className="underline underline-offset-2">/pricing</Link> — для выбора уровня при регистрации и для сравнения возможностей.
+          Смена тарифа в один клик через внешнего провайдера оплаты запланирована как следующий слой; сейчас план в
+          данных workspace задаёт администратор развёртывания. Страница{" "}
+          <Link href="/pricing" className="underline underline-offset-2">
+            /pricing
+          </Link>{" "}
+          — чтобы согласовать с ним следующую ступень по цифрам ниже.
         </p>
       </div>
 
@@ -122,7 +126,7 @@ export function InAppPlanComparison({ currentPlanSlug }: InAppPlanComparisonProp
                 </div>
                 <Button variant={active ? "secondary" : "outline"} className="w-full" size="sm" asChild>
                   <Link href={planAnchor(p.slug)} className="inline-flex items-center justify-center gap-1">
-                    Подробнее на /pricing
+                    Карточка {p.name} на сайте
                     <ArrowRight className="h-3.5 w-3.5 opacity-70" aria-hidden />
                   </Link>
                 </Button>

@@ -6,7 +6,7 @@
 
 [![CI](https://github.com/Zhanassy1/enterprise-copilot/actions/workflows/ci.yml/badge.svg)](https://github.com/Zhanassy1/enterprise-copilot/actions/workflows/ci.yml)
 
-**Это SaaS?** Да, в смысле **многоарендного B2B-продукта**: отдельные **рабочие пространства (workspace)** с ролями и квотами, веб-приложение и API. Развёртывание — под ваш контроль (Docker / облако), не обязательно публичный мультитенант-хостинг. Термины: **[docs/product-glossary.md](docs/product-glossary.md)**.
+**Это SaaS?** Да: **многоарендный B2B-продукт** с полным **веб-интерфейсом** и **API**, **рабочими пространствами (workspace)**, ролями и квотами. Вы разворачиваете у себя (Docker / облако) и управляете данными и доступом — без обязательного публичного shared-хостинга. Единая терминология: **[docs/product-glossary.md](docs/product-glossary.md)**.
 
 <a id="demo-quick-1min"></a>
 
@@ -41,13 +41,15 @@
 
 ### Платформенный блок (одним абзацем)
 
-Продукт — это **веб-приложение с multi-tenant контуром**: не только HTTP API, но и **UI** — маркетинговая главная и `/pricing`, затем приложение с **переключателем рабочего пространства (workspace)** и бейджем роли, страницей **«Команда и доступ»** (матрица ролей и честные плейсхолдеры до API участников и приглашений), каталог **документов**, **поиск**, **чат**, **план и лимиты** (`/billing`), **очередь задач индексации** и **журнал аудита**. Онлайн-оплата и смена плана «в один клик» — в roadmap; фактический тариф и usage — через API и UI ([docs/quotas.md](docs/quotas.md)).
+**Enterprise Copilot** — готовое **веб-приложение** для командной работы с документами: маркетинговая главная и **`/pricing`**, приложение с **переключателем рабочего пространства (workspace)** и бейджем роли, **«Команда и доступ»** (матрица прав; каталог участников и email-приглашения подключаются расширением API), **документы**, **поиск**, **чат**, **«План и лимиты»** (`/billing` с расходом квот), **очередь индексации** и **журнал аудита**. Картой лимитов служит **[docs/quotas.md](docs/quotas.md)**. Онлайн-оплата через внешнего провайдера и self-service смена тарифа в один клик запланированы как следующий слой; **текущий план и usage уже отражаются в UI и API**.
 
 ---
 
 <a id="evaluator-five-minutes"></a>
 
 ## Быстрая оценка за 5 минут (evaluator guide)
+
+**За эти пять минут вы проходите тот же путь, что и пользователь продукта:** от маркетинга до поиска по своему файлу и контроля квот.
 
 1. `docker compose up --build` — открыть **http://localhost:3000** (главная для гостей), при желании пролистать **http://localhost:3000/pricing**; затем **Регистрация** → **Вход**.
 2. Убедиться, что выбрано **рабочее пространство** (переключатель в боковой панели); при первом входе подставляется доступное пространство из API.
@@ -84,9 +86,11 @@
 
 ## Демо-видео
 
+Готовый ролик — самый быстрый способ показать продукт команде, которая не поднимает Docker.
+
 - Сценарий записи и таймкоды: **[docs/DEMO_MEDIA.md](docs/DEMO_MEDIA.md)**.
-- **Локальный UI:** задайте **`NEXT_PUBLIC_DEMO_VIDEO_EMBED_URL`** (URL для iframe, напр. YouTube embed) — на главной появится плеер в блоке «Видео-демо».
-- Пока ролика нет — ниже можно вставить тот же embed вручную (замените `src`):
+- **Встроить на маркетинговую главную:** задайте **`NEXT_PUBLIC_DEMO_VIDEO_EMBED_URL`** (полный URL iframe, например YouTube `https://www.youtube.com/embed/VIDEO_ID`) — блок «Видео-демо» подменится плеером.
+- **В README без деплоя:** скопируйте блок iframe ниже и подставьте свой embed URL (тот же, что и для env).
 
 ```html
 <!-- Demo video embed placeholder — замените VIDEO_ID -->
@@ -97,7 +101,18 @@
 
 ## Скриншоты
 
-Снято Playwright-спекой `frontend/e2e/demo-screenshots.spec.ts` → **`docs/assets/screenshots/`** (подробности: **[docs/assets/SCREENSHOTS.md](docs/assets/SCREENSHOTS.md)**). Команда: `cd frontend && npm run demo:screenshots` (нужны UI + API; для кадра **summary** и документа в статусе «Готово» см. `DEMO_SCREENSHOTS_WITH_INGEST=1` и worker в SCREENSHOTS).
+Ниже — **один визуальный проход** по продукту (готово для README, презентаций и due diligence). Источник файлов: **`docs/assets/screenshots/`**. Автосъёмка: Playwright **`frontend/e2e/demo-screenshots.spec.ts`**; команда `cd frontend && npm run demo:screenshots` (нужны UI + API; кадр **summary** и документ «Готово» — с **`DEMO_SCREENSHOTS_WITH_INGEST=1`** и worker, см. **[docs/assets/SCREENSHOTS.md](docs/assets/SCREENSHOTS.md)**).
+
+| Кадр | Файл | Что демонстрирует |
+|------|------|-------------------|
+| Маркетинг | `landing.png` | Ценность, тарифы на главной, CTA, блок демо |
+| Тарифы | `pricing.png` | Free / Pro / Team, сравнение лимитов |
+| Документы | `documents.png` | Каталог workspace, статусы индексации |
+| Очередь | `jobs.png` | Задачи индексации по статусам |
+| План и лимиты | `billing.png` | Текущий план, расход квот |
+| Поиск | `search.png` | Семантический поиск в границах workspace |
+| Чат | `chat.png` | RAG-диалог с источниками |
+| Аудит | `audit.png` | Журнал событий workspace |
 
 | Landing | Pricing | Documents |
 |:-------:|:-------:|:---------:|
@@ -123,9 +138,9 @@
 
 | Состояние | Что имеется в виду |
 |-----------|---------------------|
-| **Работает** | Auth, workspace scope, upload, async ingestion, поиск и чат с источниками, summary, квоты, rate limits по плану, audit API + UI, billing usage API + UI (без live-провайдера оплаты). |
-| **Почти production-ready** | Compose overlay, startup checks, метрики, runbook, S3 storage path — при правильных секретах и worker. |
-| **Ограничения** | Нет полноценного **Stripe/инвойсов**; нет живого API **приглашений** — на странице «Команда» честный placeholder и неактивная кнопка до backend. **Роль viewer:** загрузка/удаление документов, новые диалоги и отправка в чате **отключены в UI** + плашки на ключевых экранах; остальные отказы — по ответам API. Подробнее: [docs/IMPLEMENTATION_STATUS.md](docs/IMPLEMENTATION_STATUS.md). |
+| **Работает** | Auth, workspace scope, upload, async ingestion, поиск и чат с источниками, summary, квоты, rate limits по плану, audit API + UI, отображение плана и расхода в **«План и лимиты»** (интеграция со Stripe/инвойсами — отдельная веха). |
+| **Production stack** | Compose dev/prod overlay, startup checks, метрики, runbook, S3; при корректных секретах и worker готово к эксплуатации у заказчика. |
+| **Следующие вехи** | Внешний биллинг и **API приглашений** в workspace; до их появления экран **«Команда и доступ»** показывает матрицу прав и UI, готовый к данным API. **Наблюдатель (viewer):** запись в документы и активный чат отключены в UI; политика совпадает с API. Детали: [docs/IMPLEMENTATION_STATUS.md](docs/IMPLEMENTATION_STATUS.md). |
 
 ### Roadmap (кратко)
 

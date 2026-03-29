@@ -1,6 +1,6 @@
 # Скриншоты UI для README и презентаций
 
-Кадры синхронизированы с **[README — скриншоты](../../README.md#screenshots)**, **[#demo-quick-1min](../../README.md#demo-quick-1min)** и пятиминутным чек-листом **[README#evaluator-five-minutes](../../README.md#evaluator-five-minutes)** / **[DEMO_MEDIA.md → 5 мин](../DEMO_MEDIA.md#evaluator-walkthrough)**.
+**Назначение:** мгновенный обзор UI без установки — достаточно открыть README на GitHub. Кадры совпадают с **[#screenshots](../../README.md#screenshots)**, **[#demo-quick-1min](../../README.md#demo-quick-1min)** и **[пятиминутным гидом](../../README.md#evaluator-five-minutes)** / **[DEMO_MEDIA → 5 мин](../DEMO_MEDIA.md#evaluator-walkthrough)**.
 
 ## План съёмки (что показываем)
 

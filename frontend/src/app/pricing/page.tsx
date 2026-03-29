@@ -15,11 +15,12 @@ export default function PricingPage() {
             <p className="text-sm font-medium text-muted-foreground">Тарифы</p>
             <h1 className="mt-3 text-3xl font-bold tracking-tight sm:text-4xl">Планы Free, Pro и Team</h1>
             <p className="mt-4 text-muted-foreground">
-              Выберите уровень по объёму документов и интенсивности запросов. В приложении у выбранного{" "}
-              <span className="font-medium text-foreground">рабочего пространства (workspace)</span> отображаются фактический
-              план и остатки квот на странице <span className="font-medium text-foreground">«План и лимиты»</span> (
-              <code className="rounded bg-muted px-1 font-mono text-xs">/billing</code>). Онлайн-оплата — в roadmap; сейчас
-              лимиты задаются конфигурацией развёртывания.
+              Три ступени масштаба — одна кодовая база. После входа у каждого{" "}
+              <span className="font-medium text-foreground">рабочего пространства (workspace)</span> на странице{" "}
+              <span className="font-medium text-foreground">«План и лимиты»</span> (
+              <code className="rounded bg-muted px-1 font-mono text-xs">/billing</code>) видны фактический тариф и остатки
+              квот в реальном времени. Онлайн-оплата подключается поверх тех же экранов; сейчас лимиты задаёт конфигурация
+              вашего инстанса.
             </p>
             <div className="mx-auto mt-8 flex max-w-xl flex-col gap-2 sm:flex-row sm:justify-center">
               <Button variant="secondary" asChild>
@@ -69,15 +70,58 @@ export default function PricingPage() {
                       <ArrowRight className="ml-2 h-4 w-4" />
                     </Link>
                   </Button>
+                  <p className="text-center text-xs text-muted-foreground">
+                    <Link href="/login" className="font-medium text-foreground underline-offset-4 hover:underline">
+                      Уже в аккаунте — смотреть фактические лимиты
+                    </Link>
+                  </p>
                 </CardContent>
               </Card>
             ))}
           </div>
         </section>
 
+        <section className="mx-auto max-w-6xl px-4 pb-4 sm:px-6">
+          <div className="grid gap-4 md:grid-cols-3">
+            <Card className="border-border/80">
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm font-semibold">Free — пилот</CardTitle>
+              </CardHeader>
+              <CardContent className="text-sm text-muted-foreground">
+                Проверка гипотезы на одном контуре: поиск и чат по своим файлам с понятным потолком запросов.
+              </CardContent>
+            </Card>
+            <Card className="border-primary/30 ring-1 ring-primary/10">
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm font-semibold">Pro — рабочий режим</CardTitle>
+              </CardHeader>
+              <CardContent className="text-sm text-muted-foreground">
+                Ежедневная работа команды: больше запросов, объём загрузок и параллельных индексаций без «упора» на каждом
+                аплоаде.
+              </CardContent>
+            </Card>
+            <Card className="border-border/80">
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm font-semibold">Team — масштаб</CardTitle>
+              </CardHeader>
+              <CardContent className="text-sm text-muted-foreground">
+                Высокая частота запросов и крупные корпуса документов; максимум публичной шкалы перед индивидуальным
+                enterprise-соглашением.
+              </CardContent>
+            </Card>
+          </div>
+        </section>
+
         <section id="pricing-comparison" className="scroll-mt-8 border-y bg-muted/25 px-4 py-12 sm:px-6">
           <div className="mx-auto max-w-4xl">
-            <h2 className="text-xl font-semibold">Сравнение в двух словах</h2>
+            <h2 className="text-xl font-semibold">Сравнение лимитов</h2>
+            <p className="mt-2 text-sm text-muted-foreground">
+              Цифры ниже — опорные для переговоров с администратором инстанса; источник истины по всем квотам —{" "}
+              <a href={siteUrls.githubQuotas} className="font-medium text-foreground underline underline-offset-2" target="_blank" rel="noreferrer">
+                docs/quotas.md
+              </a>
+              .
+            </p>
             <div className="mt-6 overflow-x-auto rounded-xl border bg-card">
               <table className="w-full min-w-[32rem] text-left text-sm">
                 <thead>
@@ -129,10 +173,10 @@ export default function PricingPage() {
         <section className="mx-auto max-w-4xl px-4 py-12 text-center sm:px-6">
           <h2 className="text-lg font-semibold">Готовы попробовать?</h2>
           <p className="mt-2 text-sm text-muted-foreground">
-            Регистрация бесплатна. После входа выберите рабочее пространство (workspace) и откройте раздел{" "}
-            <strong className="text-foreground">«План и лимиты»</strong> (<code className="rounded bg-muted px-1 font-mono text-xs">/billing</code>) —
-            там фактический тариф, остатки квот и прогресс по лимитам; повышение плана — через сценарий смены данных workspace
-            (внешний биллинг в roadmap).
+            Регистрация бесплатна. После входа выберите рабочее пространство (workspace) и откройте{" "}
+            <strong className="text-foreground">«План и лимиты»</strong> — там счётчики месяца, прогресс по квотам и ссылки на
+            апгрейд. Смена тарифа согласуется с администратором развёртывания; онлайн-оплата накладывается на тот же UI
+            позже.
           </p>
           <div className="mt-6 flex flex-wrap justify-center gap-3">
             <Button size="lg" asChild>
