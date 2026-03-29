@@ -90,6 +90,40 @@ export default function BillingPage() {
 
       <WorkspaceContextStrip area="план, лимиты и счётчики usage относятся к этому workspace" />
 
+      <Card className="border-primary/25 bg-primary/5">
+        <CardHeader className="pb-2">
+          <CardTitle className="text-base">Апгрейд плана (коммерческий сценарий)</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-2 text-sm text-muted-foreground">
+          <p>
+            Сравните публичные уровни <span className="font-medium text-foreground">Free · Pro · Team</span> и лимиты на{" "}
+            <Link href="/pricing#pricing-comparison" className="font-medium text-foreground underline underline-offset-2">
+              странице тарифов
+            </Link>
+            . В этой сборке оплата и автосмена плана в продукте не подключены: фактический тариф workspace задаётся данными
+            на стороне развёртывания или администратором.
+          </p>
+          <p>
+            Если вы нагрузочно упираетесь в квоты, зафиксируйте текущий расход ниже и согласуйте повышение лимитов с
+            владельцем инстанса (или дождитесь внешнего биллинга из roadmap).
+          </p>
+          <div className="flex flex-wrap gap-2 pt-1">
+            <Button size="sm" asChild>
+              <Link href="/pricing#pricing-plan-pro" className="inline-flex items-center gap-1.5">
+                Смотреть Pro
+                <ExternalLink className="h-3.5 w-3.5 opacity-70" aria-hidden />
+              </Link>
+            </Button>
+            <Button size="sm" variant="outline" asChild>
+              <Link href="/pricing#pricing-plan-team" className="inline-flex items-center gap-1.5">
+                Смотреть Team
+                <ExternalLink className="h-3.5 w-3.5 opacity-70" aria-hidden />
+              </Link>
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
+
       <div className="flex flex-wrap gap-2">
         <Button variant="outline" size="sm" asChild>
           <Link href="/pricing#pricing-comparison" className="inline-flex items-center gap-1.5">

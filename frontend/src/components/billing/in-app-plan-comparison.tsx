@@ -56,8 +56,8 @@ export function InAppPlanComparison({ currentPlanSlug }: InAppPlanComparisonProp
         </div>
         {upgrade ? (
           <Button asChild>
-            <Link href={upgrade.href} className="inline-flex items-center gap-2">
-              {upgrade.label}
+            <Link href={upgrade.href} className="inline-flex items-center gap-2" title="Открыть маркетинговую страницу выбранного плана">
+              Апгрейд: {upgrade.label.replace(/^Следующий уровень:\s*/i, "")}
               <ArrowRight className="h-4 w-4" aria-hidden />
             </Link>
           </Button>

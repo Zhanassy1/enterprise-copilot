@@ -63,7 +63,7 @@ export function WorkspaceSwitcher() {
     <div className="mb-2 px-1">
       <p className="mb-1.5 flex items-center gap-1.5 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
         <Building2 className="h-3 w-3" aria-hidden />
-        Текущий workspace
+        Текущее рабочее пространство
       </p>
       <div className="rounded-xl border border-border/80 bg-card p-3 shadow-sm">
         {currentWorkspace ? (

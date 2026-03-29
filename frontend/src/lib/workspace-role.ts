@@ -15,3 +15,7 @@ export function isOwnerOrAdmin(role: string | null | undefined): boolean {
   const r = normalizeWorkspaceRole(role);
   return r === "owner" || r === "admin";
 }
+
+export function isViewer(role: string | null | undefined): boolean {
+  return normalizeWorkspaceRole(role) === "viewer";
+}

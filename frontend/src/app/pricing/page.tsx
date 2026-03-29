@@ -15,10 +15,24 @@ export default function PricingPage() {
             <p className="text-sm font-medium text-muted-foreground">Тарифы</p>
             <h1 className="mt-3 text-3xl font-bold tracking-tight sm:text-4xl">Планы Free, Pro и Team</h1>
             <p className="mt-4 text-muted-foreground">
-              Выберите уровень по объёму документов и интенсивности запросов. В приложении ваш workspace показывает фактический
-              план и остатки квот на странице «План и лимиты». Оплата картой — позже; сейчас лимиты задаются данными
-              продукта.
+              Выберите уровень по объёму документов и интенсивности запросов. В приложении у выбранного{" "}
+              <span className="font-medium text-foreground">рабочего пространства (workspace)</span> отображаются фактический
+              план и остатки квот на странице <span className="font-medium text-foreground">«План и лимиты»</span> (
+              <code className="rounded bg-muted px-1 font-mono text-xs">/billing</code>). Онлайн-оплата — в roadmap; сейчас
+              лимиты задаются конфигурацией развёртывания.
             </p>
+            <div className="mx-auto mt-8 flex max-w-xl flex-col gap-2 sm:flex-row sm:justify-center">
+              <Button variant="secondary" asChild>
+                <a href={siteUrls.evaluatorGuide} target="_blank" rel="noreferrer">
+                  Чек-лист оценки за 5 минут (README)
+                </a>
+              </Button>
+              <Button variant="outline" asChild>
+                <a href={siteUrls.demoScreenshots} target="_blank" rel="noreferrer">
+                  Скриншоты UI в репозитории
+                </a>
+              </Button>
+            </div>
           </div>
         </section>
 
@@ -128,7 +142,12 @@ export default function PricingPage() {
               <Link href="/login">Уже есть аккаунт · Войти</Link>
             </Button>
             <Button size="lg" variant="outline" asChild>
-              <Link href="/#demo-quick-1min">Демо за 1 минуту</Link>
+              <Link href="/#demo-quick-1min">Демо за 1 минуту (главная)</Link>
+            </Button>
+            <Button size="lg" variant="outline" asChild>
+              <a href={siteUrls.demoMedia} target="_blank" rel="noreferrer">
+                Сценарий демо в docs
+              </a>
             </Button>
           </div>
         </section>

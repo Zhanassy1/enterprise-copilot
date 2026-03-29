@@ -205,6 +205,16 @@ export function LandingPage() {
                   README: чек-лист 1′
                 </a>
               </Button>
+              <Button variant="outline" asChild>
+                <a href={siteUrls.evaluatorGuide} target="_blank" rel="noreferrer">
+                  README: 5 минут
+                </a>
+              </Button>
+              <Button variant="outline" asChild>
+                <a href={siteUrls.demoMedia} target="_blank" rel="noreferrer">
+                  docs/DEMO_MEDIA.md
+                </a>
+              </Button>
             </div>
           </div>
         </section>

@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import { useAuth } from "@/hooks/use-auth";
 import { WorkspaceSwitcher } from "@/components/layout/workspace-switcher";
+import { NavRoleHint } from "@/components/layout/nav-role-hint";
 import { appNavItems } from "@/config/app-nav";
 
 export function Sidebar() {
@@ -26,6 +27,7 @@ export function Sidebar() {
         <WorkspaceSwitcher />
       </div>
       <nav className="flex-1 space-y-1 px-3 py-4">
+        <NavRoleHint />
         {appNavItems.map(({ href, label, icon: Icon }) => {
           const active = pathname.startsWith(href);
           return (
