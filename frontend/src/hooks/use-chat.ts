@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useCallback, useEffect } from "react";
+import { toast } from "sonner";
 import {
   api,
   toErrorMessage,
@@ -23,7 +24,9 @@ export function useChat() {
       const data = await api.listChatSessions();
       setSessions(data);
     } catch (err) {
-      setError(toErrorMessage(err));
+      const msg = toErrorMessage(err);
+      setError(msg);
+      toast.error(msg);
     } finally {
       setLoadingSessions(false);
     }
@@ -41,7 +44,9 @@ export function useChat() {
       const msgs = await api.listChatMessages(sessionId);
       setMessages(msgs);
     } catch (err) {
-      setError(toErrorMessage(err));
+      const msg = toErrorMessage(err);
+      setError(msg);
+      toast.error(msg);
     } finally {
       setLoadingMessages(false);
     }
@@ -57,7 +62,9 @@ export function useChat() {
         setMessages([]);
         return session;
       } catch (err) {
-        setError(toErrorMessage(err));
+        const msg = toErrorMessage(err);
+        setError(msg);
+        toast.error(msg);
         return null;
       }
     },
@@ -83,7 +90,9 @@ export function useChat() {
         );
         return reply;
       } catch (err) {
-        setError(toErrorMessage(err));
+        const msg = toErrorMessage(err);
+        setError(msg);
+        toast.error(msg);
         return null;
       } finally {
         setSending(false);

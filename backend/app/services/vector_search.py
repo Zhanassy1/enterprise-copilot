@@ -1,5 +1,11 @@
 from __future__ import annotations
 
+"""
+Vector / keyword retrieval uses SQLAlchemy ``text()`` with bound parameters only
+(``:workspace_id``, ``:qtext``, ``:candidate_k``, ``:qvec``). No user-controlled
+fragments are interpolated into SQL strings.
+"""
+
 import uuid
 
 from sqlalchemy import text

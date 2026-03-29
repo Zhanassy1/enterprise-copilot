@@ -1,13 +1,14 @@
 import uuid
 from pathlib import Path
 
-from fastapi import APIRouter, File, HTTPException, UploadFile
+from fastapi import APIRouter, Body, File, HTTPException, UploadFile
 from fastapi.responses import RedirectResponse, Response
 from sqlalchemy import select
 
 from app.api.deps import CurrentUser, DbDep, WorkspaceReadAccess, WorkspaceWriteAccess
 from app.core.config import settings
 from app.models.document import IngestionJob
+from app.schemas.common_api import EmptyJSONBody
 from app.schemas.documents import (
     DocumentIngestOut,
     DocumentOut,
@@ -41,7 +42,12 @@ def upload_document(db: DbDep, user: CurrentUser, ws: WorkspaceWriteAccess, file
 
 
 @router.post("/reindex-embeddings", response_model=ReindexEmbeddingsOut)
-def reindex_embeddings(db: DbDep, _user: CurrentUser, ws: WorkspaceWriteAccess) -> ReindexEmbeddingsOut:
+def reindex_embeddings(
+    db: DbDep,
+    _user: CurrentUser,
+    ws: WorkspaceWriteAccess,
+    _body: EmptyJSONBody | None = Body(default=None),
+) -> ReindexEmbeddingsOut:
     """Backfill embedding_vector for chunks where NULL. Runs in Celery when async ingestion is enabled."""
     if settings.ingestion_async_enabled:
         from app.tasks.ingestion import reindex_workspace_embeddings_task

@@ -1,10 +1,80 @@
 # Enterprise Copilot
 
+**Enterprise Copilot** is a self-hostable, multi-tenant AI workspace for teams to **search, chat (RAG), and summarize** business documents (PDF/DOCX/TXT) with **workspace isolation**, **async ingestion**, and **usage quotas**.
+
+[![CI](https://github.com/Zhanassy1/enterprise-copilot/actions/workflows/ci.yml/badge.svg)](https://github.com/Zhanassy1/enterprise-copilot/actions/workflows/ci.yml)
+[![Python 3.12](https://img.shields.io/badge/python-3.12-blue.svg)](https://www.python.org/downloads/)
+[![License](https://img.shields.io/github/license/Zhanassy1/enterprise-copilot)](LICENSE)
+
+### Tech stack
+
+| Layer | Technology |
+|-------|------------|
+| API | **FastAPI** |
+| Frontend | **Next.js** |
+| Database | **PostgreSQL** + **pgvector** |
+| Background jobs | **Celery** |
+| Broker / cache | **Redis** |
+
+### Quick start
+
+```bash
+git clone https://github.com/Zhanassy1/enterprise-copilot.git && cd enterprise-copilot
+cp .env.example .env
+docker compose up --build
+```
+
+Then open **http://localhost:3000** (UI) and **http://localhost:8000/docs** (API). Docker dev defaults: [backend/.env.docker](backend/.env.docker); for local backend env see [env/.env.example](env/.env.example) → `backend/.env`.
+
+### Architecture
+
+```mermaid
+flowchart TB
+  subgraph clients[Clients]
+    B[Browser]
+  end
+  subgraph app[Application]
+    FE[Next.js]
+    API[FastAPI]
+    WRK[Celery worker]
+  end
+  subgraph data[Data plane]
+    PG[(PostgreSQL + pgvector)]
+    RD[(Redis)]
+  end
+  B --> FE
+  FE --> API
+  API --> PG
+  API --> RD
+  WRK --> RD
+  WRK --> PG
+```
+
+Upload and search requests hit **FastAPI**; **Celery** consumes **Redis** and writes chunks/embeddings to **PostgreSQL/pgvector**. Details: [docs/architecture.md](docs/architecture.md).
+
+### Screenshots
+
+| Landing | Pricing | Documents |
+|:-------:|:-------:|:---------:|
+| ![Landing](docs/assets/screenshots/landing.png) | ![Pricing](docs/assets/screenshots/pricing.png) | ![Documents](docs/assets/screenshots/documents.png) |
+
+| Jobs | Billing | Search |
+|:----:|:-------:|:------:|
+| ![Jobs](docs/assets/screenshots/jobs.png) | ![Billing](docs/assets/screenshots/billing.png) | ![Search](docs/assets/screenshots/search.png) |
+
+| Chat | Audit |
+|:----:|:-----:|
+| ![Chat](docs/assets/screenshots/chat.png) | ![Audit](docs/assets/screenshots/audit.png) |
+
+Caption index and Playwright capture: [Documentation (RU) — Скриншоты](#screenshots) · [docs/assets/SCREENSHOTS.md](docs/assets/SCREENSHOTS.md).
+
+---
+
+## Documentation (RU)
+
 **Multi-tenant AI copilot для бизнес-документов:** семантический поиск, RAG-чат и краткие summary по PDF/DOCX/TXT с **изоляцией по рабочим пространствам (workspace)**, **фоновой индексацией** (Celery + PostgreSQL/pgvector), **планом и квотами** и **журналом аудита**.
 
 Репозиторий: [github.com/Zhanassy1/enterprise-copilot](https://github.com/Zhanassy1/enterprise-copilot)
-
-[![CI](https://github.com/Zhanassy1/enterprise-copilot/actions/workflows/ci.yml/badge.svg)](https://github.com/Zhanassy1/enterprise-copilot/actions/workflows/ci.yml)
 
 **Это SaaS?** Да: **многоарендный B2B-продукт** с полным **веб-интерфейсом** и **API**, **рабочими пространствами (workspace)**, ролями и квотами. Вы разворачиваете у себя (Docker / облако) и управляете данными и доступом — без обязательного публичного shared-хостинга. Единая терминология: **[docs/product-glossary.md](docs/product-glossary.md)**.
 
@@ -211,7 +281,7 @@ docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
 | Storage | Для SaaS: `STORAGE_BACKEND=s3` при `PRODUCTION_REQUIRE_S3_BACKEND=1` |
 | Reverse proxy | TLS termination; `USE_FORWARDED_HEADERS` + `TRUSTED_PROXY_IPS` |
 | Health | `/healthz`, `/readyz` за балансировщиком |
-| Migrations | `alembic upgrade head` до или при старте API/worker |
+| Migrations | **migrate:** одноразовый сервис в `docker compose` (`alembic upgrade head`); без compose — выполнить миграции вручную до старта API |
 | Worker | Celery worker с той же `REDIS_URL` и очередью `ingestion` |
 | Sentry / metrics | `SENTRY_DSN` опционально; `/metrics` при `observability_metrics_enabled` |
 
@@ -250,7 +320,7 @@ docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
 
 Windows: [scripts/test-integration.ps1](scripts/test-integration.ps1).
 
-При `RUN_INTEGRATION_TESTS=1` отключаются in-memory rate limits для auth в middleware ([`main.py`](backend/app/main.py)).
+При `RUN_INTEGRATION_TESTS=1` отключаются in-memory rate limits для auth в middleware ([`backend/app/middleware/rate_limit.py`](backend/app/middleware/rate_limit.py)).
 
 ```bash
 cd frontend && npm run lint && npm run build

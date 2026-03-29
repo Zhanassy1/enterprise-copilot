@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import uuid
 from datetime import datetime, timezone
 import io
@@ -25,6 +26,8 @@ from app.services.usage_metering import (
     record_event,
 )
 from app.tasks.ingestion import ingest_document_task
+
+logger = logging.getLogger(__name__)
 
 MAX_UPLOAD_BYTES = 25 * 1024 * 1024
 ALLOWED_SUFFIXES = {".pdf", ".docx", ".txt"}
@@ -56,7 +59,8 @@ def validate_upload(file: UploadFile) -> None:
         pos = file.file.tell()
         header = file.file.read(8) or b""
         file.file.seek(pos)
-    except Exception:
+    except Exception as e:
+        logger.debug("upload magic-byte read skipped (stream error): %s", e)
         return
     if suffix == ".pdf" and not header.startswith(b"%PDF"):
         raise HTTPException(status_code=400, detail="File content does not match PDF format")
@@ -75,7 +79,8 @@ def validate_upload(file: UploadFile) -> None:
                 raise HTTPException(status_code=400, detail="Encrypted PDFs are not supported")
         except HTTPException:
             raise
-        except Exception:
+        except Exception as e:
+            logger.info("PDF validation failed: %s", e)
             raise HTTPException(status_code=400, detail="Invalid or unreadable PDF") from None
 
 

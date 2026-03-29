@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import uuid
 from datetime import datetime, timedelta, timezone
 
@@ -80,8 +81,8 @@ def ingest_document_task(
                 sentry_sdk.set_tag("workspace_id", workspace_id)
                 sentry_sdk.set_tag("document_id", document_id)
                 sentry_sdk.set_tag("ingestion_job_id", ingestion_job_id)
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug("sentry tags for ingestion task failed: %s", e)
 
         job = db.scalar(select(IngestionJob).where(IngestionJob.id == job_uuid))
         if not job:

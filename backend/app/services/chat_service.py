@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import uuid
 from datetime import datetime, timezone
 
@@ -26,6 +27,8 @@ from app.services.nlp import (
 from app.services.vector_search import search_chunks_pgvector
 from app.services.usage_metering import EVENT_CHAT_MESSAGE, EVENT_TOKENS, assert_quota, estimate_tokens, record_event
 
+logger = logging.getLogger(__name__)
+
 
 def _to_session_out(session: ChatSession) -> ChatSessionOut:
     return ChatSessionOut(id=session.id, title=session.title, created_at=session.created_at, updated_at=session.updated_at)
@@ -36,7 +39,8 @@ def _to_message_out(message: ChatMessage) -> ChatMessageOut:
     try:
         loaded = json.loads(raw)
         sources = [SearchHit(**x) for x in loaded if isinstance(x, dict)]
-    except Exception:
+    except Exception as e:
+        logger.warning("failed to parse sources_json for message %s: %s", message.id, e)
         sources = []
     return ChatMessageOut(
         id=message.id,

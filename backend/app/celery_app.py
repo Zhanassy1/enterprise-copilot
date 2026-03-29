@@ -1,6 +1,10 @@
+import logging
+
 from celery import Celery
 
 from app.core.config import settings
+
+logger = logging.getLogger(__name__)
 
 celery_app = Celery(
     "enterprise_copilot",
@@ -38,5 +42,5 @@ try:
                 environment=settings.environment,
                 traces_sample_rate=float(settings.sentry_traces_sample_rate),
             )
-except Exception:
-    pass
+except Exception as e:
+    logger.warning("celery worker_process_init / sentry hook registration failed: %s", e)

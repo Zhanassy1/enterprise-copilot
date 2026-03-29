@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
+import { toast } from "sonner";
 import {
   api,
   toErrorMessage,
@@ -63,7 +64,11 @@ export default function BillingPage() {
         setLedger(l);
         setErr(null);
       })
-      .catch((e) => setErr(toErrorMessage(e)))
+      .catch((e) => {
+        const msg = toErrorMessage(e);
+        setErr(msg);
+        toast.error(msg);
+      })
       .finally(() => setLoading(false));
   };
 

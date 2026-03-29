@@ -1,9 +1,12 @@
 from __future__ import annotations
 
 import json
+import logging
 import time
 from pathlib import Path
 from typing import Any
+
+_logger = logging.getLogger(__name__)
 
 
 def debug_log(*, hypothesisId: str, location: str, message: str, data: dict[str, Any]) -> None:
@@ -29,9 +32,10 @@ def debug_log(*, hypothesisId: str, location: str, message: str, data: dict[str,
                 path.parent.mkdir(parents=True, exist_ok=True)
                 with path.open("a", encoding="utf-8") as f:
                     f.write(line)
-            except Exception:
+            except Exception as e:
+                _logger.debug("debug_log write to %s failed: %s", path, e)
                 continue
-    except Exception:
-        pass
+    except Exception as e:
+        _logger.debug("debug_log payload failed: %s", e)
     # #endregion
 

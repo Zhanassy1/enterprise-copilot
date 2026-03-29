@@ -46,8 +46,8 @@ def send_email(*, to_email: str, subject: str, body: str) -> bool:
                 server.login(settings.smtp_user, settings.smtp_password)
             server.send_message(msg)
         return True
-    except Exception:
-        logger.exception("Failed to send email to %s", to_email)
+    except Exception as e:
+        logger.exception("Failed to send email to %s: %s", to_email, e)
         return False
 
 

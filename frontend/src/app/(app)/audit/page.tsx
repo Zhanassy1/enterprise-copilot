@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { toast } from "sonner";
 import { api, toErrorMessage, ApiError, type AuditLogOut } from "@/lib/api-client";
 import { workspaceRoleLabel } from "@/lib/product-terminology";
 import { useWorkspace } from "@/components/workspace/workspace-provider";
@@ -99,7 +100,9 @@ export default function AuditPage() {
       setLastFetchMode("ok");
     } catch (e) {
       const status = e instanceof ApiError ? e.status : 0;
-      setErr({ message: toErrorMessage(e), status });
+      const message = toErrorMessage(e);
+      setErr({ message, status });
+      toast.error(message);
       setRawLogs([]);
       setLastFetchMode("error");
     } finally {

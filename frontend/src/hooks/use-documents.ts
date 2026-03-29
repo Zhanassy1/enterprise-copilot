@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useCallback, useEffect } from "react";
+import { toast } from "sonner";
 import {
   api,
   toErrorMessage,
@@ -20,7 +21,9 @@ export function useDocuments() {
       const docs = await api.listDocuments();
       setDocuments(docs);
     } catch (err) {
-      setError(toErrorMessage(err));
+      const msg = toErrorMessage(err);
+      setError(msg);
+      toast.error(msg);
     } finally {
       setLoading(false);
     }

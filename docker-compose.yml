@@ -1,6 +1,6 @@
 # Dev-oriented stack: Postgres and Redis publish ports to the host for local tools (DBeaver, redis-cli).
 # Do not expose this compose file unchanged on the public internet. For production-style networking use:
-#   docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
+#   docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
 services:
   db:
     image: pgvector/pgvector:pg16
@@ -49,6 +49,21 @@ services:
       timeout: 3s
       retries: 20
 
+  migrate:
+    build:
+      context: ./backend
+    env_file:
+      - ./backend/.env.docker
+    environment:
+      DATABASE_URL: postgresql+psycopg://postgres:postgres@db:5432/enterprise_copilot
+    command: alembic upgrade head
+    volumes:
+      - ./backend:/app
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: "no"
+
   api:
     build:
       context: ./backend
@@ -70,6 +85,8 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/healthz', timeout=3)"]
       interval: 10s
@@ -86,8 +103,7 @@ services:
       REDIS_URL: redis://redis:6379/0
       INGESTION_ASYNC_ENABLED: "1"
     command: >
-      bash -lc "alembic upgrade head &&
-      celery -A app.celery_app.celery_app worker --loglevel=INFO --queues=ingestion"
+      celery -A app.celery_app.celery_app worker --loglevel=INFO --queues=ingestion
     volumes:
       - ./backend:/app
       - uploads:/app/data/uploads
@@ -96,6 +112,8 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
 
   frontend:
     build:
@@ -120,4 +138,3 @@ volumes:
   pgdata:
   pgdata_test:
   uploads:
-

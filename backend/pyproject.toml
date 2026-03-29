@@ -1,0 +1,14 @@
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "W", "F", "I", "B", "UP"]
+
+[tool.mypy]
+strict = false
+ignore_missing_imports = true
+python_version = "3.11"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

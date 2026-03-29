@@ -99,7 +99,8 @@ def estimate_tokens(text: str) -> int:
 
         enc = tiktoken.get_encoding("cl100k_base")
         return len(enc.encode(cleaned))
-    except Exception:
+    except Exception as e:
+        logger.debug("tiktoken unavailable, word-based token estimate: %s", e)
         return max(1, int(math.ceil(len(cleaned.split()) * 1.3)))
 
 
@@ -202,8 +203,8 @@ def _audit_quota_denied(
             metadata={"reason": reason},
         )
         db.flush()
-    except Exception:
-        pass
+    except Exception as e:
+        logger.warning("audit log for quota.denied failed: %s", e)
 
 
 def assert_quota(

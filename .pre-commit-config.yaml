@@ -1,0 +1,23 @@
+# Run: pip install pre-commit && pre-commit install
+repos:
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.15.8
+    hooks:
+      - id: ruff
+        name: ruff check
+        files: ^backend/.*\.py$
+        args: [--fix]
+      - id: ruff-format
+        files: ^backend/.*\.py$
+
+  - repo: local
+    hooks:
+      - id: mypy-backend-app
+        name: mypy (backend app/)
+        language: system
+        entry: sh
+        args: [-c, 'cd backend && exec mypy app']
+        pass_filenames: false
+        files: ^backend/(app/.*\.py|pyproject\.toml)$
+
+default_stages: [pre-commit]

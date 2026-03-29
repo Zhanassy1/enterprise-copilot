@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import { toast } from "sonner";
 import { api, toErrorMessage, type IngestionJobOut } from "@/lib/api-client";
 import { ingestionJobStatusLabel } from "@/lib/product-terminology";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -25,7 +26,11 @@ export default function JobsPage() {
     void api
       .listIngestionJobs(status)
       .then(setJobs)
-      .catch((e) => setErr(toErrorMessage(e)))
+      .catch((e) => {
+        const msg = toErrorMessage(e);
+        setErr(msg);
+        toast.error(msg);
+      })
       .finally(() => setLoading(false));
   }, []);
 

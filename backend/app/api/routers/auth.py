@@ -1,6 +1,6 @@
 from datetime import datetime, timedelta, timezone
 
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, Body, HTTPException, Request
 from sqlalchemy import select, update
 
 from app.api.deps import CurrentUser, DbDep
@@ -15,6 +15,7 @@ from app.core.security import (
 )
 from app.models.security import EmailVerificationToken, PasswordResetToken, RefreshToken
 from app.models.user import User
+from app.schemas.common_api import EmptyJSONBody
 from app.schemas.auth import (
     LoginIn,
     LogoutIn,
@@ -129,7 +130,11 @@ def logout(payload: LogoutIn, db: DbDep) -> dict:
 
 
 @router.post("/logout-all")
-def logout_all(db: DbDep, user: CurrentUser) -> dict:
+def logout_all(
+    db: DbDep,
+    user: CurrentUser,
+    _body: EmptyJSONBody | None = Body(default=None),
+) -> dict:
     db.execute(update(RefreshToken).where(RefreshToken.user_id == user.id).values(revoked=True))
     write_audit_log(
         db,

@@ -9,7 +9,8 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import { api, type WorkspaceOut } from "@/lib/api-client";
+import { api, toErrorMessage, type WorkspaceOut } from "@/lib/api-client";
+import { toast } from "sonner";
 import { getWorkspaceId, setWorkspaceId } from "@/lib/workspace";
 
 export interface WorkspaceContextValue {
@@ -53,8 +54,10 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       }
       setHadStaleSelection(stale);
       setActiveId(id);
-    } catch {
-      setError("Не удалось загрузить рабочие пространства. Проверьте сеть и повторите.");
+    } catch (err) {
+      const msg = toErrorMessage(err);
+      setError(msg);
+      toast.error(msg);
       setWorkspaces([]);
       setActiveId(null);
     } finally {

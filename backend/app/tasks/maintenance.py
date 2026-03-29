@@ -37,7 +37,8 @@ def purge_soft_deleted_documents_task() -> dict:
             db.delete(doc)
             removed += 1
         db.commit()
-    except Exception:
+    except Exception as e:
+        logger.exception("purge_soft_deleted_documents failed: %s", e)
         db.rollback()
         raise
     finally:

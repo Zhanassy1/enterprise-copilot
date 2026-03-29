@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useCallback } from "react";
+import { toast } from "sonner";
 import { api, toErrorMessage, type SearchOut } from "@/lib/api-client";
 
 export function useSearch() {
@@ -15,7 +16,9 @@ export function useSearch() {
       const data = await api.search(query, topK);
       setResult(data);
     } catch (err) {
-      setError(toErrorMessage(err));
+      const msg = toErrorMessage(err);
+      setError(msg);
+      toast.error(msg);
     } finally {
       setLoading(false);
     }
