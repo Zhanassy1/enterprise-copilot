@@ -1,10 +1,12 @@
 # Enterprise Copilot
 
-**Multi-tenant AI copilot для бизнес-документов:** семантический поиск, RAG-чат и краткие summary по PDF/DOCX/TXT с **изоляцией по workspace**, **асинхронной индексацией** (Celery + PostgreSQL/pgvector), **квотами по плану** и **аудитом** событий.
+**Multi-tenant AI copilot для бизнес-документов:** семантический поиск, RAG-чат и краткие summary по PDF/DOCX/TXT с **изоляцией по рабочим пространствам (workspace)**, **фоновой индексацией** (Celery + PostgreSQL/pgvector), **планом и квотами** и **журналом аудита**.
 
 Репозиторий: [github.com/Zhanassy1/enterprise-copilot](https://github.com/Zhanassy1/enterprise-copilot)
 
 [![CI](https://github.com/Zhanassy1/enterprise-copilot/actions/workflows/ci.yml/badge.svg)](https://github.com/Zhanassy1/enterprise-copilot/actions/workflows/ci.yml)
+
+**Это SaaS?** Да, в смысле **многоарендного B2B-продукта**: отдельные **рабочие пространства (workspace)** с ролями и квотами, веб-приложение и API. Развёртывание — под ваш контроль (Docker / облако), не обязательно публичный мультитенант-хостинг. Термины: **[docs/product-glossary.md](docs/product-glossary.md)**.
 
 ---
 
@@ -18,10 +20,10 @@
 
 ### Ключевые возможности
 
-- **Multi-tenant AI copilot** — данные и векторный индекс разделены по **workspace**; доступ по ролям **owner / admin / member / viewer**.
-- **Async ingestion** — загрузка по HTTP коммитит метаданные и job, индексация в **worker** (не в запросе); статусы **queued → processing / retrying → ready | failed** у документа и job.
-- **Workspace isolation** — API и Celery задачи привязаны к `workspace_id`; клиент передаёт **`X-Workspace-Id`**.
-- **Quota-aware platform** — лимиты запросов, токенов LLM, загрузок, параллельных job и страниц PDF по **плану** (free / pro / team); см. [docs/quotas.md](docs/quotas.md).
+- **Multi-tenant AI copilot** — данные и векторный индекс разделены по **рабочим пространствам (workspace)**; роли: **владелец / администратор / участник / наблюдатель** (в API: owner / admin / member / viewer). См. [глоссарий](docs/product-glossary.md).
+- **Асинхронная индексация** — после загрузки создаётся **задача индексации** (ingestion job); обработка в **worker**, не в HTTP-запросе. Статусы: **queued → processing / retrying → ready | failed** у документа и задачи.
+- **Изоляция** — API и worker привязаны к `workspace_id`; клиент передаёт **`X-Workspace-Id`**.
+- **План и квоты** — лимиты запросов, токенов LLM, загрузок, параллельных задач индексации и страниц PDF по тарифу **free / pro / team**; см. [docs/quotas.md](docs/quotas.md).
 - **Auth / security lifecycle** — JWT, refresh rotation, logout / logout-all, password reset с revoke refresh, failed-login audit, production **startup_checks**.
 - **Observability / runbook** — структурные логи, `X-Request-Id`, `/metrics`, опционально Sentry; операции — [docs/runbook.md](docs/runbook.md), [docs/observability.md](docs/observability.md).
 
@@ -30,6 +32,8 @@
 Продукт позиционируется как **почти полноценный SaaS-фундамент**: не только API, но и **веб-UI** (landing, документы, поиск, чат, план и лимиты, очередь обработки, аудит). Внешний биллинг (Stripe и т.д.) — в roadmap; планы и usage отражаются через API и UI.
 
 ---
+
+<a id="evaluator-five-minutes"></a>
 
 ## Быстрая оценка за 5 минут (evaluator guide)
 
@@ -41,12 +45,14 @@
 
 ---
 
+<a id="product-flow"></a>
+
 ## Демо-сценарий (сквозной flow)
 
 | Шаг | Действие |
 |-----|----------|
 | 1 | Регистрация и вход |
-| 2 | Выбор / получение **workspace** (список из API; создание новых workspace — по мере развития продукта) |
+| 2 | Выбор **рабочего пространства** (список из API; самостоятельное создание новых — в roadmap) |
 | 3 | Загрузка документа |
 | 4 | **Асинхронная обработка** — job в UI и статус на карточке документа |
 | 5 | Поиск, чат, summary по документу |
@@ -156,6 +162,7 @@ docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
 | [docs/email-testing.md](docs/email-testing.md) | SMTP, capture, e2e |
 | [docs/testing-database.md](docs/testing-database.md) | NullPool, интеграционные тесты |
 | [docs/IMPLEMENTATION_STATUS.md](docs/IMPLEMENTATION_STATUS.md) | Зрелость и roadmap |
+| [docs/product-glossary.md](docs/product-glossary.md) | Workspace, роли, план, задача индексации |
 | [docs/assets/SCREENSHOTS.md](docs/assets/SCREENSHOTS.md) | План скриншотов для README |
 | [docs/WORKSPACE_ROUTING.md](docs/WORKSPACE_ROUTING.md) | API / Celery по workspace |
 

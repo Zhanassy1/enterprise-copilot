@@ -1,6 +1,6 @@
 # Quotas and usage
 
-**Продуктовый контекст:** планы **free / pro / team** задают лимиты workspace; те же ориентиры на маркетинговом landing и на странице «План и лимиты» во фронте согласованы с таблицей ниже (источник истины в коде — `usage_metering`).
+**Продуктовый контекст:** планы **free / pro / team** задают лимиты **рабочего пространства (workspace)**. Те же цифры на маркетинговом landing (`frontend/src/config/plan-marketing.ts`) и на странице «План и лимиты». Единая терминология: [product-glossary.md](product-glossary.md). Источник в коде — `usage_metering`.
 
 ## Plans
 

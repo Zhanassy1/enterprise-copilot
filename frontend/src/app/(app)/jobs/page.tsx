@@ -5,6 +5,7 @@ import { api, toErrorMessage, type IngestionJobOut } from "@/lib/api-client";
 import { ingestionJobStatusLabel } from "@/lib/product-terminology";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { PageHeader } from "@/components/shared/page-header";
+import { ProductErrorBanner } from "@/components/shared/product-error-banner";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 
@@ -34,7 +35,7 @@ export default function JobsPage() {
     <div className="space-y-6">
       <PageHeader
         title="Очередь обработки"
-        description="Задачи индексации после загрузки: в очереди → индексация / повтор → готово или ошибка. Статусы документа в списке файлов синхронизированы с job."
+        description="Задачи индексации после загрузки: в очереди → индексация или повтор → готово либо ошибка. Статус на карточке документа совпадает с задачей в этой очереди."
       />
       <div className="flex flex-wrap gap-2">
         {STATUSES.map((s) => (
@@ -57,7 +58,9 @@ export default function JobsPage() {
           <Skeleton className="h-28 w-full rounded-xl" />
         </div>
       )}
-      {err && <p className="text-sm text-destructive">{err}</p>}
+      {err ? (
+        <ProductErrorBanner message={err} onRetry={() => load(tab)} retryLabel="Повторить загрузку списка" />
+      ) : null}
       <div className="space-y-3">
         {!loading && jobs.length === 0 && !err && (
           <p className="text-sm text-muted-foreground">

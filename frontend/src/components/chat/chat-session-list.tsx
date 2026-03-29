@@ -26,26 +26,30 @@ export function ChatSessionList({
   return (
     <div className="flex h-full flex-col">
       <div className="flex items-center justify-between px-4 py-3">
-        <h2 className="text-sm font-semibold">Чаты</h2>
-        <Button variant="ghost" size="icon" onClick={onCreate} title="Новый чат">
+        <h2 className="text-sm font-semibold">Диалоги</h2>
+        <Button variant="ghost" size="icon" onClick={onCreate} title="Новый диалог">
           <Plus className="h-4 w-4" />
         </Button>
       </div>
       <Separator />
       <ScrollArea className="flex-1">
         <div className="space-y-1 p-2">
-          {loading
-            ? Array.from({ length: 4 }).map((_, i) => (
-                <Skeleton key={i} className="h-14 rounded-xl" />
-              ))
-            : sessions.map((s) => (
-                <ChatSessionItem
-                  key={s.id}
-                  session={s}
-                  active={s.id === activeSessionId}
-                  onClick={() => onSelect(s.id)}
-                />
-              ))}
+          {loading ? (
+            Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-14 rounded-xl" />)
+          ) : sessions.length === 0 ? (
+            <div className="px-2 py-8 text-center text-xs text-muted-foreground">
+              Пока нет диалогов. Нажмите «+», чтобы начать новый чат по документам пространства.
+            </div>
+          ) : (
+            sessions.map((s) => (
+              <ChatSessionItem
+                key={s.id}
+                session={s}
+                active={s.id === activeSessionId}
+                onClick={() => onSelect(s.id)}
+              />
+            ))
+          )}
         </div>
       </ScrollArea>
     </div>

@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useChat } from "@/hooks/use-chat";
+import { ProductErrorBanner } from "@/components/shared/product-error-banner";
 import { ChatSessionList } from "@/components/chat/chat-session-list";
 import { ChatWindow } from "@/components/chat/chat-window";
 import { Button } from "@/components/ui/button";
@@ -19,6 +20,8 @@ export default function ChatPage() {
     selectSession,
     createSession,
     sendMessage,
+    error,
+    refresh,
   } = useChat();
 
   const [panelOpen, setPanelOpen] = useState(false);
@@ -50,7 +53,7 @@ export default function ChatPage() {
       <Sheet open={panelOpen} onOpenChange={setPanelOpen}>
         <SheetContent side="left" className="w-72 p-0 md:hidden">
           <SheetHeader className="sr-only">
-            <SheetTitle>Список чатов</SheetTitle>
+            <SheetTitle>Диалоги</SheetTitle>
           </SheetHeader>
           <ChatSessionList
             sessions={sessions}
@@ -64,6 +67,16 @@ export default function ChatPage() {
 
       {/* Chat area */}
       <div className="flex flex-1 flex-col">
+        {error ? (
+          <div className="border-b px-4 py-2">
+            <ProductErrorBanner message={error} onRetry={() => void refresh()} />
+          </div>
+        ) : null}
+        <div className="hidden border-b px-4 py-2 md:block">
+          <p className="text-xs text-muted-foreground">
+            Диалог по документам текущего рабочего пространства: ответы с источниками из проиндексированных файлов.
+          </p>
+        </div>
         <div className="flex items-center gap-2 border-b px-4 py-2 md:hidden">
           <Button
             variant="ghost"

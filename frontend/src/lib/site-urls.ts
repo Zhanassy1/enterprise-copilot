@@ -2,8 +2,14 @@ const repo = (
   process.env.NEXT_PUBLIC_GITHUB_REPO ?? "Zhanassy1/enterprise-copilot"
 ).replace(/^\/+|\/+$/g, "");
 
+const repoRoot = `https://github.com/${repo}`;
+
 export const siteUrls = {
-  githubRepo: `https://github.com/${repo}`,
-  githubDocs: `https://github.com/${repo}/tree/main/docs`,
-  githubReadme: `https://github.com/${repo}/blob/main/README.md`,
+  githubRepo: repoRoot,
+  githubDocs: `${repoRoot}/tree/main/docs`,
+  githubReadme: `${repoRoot}/blob/main/README.md`,
+  /** Якоря заданы в README.md (<a id="...">) для стабильных ссылок с главной репозитория. */
+  evaluatorGuide: `${repoRoot}#evaluator-five-minutes`,
+  productFlow: `${repoRoot}#product-flow`,
+  githubGlossary: `${repoRoot}/blob/main/docs/product-glossary.md`,
 } as const;

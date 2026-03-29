@@ -41,7 +41,7 @@
 | **Этап 12** | | |
 | 24 | Backup / restore / migration safety (`docs/runbook.md`) | **Done** |
 
-Обновляйте этот файл при крупных изменениях архитектуры.
+Обновляйте этот файл при крупных изменениях архитектуры. Термины продукта: [product-glossary.md](product-glossary.md).
 
 ### 19 — Frontend SaaS: почему Partial
 

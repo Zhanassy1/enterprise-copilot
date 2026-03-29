@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { toast } from "sonner";
 import { useDocuments } from "@/hooks/use-documents";
+import { ProductErrorBanner } from "@/components/shared/product-error-banner";
 import { toErrorMessage, type DocumentOut } from "@/lib/api-client";
 import { PageHeader } from "@/components/shared/page-header";
 import { DocumentCard } from "@/components/documents/document-card";
@@ -13,7 +14,7 @@ import { DocumentEmptyState } from "@/components/documents/document-empty-state"
 import { Skeleton } from "@/components/ui/skeleton";
 
 export default function DocumentsPage() {
-  const { documents, loading, uploadDocument, deleteDocument, getSummary } =
+  const { documents, loading, error, uploadDocument, deleteDocument, getSummary, refresh } =
     useDocuments();
 
   const [summaryOpen, setSummaryOpen] = useState(false);
@@ -66,9 +67,15 @@ export default function DocumentsPage() {
     <>
       <PageHeader
         title="Документы"
-        description="Загружайте и управляйте документами"
+        description="Каталог файлов текущего рабочего пространства: загрузка, статусы индексации, краткое содержание."
         action={<UploadDialog onUpload={uploadDocument} />}
       />
+
+      {error ? (
+        <div className="mt-4">
+          <ProductErrorBanner message={error} onRetry={() => void refresh()} retryLabel="Обновить список" />
+        </div>
+      ) : null}
 
       {loading ? (
         <div className="mt-6 grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">

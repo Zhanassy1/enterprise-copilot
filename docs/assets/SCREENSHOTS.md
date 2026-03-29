@@ -38,3 +38,4 @@ docs/assets/screenshots/
 
 - Разрешение: 1280–1600 px по ширине окна браузера достаточно для README.
 - Тёмная/светлая тема: согласуйте с основным UI (сейчас светлая тема по умолчанию).
+- Тарифы на landing берутся из `frontend/src/config/plan-marketing.ts` (синхрон с `docs/quotas.md`).

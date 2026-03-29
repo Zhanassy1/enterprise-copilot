@@ -26,6 +26,7 @@
 
 ## Связанные документы
 
+- [product-glossary.md](product-glossary.md) — workspace, роли, план, задача индексации  
 - [WORKSPACE_ROUTING.md](WORKSPACE_ROUTING.md) — маршруты и tenant scope  
 - [deployment.md](deployment.md) — dev vs prod  
 - [storage-lifecycle.md](storage-lifecycle.md) — хранение файлов  

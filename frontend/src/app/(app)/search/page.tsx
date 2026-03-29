@@ -1,7 +1,9 @@
 "use client";
 
+import { useState, useEffect } from "react";
 import { useSearch } from "@/hooks/use-search";
 import { PageHeader } from "@/components/shared/page-header";
+import { ProductErrorBanner } from "@/components/shared/product-error-banner";
 import { SearchBar } from "@/components/search/search-bar";
 import { AnswerCard } from "@/components/search/answer-card";
 import { SearchHitCard } from "@/components/search/search-hit-card";
@@ -15,14 +17,28 @@ import {
 } from "@/components/ui/accordion";
 
 export default function SearchPage() {
-  const { result, loading, search } = useSearch();
+  const { result, loading, error, search } = useSearch();
+  const [dismissed, setDismissed] = useState(false);
+
+  useEffect(() => {
+    if (error) setDismissed(false);
+  }, [error]);
 
   return (
     <>
       <PageHeader
         title="Поиск"
-        description="Семантический поиск по всем проиндексированным документам текущего workspace."
+        description="Семантический поиск по всем проиндексированным документам текущего рабочего пространства."
       />
+
+      {error && !dismissed ? (
+        <div className="mt-6">
+          <ProductErrorBanner
+            message={error}
+            onDismiss={() => setDismissed(true)}
+          />
+        </div>
+      ) : null}
 
       <div className="mt-8">
         <SearchBar onSearch={search} loading={loading} />

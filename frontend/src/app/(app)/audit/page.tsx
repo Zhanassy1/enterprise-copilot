@@ -10,6 +10,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
+import { ProductErrorBanner } from "@/components/shared/product-error-banner";
 
 type Tab = "standard" | "admin";
 
@@ -77,7 +78,7 @@ export default function AuditPage() {
     <div className="space-y-6">
       <PageHeader
         title="Журнал аудита"
-        description="События безопасности и действий в текущем workspace. Введите тип события и нажмите «Обновить», чтобы применить фильтр (точное совпадение)."
+        description="События безопасности и действий в текущем рабочем пространстве (входы, загрузки, отказы по квотам). Фильтр по типу события — точное совпадение; применяется кнопкой «Обновить»."
       />
 
       {currentWs && (
@@ -119,7 +120,9 @@ export default function AuditPage() {
           <Skeleton className="h-24 w-full rounded-xl" />
         </div>
       )}
-      {err && <p className="text-sm text-destructive">{err}</p>}
+      {err ? (
+        <ProductErrorBanner message={err} onRetry={() => void loadAudit(eventFilter)} />
+      ) : null}
 
       {!loading && !err && logs.length === 0 && (
         <Card>

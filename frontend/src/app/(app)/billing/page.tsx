@@ -9,6 +9,7 @@ import {
 } from "@/lib/api-client";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { PageHeader } from "@/components/shared/page-header";
+import { ProductErrorBanner } from "@/components/shared/product-error-banner";
 import { Skeleton } from "@/components/ui/skeleton";
 
 export default function BillingPage() {
@@ -32,9 +33,24 @@ export default function BillingPage() {
     <div className="space-y-6">
       <PageHeader
         title="План и лимиты"
-        description="Тариф workspace и расход за текущий месяц (UTC). Лимиты согласованы с планом free / pro / team — см. документацию репозитория."
+        description="Тариф рабочего пространства и расход за текущий месяц (UTC). Планы free / pro / team — см. docs/quotas.md в репозитории."
       />
-      {err && <p className="text-sm text-destructive">{err}</p>}
+      {err ? (
+        <ProductErrorBanner
+          message={err}
+          onRetry={() => {
+            setLoading(true);
+            void Promise.all([api.getBillingUsage(), api.listBillingLedger()])
+              .then(([u, l]) => {
+                setData(u);
+                setLedger(l);
+                setErr(null);
+              })
+              .catch((e) => setErr(toErrorMessage(e)))
+              .finally(() => setLoading(false));
+          }}
+        />
+      ) : null}
 
       {loading && (
         <div className="space-y-4">
