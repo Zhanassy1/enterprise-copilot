@@ -99,7 +99,10 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
             _pfx = settings.api_v1_prefix.rstrip("/")
             if method_u == "POST" and user_token and (
                 path == f"{_pfx}/search"
-                or ("/chat/sessions/" in path and path.endswith("/messages"))
+                or (
+                    "/chat/sessions/" in path
+                    and (path.endswith("/messages") or path.endswith("/messages/stream"))
+                )
             ):
                 lim = int(rl["rag_user"])
                 out = consume_rate_limit("rag_user", user_token, limit=lim)

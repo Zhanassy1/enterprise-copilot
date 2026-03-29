@@ -7,11 +7,13 @@ import { ChatInput } from "./chat-input";
 import { ChatEmptyState } from "./chat-empty-state";
 import { Skeleton } from "@/components/ui/skeleton";
 import type { ChatMessageOut } from "@/lib/api-client";
+import { STREAMING_CHAT_MESSAGE_ID } from "@/hooks/use-streaming-chat";
 
 interface ChatWindowProps {
   messages: ChatMessageOut[];
   loadingMessages: boolean;
   sending: boolean;
+  isStreaming?: boolean;
   hasSession: boolean;
   onSend: (message: string) => void;
   canSend?: boolean;
@@ -21,6 +23,7 @@ export function ChatWindow({
   messages,
   loadingMessages,
   sending,
+  isStreaming = false,
   hasSession,
   onSend,
   canSend = true,
@@ -53,7 +56,15 @@ export function ChatWindow({
         ) : (
           <div className="space-y-4">
             {messages.map((msg) => (
-              <ChatMessage key={msg.id} message={msg} />
+              <ChatMessage
+                key={msg.id}
+                message={msg}
+                streamCursor={
+                  isStreaming &&
+                  msg.role === "assistant" &&
+                  msg.id === STREAMING_CHAT_MESSAGE_ID
+                }
+              />
             ))}
             <div ref={bottomRef} />
           </div>

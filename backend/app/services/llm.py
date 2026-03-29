@@ -26,6 +26,38 @@ def llm_enabled() -> bool:
     return bool(settings.llm_api_key)
 
 
+def llm_chat_stream(
+    system_prompt: str,
+    user_prompt: str,
+    *,
+    max_tokens: int = 1024,
+):
+    """Yield text deltas from OpenAI chat completions (streaming). No yields if LLM disabled."""
+    if not llm_enabled():
+        return
+    client = _get_client()
+    try:
+        stream = client.chat.completions.create(
+            model=settings.llm_model,
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt},
+            ],
+            temperature=settings.llm_temperature,
+            max_tokens=max_tokens,
+            stream=True,
+        )
+        for chunk in stream:
+            if not chunk.choices:
+                continue
+            delta = chunk.choices[0].delta
+            if delta and delta.content:
+                yield delta.content
+    except Exception as e:
+        logger.error("LLM stream failed: %s", e)
+        return
+
+
 def llm_chat(
     system_prompt: str,
     user_prompt: str,
@@ -67,6 +99,19 @@ def rag_answer(query: str, context_chunks: list[str]) -> str:
     user = f"Контекст из документов:\n\n{context}\n\n---\n\nВопрос пользователя: {query}"
 
     return llm_chat(system, user, max_tokens=1024)
+
+
+def rag_answer_stream(query: str, context_chunks: list[str]):
+    """Stream RAG answer tokens from the LLM. Empty generator if disabled or no chunks."""
+    if not context_chunks:
+        return
+    if not llm_enabled():
+        return
+
+    context = "\n\n---\n\n".join(context_chunks[:8])
+    system = RAG_SYSTEM_PROMPT
+    user = f"Контекст из документов:\n\n{context}\n\n---\n\nВопрос пользователя: {query}"
+    yield from llm_chat_stream(system, user, max_tokens=1024)
 
 
 def llm_summarize(text: str) -> str:

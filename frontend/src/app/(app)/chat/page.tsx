@@ -22,6 +22,7 @@ export default function ChatPage() {
     loadingSessions,
     loadingMessages,
     sending,
+    isStreaming,
     selectSession,
     createSession,
     sendMessage,
@@ -107,8 +108,9 @@ export default function ChatPage() {
             messages={messages}
             loadingMessages={loadingMessages}
             sending={sending}
+            isStreaming={isStreaming}
             hasSession={!!activeSessionId}
-            onSend={(msg) => sendMessage(msg)}
+            onSend={(msg) => void sendMessage(msg)}
             canSend={canChatWrite}
           />
         </div>

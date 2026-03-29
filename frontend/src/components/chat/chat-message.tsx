@@ -7,9 +7,11 @@ import type { ChatMessageOut } from "@/lib/api-client";
 
 interface ChatMessageProps {
   message: ChatMessageOut;
+  /** Blinking pipe while assistant response is streaming */
+  streamCursor?: boolean;
 }
 
-export function ChatMessage({ message }: ChatMessageProps) {
+export function ChatMessage({ message, streamCursor }: ChatMessageProps) {
   const isUser = message.role === "user";
 
   return (
@@ -32,6 +34,14 @@ export function ChatMessage({ message }: ChatMessageProps) {
       >
         <p className="whitespace-pre-wrap text-sm leading-relaxed">
           {message.content}
+          {streamCursor ? (
+            <span
+              className="ml-0.5 inline-block animate-pulse tabular-nums text-foreground/80"
+              aria-hidden
+            >
+              |
+            </span>
+          ) : null}
         </p>
         {!isUser && message.sources && (
           <SourcesAccordion sources={message.sources} />
