@@ -12,4 +12,6 @@ export const siteUrls = {
   evaluatorGuide: `${repoRoot}#evaluator-five-minutes`,
   productFlow: `${repoRoot}#product-flow`,
   githubGlossary: `${repoRoot}/blob/main/docs/product-glossary.md`,
+  githubQuotas: `${repoRoot}/blob/main/docs/quotas.md`,
+  demoMedia: `${repoRoot}/blob/main/docs/DEMO_MEDIA.md`,
 } as const;

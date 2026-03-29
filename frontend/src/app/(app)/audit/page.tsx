@@ -83,7 +83,7 @@ export default function AuditPage() {
 
       {currentWs && (
         <p className="text-sm text-muted-foreground">
-          Роль в workspace: <span className="font-medium text-foreground">{workspaceRoleLabel(currentWs.role)}</span>
+          Ваша роль: <span className="font-medium text-foreground">{workspaceRoleLabel(currentWs.role)}</span>
         </p>
       )}
 
@@ -103,7 +103,7 @@ export default function AuditPage() {
         </Button>
       </div>
 
-      {canAdminView && (
+      {canAdminView ? (
         <div className="flex flex-wrap gap-2">
           <Button type="button" variant={tab === "standard" ? "default" : "outline"} size="sm" onClick={() => setTab("standard")}>
             Общий журнал
@@ -112,6 +112,15 @@ export default function AuditPage() {
             Расширенный (владелец / администратор)
           </Button>
         </div>
+      ) : (
+        <Card className="border-dashed">
+          <CardContent className="py-4 text-sm text-muted-foreground">
+            Расширенный просмотр журнала (больше записей за раз) доступен ролям{" "}
+            <span className="font-medium text-foreground">владелец</span> и{" "}
+            <span className="font-medium text-foreground">администратор</span>. У участника и наблюдателя — общий журнал в рамках
+            политики API.
+          </CardContent>
+        </Card>
       )}
 
       {loading && (

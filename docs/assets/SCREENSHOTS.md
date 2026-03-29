@@ -21,6 +21,11 @@ docs/assets/screenshots/
 | `chat.png` | Чат с сессиями |
 | `billing.png` | План и лимиты |
 | `audit.png` | Журнал аудита |
+| `pricing.png` | Страница тарифов `/pricing` |
+
+## Видео
+
+Инструкции по слоту для demo video: **[docs/DEMO_MEDIA.md](../DEMO_MEDIA.md)**.
 
 ## Как вставить в README
 

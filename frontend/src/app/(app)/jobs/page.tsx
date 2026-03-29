@@ -35,8 +35,25 @@ export default function JobsPage() {
     <div className="space-y-6">
       <PageHeader
         title="Очередь обработки"
-        description="Задачи индексации после загрузки: в очереди → индексация или повтор → готово либо ошибка. Статус на карточке документа совпадает с задачей в этой очереди."
+        description="Задачи индексации после загрузки: в очереди → индексация или повтор → готово либо ошибка. Статус документа в каталоге совпадает с задачей здесь."
       />
+      <Card className="border-dashed bg-muted/20">
+        <CardHeader className="pb-2">
+          <CardTitle className="text-sm font-medium">Статусы задачи (job)</CardTitle>
+        </CardHeader>
+        <CardContent className="text-xs text-muted-foreground">
+          <ul className="list-inside list-disc space-y-1">
+            <li>
+              <strong className="text-foreground">В очереди</strong> — ждёт обработки; <strong className="text-foreground">Индексация</strong> — идёт
+              разбор файла; <strong className="text-foreground">Повторная попытка</strong> — временная ошибка, будет ещё попытка.
+            </li>
+            <li>
+              <strong className="text-foreground">Готово</strong> — документ доступен для поиска и чата; <strong className="text-foreground">Ошибка</strong>{" "}
+              — смотрите текст ошибки в карточке задачи.
+            </li>
+          </ul>
+        </CardContent>
+      </Card>
       <div className="flex flex-wrap gap-2">
         {STATUSES.map((s) => (
           <Button

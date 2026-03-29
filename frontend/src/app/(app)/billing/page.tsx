@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import {
   api,
   toErrorMessage,
@@ -11,6 +12,8 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { PageHeader } from "@/components/shared/page-header";
 import { ProductErrorBanner } from "@/components/shared/product-error-banner";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Button } from "@/components/ui/button";
+import { ExternalLink } from "lucide-react";
 
 export default function BillingPage() {
   const [data, setData] = useState<UsageSummaryOut | null>(null);
@@ -33,8 +36,16 @@ export default function BillingPage() {
     <div className="space-y-6">
       <PageHeader
         title="План и лимиты"
-        description="Тариф рабочего пространства и расход за текущий месяц (UTC). Планы free / pro / team — см. docs/quotas.md в репозитории."
+        description="Сводка квот по текущему workspace за календарный месяц (UTC). Сравнение тарифов Free / Pro / Team — на публичной странице или в docs/quotas."
       />
+      <div className="flex flex-wrap gap-2">
+        <Button variant="outline" size="sm" asChild>
+          <Link href="/pricing" className="inline-flex items-center gap-1.5">
+            Сравнить тарифы
+            <ExternalLink className="h-3.5 w-3.5 opacity-70" aria-hidden />
+          </Link>
+        </Button>
+      </div>
       {err ? (
         <ProductErrorBanner
           message={err}
@@ -65,20 +76,20 @@ export default function BillingPage() {
             <CardTitle>План: {data.plan_slug}</CardTitle>
           </CardHeader>
           <CardContent className="grid gap-2 text-sm sm:grid-cols-2">
-            <div>Документов (сейчас / лимит)</div>
+            <div>Документы в workspace / лимит плана</div>
             <div>
               {data.document_count}
               {data.max_documents != null ? ` / ${data.max_documents}` : " / без лимита"}
             </div>
-            <div>Запросы (месяц)</div>
+            <div>Запросы (квота месяца)</div>
             <div>
               {data.usage_requests_month} / {data.monthly_request_limit}
             </div>
-            <div>Токены LLM (месяц)</div>
+            <div>Токены модели (квота месяца)</div>
             <div>
               {data.usage_tokens_month} / {data.monthly_token_limit}
             </div>
-            <div>Загрузка байт (месяц)</div>
+            <div>Объём загрузок (квота месяца)</div>
             <div>
               {data.usage_bytes_month} / {data.monthly_upload_bytes_limit}
             </div>
@@ -91,8 +102,18 @@ export default function BillingPage() {
           <CardTitle className="text-base">Оплата</CardTitle>
         </CardHeader>
         <CardContent className="text-sm text-muted-foreground">
-          Подключение Stripe или другого провайдера — в roadmap. Сейчас план задаётся данными workspace и отражается в usage API;
-          ledger ниже может быть пустым до интеграции биллинга.
+          Оплата картой или по счёту через внешнего провайдера — в планах продукта. Сейчас план workspace задаётся данными
+          системы; таблица списаний (ledger) может быть пустой до подключения биллинга.
+        </CardContent>
+      </Card>
+
+      <Card className="border-dashed bg-muted/15">
+        <CardHeader>
+          <CardTitle className="text-base">Команда и приглашения</CardTitle>
+        </CardHeader>
+        <CardContent className="text-sm text-muted-foreground">
+          Управление участниками workspace, приглашения по email и смена ролей (owner / admin / member / viewer) в этом интерфейсе
+          пока не реализованы — список доступных пространств берётся из API. Это следующий слой продукта, а не скрытая функция.
         </CardContent>
       </Card>
 
