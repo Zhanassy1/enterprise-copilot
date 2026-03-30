@@ -138,7 +138,7 @@ def delete_document(document_id: uuid.UUID, db: DbDep, user: CurrentUser, ws: Wo
         target_id=str(doc.id),
         metadata={"filename": doc.filename},
     )
-    service.delete_document(doc)
+    service.delete_document(doc, ws.workspace.id)
     return {"ok": True}
 
 

@@ -9,12 +9,13 @@ from sqlalchemy import select
 
 from app.celery_app import celery_app
 from app.core.config import settings
-from app.core.debug_log import debug_log
 from app.db.session import SessionLocal
 from app.models.document import Document, IngestionJob
 from app.services.audit import write_audit_log
 from app.services.document_indexing import DocumentIndexingService, reindex_null_embeddings_for_workspace
 from app.services.storage import get_storage_service
+
+logger = logging.getLogger(__name__)
 
 ingestion_terminal_failures_total = 0
 ingestion_retries_total = 0
@@ -177,19 +178,24 @@ def ingest_document_task(
                 document.error_message = error_text
                 db.add(document)
             db.commit()
-            debug_log(
-                hypothesisId="H_ingestion_retry",
-                location="backend/app/tasks/ingestion.py:retry",
-                message="ingestion:retry_scheduled",
-                data={
-                    "task_id": self.request.id,
-                    "document_id": str(job.document_id),
-                    "workspace_id": str(job.workspace_id),
-                    "attempt_number": attempt_number,
-                    "max_attempts": max_attempts,
-                    "countdown_seconds": delay,
-                    "error": error_text,
-                },
+            logger.warning(
+                "%s",
+                str(
+                    {
+                        "hypothesisId": "H_ingestion_retry",
+                        "location": "backend/app/tasks/ingestion.py:retry",
+                        "message": "ingestion:retry_scheduled",
+                        "data": {
+                            "task_id": self.request.id,
+                            "document_id": str(job.document_id),
+                            "workspace_id": str(job.workspace_id),
+                            "attempt_number": attempt_number,
+                            "max_attempts": max_attempts,
+                            "countdown_seconds": delay,
+                            "error": error_text,
+                        },
+                    }
+                ),
             )
             ingestion_retries_total += 1
             raise self.retry(exc=exc, countdown=delay)
@@ -215,18 +221,23 @@ def ingest_document_task(
             metadata={"job_id": str(job.id), "error": error_text, "attempts": attempt_number},
         )
         db.commit()
-        debug_log(
-            hypothesisId="H_ingestion_dead",
-            location="backend/app/tasks/ingestion.py:dead_letter",
-            message="ingestion:dead_letter",
-            data={
-                "task_id": self.request.id,
-                "document_id": str(job.document_id),
-                "workspace_id": str(job.workspace_id),
-                "attempt_number": attempt_number,
-                "max_attempts": max_attempts,
-                "error": error_text,
-            },
+        logger.warning(
+            "%s",
+            str(
+                {
+                    "hypothesisId": "H_ingestion_dead",
+                    "location": "backend/app/tasks/ingestion.py:dead_letter",
+                    "message": "ingestion:dead_letter",
+                    "data": {
+                        "task_id": self.request.id,
+                        "document_id": str(job.document_id),
+                        "workspace_id": str(job.workspace_id),
+                        "attempt_number": attempt_number,
+                        "max_attempts": max_attempts,
+                        "error": error_text,
+                    },
+                }
+            ),
         )
         return {"status": "failed", "error": error_text}
     finally:

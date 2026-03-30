@@ -3,7 +3,6 @@ from __future__ import annotations
 import logging
 import uuid
 from datetime import datetime, timezone
-import io
 import re
 from pathlib import Path
 
@@ -17,7 +16,7 @@ from app.models.workspace import Workspace
 from app.schemas.documents import DocumentIngestOut, DocumentOut
 from app.services.antivirus import scan_uploaded_file_safe
 from app.services.document_indexing import DocumentIndexingService
-from app.services.storage.base import StorageService
+from app.services.storage.base import StorageService, StoredFile
 from app.services.usage_metering import (
     EVENT_DOCUMENT_UPLOAD,
     EVENT_UPLOAD_BYTES,
@@ -68,13 +67,10 @@ def validate_upload(file: UploadFile) -> None:
         raise HTTPException(status_code=400, detail="File content does not match DOCX format")
     if suffix == ".pdf":
         try:
-            pos = file.file.tell()
             file.file.seek(0)
-            blob = file.file.read() or b""
-            file.file.seek(pos)
             from pypdf import PdfReader
 
-            reader = PdfReader(io.BytesIO(blob))
+            reader = PdfReader(file.file)
             if getattr(reader, "is_encrypted", False) and reader.is_encrypted:
                 raise HTTPException(status_code=400, detail="Encrypted PDFs are not supported")
         except HTTPException:
@@ -82,13 +78,24 @@ def validate_upload(file: UploadFile) -> None:
         except Exception as e:
             logger.info("PDF validation failed: %s", e)
             raise HTTPException(status_code=400, detail="Invalid or unreadable PDF") from None
+        finally:
+            try:
+                file.file.seek(0)
+            except Exception:
+                pass
 
 
 class DocumentIngestionService:
     def __init__(self, db: Session, storage: StorageService) -> None:
         self.db = db
         self.storage = storage
-        self.indexer = DocumentIndexingService(db, storage)
+        self._indexer: DocumentIndexingService | None = None
+
+    @property
+    def indexer(self) -> DocumentIndexingService:
+        if self._indexer is None:
+            self._indexer = DocumentIndexingService(self.db, self.storage)
+        return self._indexer
 
     def list_documents(self, workspace_id: uuid.UUID) -> list[tuple[Document, str | None]]:
         docs = list(
@@ -136,17 +143,17 @@ class DocumentIngestionService:
             )
         )
 
-    def upload_document(self, user_id: uuid.UUID, workspace: Workspace, file: UploadFile) -> DocumentIngestOut:
-        validate_upload(file)
+    def _save_and_scan(self, file: UploadFile) -> StoredFile:
         stored = self.storage.save_upload(file.file, file.filename or "upload.bin")
         if stored.size_bytes > MAX_UPLOAD_BYTES:
             self.storage.delete(stored.storage_key)
             raise HTTPException(status_code=413, detail="File too large (max 25MB)")
-
         with self.storage.local_path(stored.storage_key) as local_file:
             scan_uploaded_file_safe(local_file)
+        return stored
 
-        dup = self.db.scalar(
+    def _find_duplicate(self, workspace: Workspace, stored: StoredFile) -> Document | None:
+        return self.db.scalar(
             select(Document).where(
                 Document.workspace_id == workspace.id,
                 Document.sha256 == stored.sha256,
@@ -154,10 +161,8 @@ class DocumentIngestionService:
                 Document.status == "ready",
             )
         )
-        if dup:
-            self.storage.delete(stored.storage_key)
-            return DocumentIngestOut(document=DocumentOut.from_document(dup), chunks_created=0)
 
+    def _check_quota(self, user_id: uuid.UUID, workspace: Workspace, stored: StoredFile) -> None:
         assert_quota(
             self.db,
             workspace_id=workspace.id,
@@ -166,6 +171,13 @@ class DocumentIngestionService:
             upload_bytes_increment=int(stored.size_bytes),
         )
 
+    def _create_document_record(
+        self,
+        user_id: uuid.UUID,
+        workspace: Workspace,
+        file: UploadFile,
+        stored: StoredFile,
+    ) -> Document:
         doc = Document(
             id=uuid.uuid4(),
             owner_id=user_id,
@@ -183,7 +195,9 @@ class DocumentIngestionService:
         )
         self.db.add(doc)
         self.db.flush()
+        return doc
 
+    def _enqueue_ingestion_job(self, workspace: Workspace, stored: StoredFile, doc: Document) -> int:
         if settings.ingestion_async_enabled:
             active_jobs = self.db.scalar(
                 select(func.count())
@@ -241,28 +255,35 @@ class DocumentIngestionService:
                     self.db.commit()
                 raise HTTPException(status_code=503, detail="Failed to enqueue ingestion task") from exc
             self.db.refresh(doc)
-            chunks_created = 0
-        else:
-            # Sync path is dev-only; never index in-process in production (even if misconfigured).
-            if settings.environment.lower().strip() == "production":
-                self.storage.delete(stored.storage_key)
-                self.db.rollback()
-                raise HTTPException(
-                    status_code=503,
-                    detail="In-process ingestion is disabled in production; use INGESTION_ASYNC_ENABLED=1 and the Celery worker.",
-                )
-            if not settings.allow_sync_ingestion_for_dev:
-                self.storage.delete(stored.storage_key)
-                self.db.rollback()
-                raise HTTPException(
-                    status_code=503,
-                    detail="Async ingestion required: set INGESTION_ASYNC_ENABLED=1 and run the Celery worker, "
-                    "or for local development only set ALLOW_SYNC_INGESTION_FOR_DEV=1 with ENVIRONMENT=local",
-                )
-            chunks_created = self.indexer.run(doc)
-            self.db.commit()
-            self.db.refresh(doc)
+            return 0
+        # Sync path is dev-only; never index in-process in production (even if misconfigured).
+        if settings.environment.lower().strip() == "production":
+            self.storage.delete(stored.storage_key)
+            self.db.rollback()
+            raise HTTPException(
+                status_code=503,
+                detail="In-process ingestion is disabled in production; use INGESTION_ASYNC_ENABLED=1 and the Celery worker.",
+            )
+        if not settings.allow_sync_ingestion_for_dev:
+            self.storage.delete(stored.storage_key)
+            self.db.rollback()
+            raise HTTPException(
+                status_code=503,
+                detail="Async ingestion required: set INGESTION_ASYNC_ENABLED=1 and run the Celery worker, "
+                "or for local development only set ALLOW_SYNC_INGESTION_FOR_DEV=1 with ENVIRONMENT=local",
+            )
+        chunks_created = self.indexer.run(doc)
+        self.db.commit()
+        self.db.refresh(doc)
+        return chunks_created
 
+    def _record_upload_events(
+        self,
+        user_id: uuid.UUID,
+        workspace: Workspace,
+        doc: Document,
+        stored: StoredFile,
+    ) -> None:
         record_event(
             self.db,
             workspace_id=workspace.id,
@@ -282,12 +303,26 @@ class DocumentIngestionService:
             metadata={"document_id": str(doc.id)},
         )
         self.db.commit()
+
+    def upload_document(self, user_id: uuid.UUID, workspace: Workspace, file: UploadFile) -> DocumentIngestOut:
+        validate_upload(file)
+        stored = self._save_and_scan(file)
+        dup = self._find_duplicate(workspace, stored)
+        if dup:
+            self.storage.delete(stored.storage_key)
+            return DocumentIngestOut(document=DocumentOut.from_document(dup), chunks_created=0)
+        self._check_quota(user_id, workspace, stored)
+        doc = self._create_document_record(user_id, workspace, file, stored)
+        chunks_created = self._enqueue_ingestion_job(workspace, stored, doc)
+        self._record_upload_events(user_id, workspace, doc, stored)
         return DocumentIngestOut(
             document=DocumentOut.from_document(doc),
             chunks_created=chunks_created,
         )
 
-    def delete_document(self, document: Document) -> None:
+    def delete_document(self, document: Document, workspace_id: uuid.UUID) -> None:
+        if document.workspace_id != workspace_id:
+            raise HTTPException(status_code=403, detail="Forbidden")
         document.deleted_at = datetime.now(timezone.utc)
         self.db.add(document)
         self.db.commit()
