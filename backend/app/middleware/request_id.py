@@ -8,8 +8,6 @@ from starlette.middleware.base import BaseHTTPMiddleware
 
 from app.core.config import settings
 from app.core.trusted_proxy import get_effective_client_ip
-from app.middleware.metrics import record_request_metrics
-from app.middleware.security_headers import apply_production_security_headers
 
 logger = logging.getLogger("app.request")
 
@@ -41,10 +39,8 @@ class RequestAccessMiddleware(BaseHTTPMiddleware):
         response = await call_next(request)
         elapsed_ms = (time.perf_counter() - t0) * 1000.0
 
-        record_request_metrics(request.method, path, response.status_code, elapsed_ms)
         if "X-Request-Id" not in response.headers:
             response.headers["X-Request-Id"] = request_id
-        apply_production_security_headers(response)
         logger.info(
             json.dumps(
                 {
