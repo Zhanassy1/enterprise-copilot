@@ -89,29 +89,74 @@ class DocumentIndexingService:
             spans = _page_spans(extracted)
             vectors = embed_texts(chunks)
 
-            for i, t in enumerate(chunks):
+            chunk_indices = list(range(len(chunks)))
+            page_numbers = []
+            paragraph_indices = []
+            for i in chunk_indices:
                 start, _ = offsets[i]
-                row = DocumentChunk(
-                    document_id=document.id,
-                    chunk_index=i,
-                    page_number=_page_by_pos(spans, start),
-                    paragraph_index=_paragraph_index_by_pos(extracted, start),
-                    text=t,
-                    embedding=None,
-                )
-                self.db.add(row)
-                self.db.flush()
+                page_numbers.append(_page_by_pos(spans, start))
+                paragraph_indices.append(_paragraph_index_by_pos(extracted, start))
 
-                if i < len(vectors):
-                    vec = vectors[i]
-                    vec_lit = "[" + ",".join(f"{float(x):.8f}" for x in vec) + "]"
-                    self.db.execute(
-                        text(
-                            "UPDATE document_chunks SET embedding_vector = (:v)::vector(384) "
-                            "WHERE id = CAST(:id AS uuid)"
-                        ),
-                        {"v": vec_lit, "id": str(row.id)},
+            inserted_rows = self.db.execute(
+                text(
+                    """
+                    INSERT INTO document_chunks (
+                        document_id, chunk_index, page_number, paragraph_index, text, embedding_vector
                     )
+                    SELECT
+                        CAST(:document_id AS uuid),
+                        t.chunk_index,
+                        t.page_number,
+                        t.paragraph_index,
+                        t.text,
+                        NULL
+                    FROM unnest(
+                        CAST(:chunk_indices AS integer[]),
+                        CAST(:page_numbers AS integer[]),
+                        CAST(:paragraph_indices AS integer[]),
+                        CAST(:texts AS text[])
+                    ) AS t(chunk_index, page_number, paragraph_index, text)
+                    RETURNING id, chunk_index
+                    """
+                ),
+                {
+                    "document_id": str(document.id),
+                    "chunk_indices": chunk_indices,
+                    "page_numbers": page_numbers,
+                    "paragraph_indices": paragraph_indices,
+                    "texts": chunks,
+                },
+            ).mappings().all()
+
+            id_by_chunk_index = {
+                int(row["chunk_index"]): str(row["id"]) for row in inserted_rows
+            }
+            if len(id_by_chunk_index) != len(chunks) or set(id_by_chunk_index) != set(chunk_indices):
+                raise ValueError("Inserted chunk IDs mismatch")
+
+            ids_to_update: list[str] = []
+            vec_literals: list[str] = []
+            for i, vec in enumerate(vectors):
+                if i >= len(chunks):
+                    break
+                ids_to_update.append(id_by_chunk_index[i])
+                vec_literals.append("[" + ",".join(f"{float(x):.8f}" for x in vec) + "]")
+
+            if ids_to_update:
+                self.db.execute(
+                    text(
+                        """
+                        UPDATE document_chunks c
+                        SET embedding_vector = (u.vec)::vector(384)
+                        FROM unnest(
+                            CAST(:ids AS uuid[]),
+                            CAST(:vecs AS text[])
+                        ) AS u(id, vec)
+                        WHERE c.id = u.id
+                        """
+                    ),
+                    {"ids": ids_to_update, "vecs": vec_literals},
+                )
 
             document.status = "ready"
             document.indexed_at = datetime.now(timezone.utc)

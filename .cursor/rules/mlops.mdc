@@ -1,0 +1,16 @@
+---
+description: mlops & production ml
+globs:
+  - "ml/**"
+  - "training/**"
+  - "pipelines/**"
+  - "backend/**"
+alwaysApply: true
+---
+
+- Treat ML as a product subsystem:
+  - define offline metrics and acceptance thresholds,
+  - add monitoring for data drift / performance degradation,
+  - implement CI/CD for code + continuous training triggers where applicable.
+- Changes to models must be reproducible: version data, code, config, and artifacts.
+- Prefer simple baselines first; only add complexity if metrics justify it.

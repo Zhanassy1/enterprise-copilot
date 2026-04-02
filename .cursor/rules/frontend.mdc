@@ -1,0 +1,12 @@
+---
+description: frontend polish
+globs:
+  - "frontend/**"
+  - "**/*.css"
+  - "**/*.tsx"
+alwaysApply: true
+---
+
+- No layout glitches: avoid stray whitespace, inconsistent spacing, or unstyled gaps.
+- Keep UI code consistent with the project's formatter/linter.
+- After edits, ensure formatting and linting pass before considering work done.

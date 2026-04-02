@@ -307,18 +307,24 @@ class DocumentIngestionService:
     def upload_document(self, user_id: uuid.UUID, workspace: Workspace, file: UploadFile) -> DocumentIngestOut:
         validate_upload(file)
         stored = self._save_and_scan(file)
-        dup = self._find_duplicate(workspace, stored)
-        if dup:
-            self.storage.delete(stored.storage_key)
-            return DocumentIngestOut(document=DocumentOut.from_document(dup), chunks_created=0)
-        self._check_quota(user_id, workspace, stored)
-        doc = self._create_document_record(user_id, workspace, file, stored)
-        chunks_created = self._enqueue_ingestion_job(workspace, stored, doc)
-        self._record_upload_events(user_id, workspace, doc, stored)
-        return DocumentIngestOut(
-            document=DocumentOut.from_document(doc),
-            chunks_created=chunks_created,
-        )
+        should_cleanup_storage = True
+        try:
+            dup = self._find_duplicate(workspace, stored)
+            if dup:
+                return DocumentIngestOut(document=DocumentOut.from_document(dup), chunks_created=0)
+            self._check_quota(user_id, workspace, stored)
+            doc = self._create_document_record(user_id, workspace, file, stored)
+            # Ownership is transferred to persisted document record.
+            should_cleanup_storage = False
+            chunks_created = self._enqueue_ingestion_job(workspace, stored, doc)
+            self._record_upload_events(user_id, workspace, doc, stored)
+            return DocumentIngestOut(
+                document=DocumentOut.from_document(doc),
+                chunks_created=chunks_created,
+            )
+        finally:
+            if should_cleanup_storage:
+                self.storage.delete(stored.storage_key)
 
     def delete_document(self, document: Document, workspace_id: uuid.UUID) -> None:
         if document.workspace_id != workspace_id:

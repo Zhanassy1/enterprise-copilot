@@ -4,16 +4,19 @@ from collections import defaultdict
 from fastapi import Request
 from starlette.middleware.base import BaseHTTPMiddleware
 
-_metrics_counter: dict[str, int] = defaultdict(int)
-_metrics_latency_sum_ms: dict[str, float] = defaultdict(float)
+RequestCounterKey = tuple[str, str, int]
+LatencySumKey = tuple[str, str]
+
+_metrics_counter: dict[RequestCounterKey, int] = defaultdict(int)
+_metrics_latency_sum_ms: dict[LatencySumKey, float] = defaultdict(float)
 
 
 def record_request_metrics(method: str, path: str, status_code: int, elapsed_ms: float) -> None:
-    _metrics_counter[f"requests_total:{method}:{path}:{status_code}"] += 1
-    _metrics_latency_sum_ms[f"latency_ms_sum:{method}:{path}"] += elapsed_ms
+    _metrics_counter[(method, path, status_code)] += 1
+    _metrics_latency_sum_ms[(method, path)] += elapsed_ms
 
 
-def get_metrics_state() -> tuple[dict[str, int], dict[str, float]]:
+def get_metrics_state() -> tuple[dict[RequestCounterKey, int], dict[LatencySumKey, float]]:
     return _metrics_counter, _metrics_latency_sum_ms
 
 

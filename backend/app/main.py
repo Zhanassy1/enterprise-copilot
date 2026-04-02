@@ -122,12 +122,12 @@ def create_app() -> FastAPI:
         _metrics_counter, _metrics_latency_sum_ms = get_metrics_state()
         lines: list[str] = []
         for key, value in sorted(_metrics_counter.items()):
-            _, method, path, status = key.split(":", 3)
+            method, path, status = key
             lines.append(
                 f'http_requests_total{{method="{method}",path="{path}",status="{status}"}} {int(value)}'
             )
         for key, value in sorted(_metrics_latency_sum_ms.items()):
-            _, method, path = key.split(":", 2)
+            method, path = key
             lines.append(f'http_request_latency_ms_sum{{method="{method}",path="{path}"}} {float(value):.4f}')
         try:
             from app.tasks import ingestion as _ing_metrics

@@ -1,0 +1,18 @@
+---
+description: security baseline
+globs:
+  - "backend/**"
+  - "api/**"
+  - "**/*.py"
+  - "**/*.ts"
+  - "**/*.tsx"
+alwaysApply: true
+---
+
+- Follow OWASP Top 10:2021 principles: avoid broken access control, injection, insecure design, misconfigurations.
+- Secrets never go into repo, logs, error messages, or client bundles.
+- Add rate limiting and authZ checks on server for every sensitive endpoint.
+- If LLM is used:
+  - treat prompts as untrusted input (prompt injection risk),
+  - validate/sanitize LLM outputs before passing downstream (insecure output handling risk),
+  - avoid leaking sensitive data through tool calls and logs.
