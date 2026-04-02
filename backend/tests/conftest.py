@@ -11,8 +11,15 @@ Run: ``RUN_INTEGRATION_TESTS=1 pytest tests/test_billing.py -v`` (from ``backend
 
 from __future__ import annotations
 
+import os
 import uuid
 from collections.abc import Generator
+
+# Importing ``app`` instantiates ``Settings()`` once. Integration jobs have no Celery/Redis;
+# sync indexing must be allowed before that import (env vars in ``test_api_integration`` run too late).
+if os.environ.get("RUN_INTEGRATION_TESTS") == "1":
+    os.environ.setdefault("INGESTION_ASYNC_ENABLED", "0")
+    os.environ.setdefault("ALLOW_SYNC_INGESTION_FOR_DEV", "1")
 
 import pytest
 from fastapi.testclient import TestClient

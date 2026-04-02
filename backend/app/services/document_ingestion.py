@@ -1,13 +1,14 @@
 from __future__ import annotations
 
 import logging
+import os
+import re
 import uuid
 from datetime import datetime, timezone
-import re
 from pathlib import Path
 
 from fastapi import HTTPException, UploadFile
-from sqlalchemy import func, select
+from sqlalchemy import func, select, text
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
@@ -28,6 +29,33 @@ from app.tasks.ingestion import ingest_document_task
 
 logger = logging.getLogger(__name__)
 
+
+def _env_truthy(name: str) -> bool | None:
+    if name not in os.environ:
+        return None
+    return os.environ[name].strip().lower() in ("1", "true", "yes")
+
+
+def _effective_ingestion_pipeline_flags() -> tuple[bool, bool]:
+    """
+    Normal path uses frozen ``settings``. Under pytest, ``conftest`` imports the app before
+    ``test_api_integration`` mutates ``os.environ``, so the singleton can be stale; honor env
+    for integration runs (never in production).
+    """
+    async_on = settings.ingestion_async_enabled
+    allow_sync = settings.allow_sync_ingestion_for_dev
+    if (
+        os.environ.get("RUN_INTEGRATION_TESTS") == "1"
+        and settings.environment.lower().strip() != "production"
+    ):
+        v_async = _env_truthy("INGESTION_ASYNC_ENABLED")
+        if v_async is not None:
+            async_on = v_async
+        v_allow = _env_truthy("ALLOW_SYNC_INGESTION_FOR_DEV")
+        if v_allow is not None:
+            allow_sync = v_allow
+    return async_on, allow_sync
+
 MAX_UPLOAD_BYTES = 25 * 1024 * 1024
 ALLOWED_SUFFIXES = {".pdf", ".docx", ".txt"}
 ALLOWED_CONTENT_TYPES = {
@@ -36,6 +64,10 @@ ALLOWED_CONTENT_TYPES = {
     "application/msword",
     "text/plain",
 }
+
+
+def _workspace_upload_advisory_lock_key(workspace_id: uuid.UUID) -> int:
+    return int(workspace_id.int % (1 << 63))
 
 
 def validate_upload(file: UploadFile) -> None:
@@ -198,7 +230,8 @@ class DocumentIngestionService:
         return doc
 
     def _enqueue_ingestion_job(self, workspace: Workspace, stored: StoredFile, doc: Document) -> int:
-        if settings.ingestion_async_enabled:
+        ingestion_async_enabled, allow_sync_ingestion_for_dev = _effective_ingestion_pipeline_flags()
+        if ingestion_async_enabled:
             active_jobs = self.db.scalar(
                 select(func.count())
                 .select_from(IngestionJob)
@@ -264,7 +297,7 @@ class DocumentIngestionService:
                 status_code=503,
                 detail="In-process ingestion is disabled in production; use INGESTION_ASYNC_ENABLED=1 and the Celery worker.",
             )
-        if not settings.allow_sync_ingestion_for_dev:
+        if not allow_sync_ingestion_for_dev:
             self.storage.delete(stored.storage_key)
             self.db.rollback()
             raise HTTPException(
@@ -312,6 +345,12 @@ class DocumentIngestionService:
             dup = self._find_duplicate(workspace, stored)
             if dup:
                 return DocumentIngestOut(document=DocumentOut.from_document(dup), chunks_created=0)
+            # Per-workspace transaction lock: without it, two concurrent uploads can both pass
+            # assert_quota() (same usage snapshot) and both insert rows (TOCTOU vs document cap and usage events).
+            self.db.execute(
+                text("SELECT pg_advisory_xact_lock(:key)"),
+                {"key": _workspace_upload_advisory_lock_key(workspace.id)},
+            )
             self._check_quota(user_id, workspace, stored)
             doc = self._create_document_record(user_id, workspace, file, stored)
             # Ownership is transferred to persisted document record.

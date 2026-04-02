@@ -78,6 +78,10 @@ jobs:
       DATABASE_URL: postgresql+psycopg://postgres:postgres@localhost:5433/enterprise_copilot_test
       RUN_INTEGRATION_TESTS: "1"
       SQLALCHEMY_USE_NULLPOOL: "1"
+      # No Redis/Celery in this job; uploads use sync ingest (see tests/conftest.py).
+      INGESTION_ASYNC_ENABLED: "0"
+      ALLOW_SYNC_INGESTION_FOR_DEV: "1"
+      ENVIRONMENT: local
     steps:
       - name: Checkout
         uses: actions/checkout@v4

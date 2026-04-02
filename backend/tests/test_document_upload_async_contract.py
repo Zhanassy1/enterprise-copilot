@@ -1,4 +1,5 @@
 import io
+import os
 import uuid
 import unittest
 from contextlib import contextmanager
@@ -9,6 +10,7 @@ from unittest.mock import patch
 from fastapi import HTTPException, UploadFile
 
 from app.models.document import IngestionJob
+from app.services import document_ingestion as document_ingestion_module
 from app.services.document_ingestion import DocumentIngestionService
 
 
@@ -41,6 +43,9 @@ class _FakeDb:
         self._objects.append(obj)
 
     def flush(self) -> None:
+        return None
+
+    def execute(self, *_args, **_kwargs):
         return None
 
     def scalar(self, _query):
@@ -96,6 +101,40 @@ class DocumentUploadAsyncContractTests(unittest.TestCase):
                 service.upload_document(user_id=user_id, workspace=workspace, file=file)
         self.assertEqual(err.exception.status_code, 503)
         self.assertIn("production", (err.exception.detail or "").lower())
+
+    def test_effective_flags_read_env_when_integration_tests_and_settings_stale(self) -> None:
+        with patch.dict(
+            os.environ,
+            {
+                "RUN_INTEGRATION_TESTS": "1",
+                "INGESTION_ASYNC_ENABLED": "0",
+                "ALLOW_SYNC_INGESTION_FOR_DEV": "1",
+            },
+            clear=False,
+        ):
+            with (
+                patch.object(document_ingestion_module.settings, "ingestion_async_enabled", True),
+                patch.object(document_ingestion_module.settings, "allow_sync_ingestion_for_dev", False),
+                patch.object(document_ingestion_module.settings, "environment", "local"),
+            ):
+                async_on, allow_sync = document_ingestion_module._effective_ingestion_pipeline_flags()
+        self.assertFalse(async_on)
+        self.assertTrue(allow_sync)
+
+    def test_effective_flags_skip_env_override_in_production(self) -> None:
+        with patch.dict(
+            os.environ,
+            {"RUN_INTEGRATION_TESTS": "1", "ALLOW_SYNC_INGESTION_FOR_DEV": "1"},
+            clear=False,
+        ):
+            with (
+                patch.object(document_ingestion_module.settings, "ingestion_async_enabled", False),
+                patch.object(document_ingestion_module.settings, "allow_sync_ingestion_for_dev", False),
+                patch.object(document_ingestion_module.settings, "environment", "production"),
+            ):
+                async_on, allow_sync = document_ingestion_module._effective_ingestion_pipeline_flags()
+        self.assertFalse(async_on)
+        self.assertFalse(allow_sync)
 
 
 if __name__ == "__main__":
