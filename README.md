@@ -276,10 +276,11 @@ docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
 | Область | Действие |
 |---------|----------|
 | Secrets | `SECRET_KEY` (не default), креды БД/Redis/S3 из secrets manager |
-| Database | `DATABASE_URL` с TLS при необходимости; не `localhost` / не `postgres:postgres` в prod |
+| Database | `DATABASE_URL` с TLS (`?sslmode=require` и т.д.) по умолчанию в prod; не `localhost` / не `postgres:postgres`; `PRODUCTION_REQUIRE_DATABASE_SSL=0` только для внутренней БД без TLS |
 | Redis | Пароль в URL или `rediss://`; см. startup checks |
-| Storage | Для SaaS: `STORAGE_BACKEND=s3` при `PRODUCTION_REQUIRE_S3_BACKEND=1` |
-| Reverse proxy | TLS termination; `USE_FORWARDED_HEADERS` + `TRUSTED_PROXY_IPS` |
+| Storage | По умолчанию в prod требуется `STORAGE_BACKEND=s3` и ключи; `PRODUCTION_REQUIRE_S3_BACKEND=0` только осознанно (staging / compose без MinIO) |
+| Reverse proxy | TLS termination; `USE_FORWARDED_HEADERS` + `TRUSTED_PROXY_IPS`; по умолчанию в prod `TRUSTED_PROXY_IPS` должен быть задан |
+| CORS | Явный `CORS_ORIGINS` в prod (regex для приватных сетей отключён); в `docker-compose.prod.yml` задаётся через env |
 | Health | `/healthz`, `/readyz` за балансировщиком |
 | Migrations | **migrate:** одноразовый сервис в `docker compose` (`alembic upgrade head`); без compose — выполнить миграции вручную до старта API |
 | Worker | Celery worker с той же `REDIS_URL` и очередью `ingestion` |

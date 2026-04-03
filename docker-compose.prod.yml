@@ -4,11 +4,16 @@
 #   docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
 #
 # Required host env / .env next to compose:
-#   POSTGRES_USER, POSTGRES_PASSWORD, DATABASE_URL, REDIS_PASSWORD, REDIS_URL, SECRET_KEY
+#   POSTGRES_USER, POSTGRES_PASSWORD, DATABASE_URL, REDIS_PASSWORD, REDIS_URL, SECRET_KEY, CORS_ORIGINS
 #
 # DATABASE_URL must match POSTGRES_* and point at host `db` (e.g. ...@db:5432/...).
 # REDIS_URL must include the same password as REDIS_PASSWORD (e.g. redis://:pass@redis:6379/0).
 # Never use postgres:postgres or unauthenticated redis in DATABASE_URL/REDIS_URL — startup_checks will fail.
+#
+# Reference stack below opts out of TLS-to-Postgres, S3-first, and mandatory TRUSTED_PROXY_IPS because the internal
+# `db` service has no TLS and there is no MinIO/ingress in this compose file. Hardened deploys: remove those three
+# PRODUCTION_REQUIRE_*=0 lines, add ?sslmode=require to DATABASE_URL, set STORAGE_BACKEND=s3 and S3_*, and set
+# USE_FORWARDED_HEADERS=1 with TRUSTED_PROXY_IPS for your LB CIDRs.
 
 services:
   db:
@@ -38,6 +43,10 @@ services:
       REDIS_URL: ${REDIS_URL:?REDIS_URL is required for production compose}
       SECRET_KEY: ${SECRET_KEY:?SECRET_KEY is required for production compose}
       INGESTION_ASYNC_ENABLED: "1"
+      CORS_ORIGINS: ${CORS_ORIGINS:?CORS_ORIGINS is required in production (trusted browser origins, comma-separated)}
+      PRODUCTION_REQUIRE_DATABASE_SSL: "0"
+      PRODUCTION_REQUIRE_S3_BACKEND: "0"
+      PRODUCTION_REQUIRE_TRUSTED_PROXY_IPS: "0"
 
   worker:
     environment:
@@ -46,3 +55,6 @@ services:
       REDIS_URL: ${REDIS_URL:?REDIS_URL is required for production compose}
       SECRET_KEY: ${SECRET_KEY:?SECRET_KEY is required for production compose}
       INGESTION_ASYNC_ENABLED: "1"
+      PRODUCTION_REQUIRE_DATABASE_SSL: "0"
+      PRODUCTION_REQUIRE_S3_BACKEND: "0"
+      PRODUCTION_REQUIRE_TRUSTED_PROXY_IPS: "0"

@@ -75,6 +75,13 @@ def validate_production_settings(settings: Settings) -> None:
     if err:
         raise RuntimeError(f"Production configuration invalid: {err}")
 
+    cors_origins_list = [o.strip() for o in (settings.cors_origins or "").split(",") if o.strip()]
+    if not cors_origins_list:
+        raise RuntimeError(
+            "Production configuration invalid: CORS_ORIGINS must list at least one trusted browser origin "
+            "(scheme + host + port). Private-network regex matching is disabled in production."
+        )
+
     if settings.production_require_trusted_proxy_ips and not (settings.trusted_proxy_ips or "").strip():
         raise RuntimeError(
             "Production configuration invalid: TRUSTED_PROXY_IPS must be set when "

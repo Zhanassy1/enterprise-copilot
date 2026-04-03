@@ -26,6 +26,7 @@ Product-level checklist: [README.md](../README.md) section **Production checklis
 | `REDIS_PASSWORD` | Passed to `redis-server --requirepass` |
 | `REDIS_URL` | e.g. `redis://:REDIS_PASSWORD@redis:6379/0` — same password as `REDIS_PASSWORD` |
 | `SECRET_KEY` | Long random string (`openssl rand -hex 32`) |
+| `CORS_ORIGINS` | Trusted browser origins for the SPA (comma-separated); required in production — not inherited from dev defaults |
 
 Optional: `POSTGRES_DB` (default `enterprise_copilot`).
 
@@ -33,13 +34,13 @@ Optional: `POSTGRES_DB` (default `enterprise_copilot`).
 
 Copy `.env.production.example` to your orchestration layer and replace placeholders. Never commit real secrets.
 
-### `PRODUCTION_REQUIRE_S3_BACKEND`
+### `PRODUCTION_REQUIRE_DATABASE_SSL`, `PRODUCTION_REQUIRE_S3_BACKEND`, `PRODUCTION_REQUIRE_TRUSTED_PROXY_IPS`
 
-When `PRODUCTION_REQUIRE_S3_BACKEND=1`, the API refuses to start unless `STORAGE_BACKEND=s3` and S3 settings are present — use for SaaS-style object storage. Omit or `0` for staging with local storage (still use non-dev `DATABASE_URL` / `REDIS_URL` / `SECRET_KEY`).
+These default to **enabled** (`1`) in `Settings`: with `ENVIRONMENT=production`, the API fails fast unless `DATABASE_URL` indicates TLS (e.g. `?sslmode=require`), `STORAGE_BACKEND=s3` with bucket/keys, and `TRUSTED_PROXY_IPS` is non-empty. Set any flag to `0` only for intentional staging or for the reference `docker-compose.prod.yml` overlay (internal Postgres without TLS, no MinIO, no ingress).
 
-### `PRODUCTION_REQUIRE_TRUSTED_PROXY_IPS`
+CORS in production uses **only** `CORS_ORIGINS` (no private-network `allow_origin_regex`); see [`docs/security.md`](security.md).
 
-When `PRODUCTION_REQUIRE_TRUSTED_PROXY_IPS=1`, the API refuses to start if `TRUSTED_PROXY_IPS` is empty (document ingress/LB CIDRs). Use when the API is always behind a known reverse proxy. Implemented in `backend/app/core/startup_checks.py` (tests in `tests/test_startup_checks.py`).
+Implemented in [`backend/app/core/startup_checks.py`](../backend/app/core/startup_checks.py); tests in [`backend/tests/test_startup_checks.py`](../backend/tests/test_startup_checks.py) and [`backend/tests/test_cors_config.py`](../backend/tests/test_cors_config.py).
 
 ### Ingestion: production vs dev
 

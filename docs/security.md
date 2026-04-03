@@ -17,6 +17,7 @@
 ## CORS
 
 - `CORS_ORIGINS` must list only trusted web origins (scheme + host + port). Wildcards are not used for credentials-heavy setups.
+- Outside production, the API may also allow LAN/Vite dev hosts via a fixed `allow_origin_regex` (private RFC1918 addresses and localhost). In **`ENVIRONMENT=production`** that regex is **disabled**: only entries in `CORS_ORIGINS` apply, and startup requires at least one non-empty origin.
 
 ## CSRF
 
