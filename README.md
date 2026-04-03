@@ -30,7 +30,7 @@ Then open **http://localhost:3000** (UI) and **http://localhost:8000/docs** (API
 
 - **Invitations**: emails link to `{APP_BASE_URL}/invite?token=…` (configure SMTP or relay). Pending invites: Team UI and `/api/v1/workspaces/{id}/invitations`.
 - **Stripe**: `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `STRIPE_PRICE_ID`; webhook endpoint `POST /api/v1/billing/webhooks/stripe`. Grace after failed payment: `BILLING_GRACE_PERIOD_DAYS` (default 3). Customer Portal and Checkout from the Billing page (owner/admin).
-- **Platform admin**: database flag `users.is_platform_admin` and/or `PLATFORM_ADMIN_EMAILS` (comma-separated). API: `/api/v1/admin/…` (impersonation, usage, quota adjust). UI: `/admin`.
+- **Platform admin**: database flag `users.is_platform_admin` and/or `PLATFORM_ADMIN_EMAILS` (comma-separated). API: `/api/v1/admin/…` (impersonation, usage, quota adjust). UI: `/admin`. Do not commit real addresses — set them only in local/private env (e.g. uncomment and fill `PLATFORM_ADMIN_EMAILS` in your copy of `backend/.env.docker`).
 
 **Docker / Next.js:** если UI отдаёт 500/404 или `Cannot find module './…js'`, очистите кэш и перезапустите фронт: `docker compose exec frontend rm -rf /app/.next && docker compose restart frontend` (на хосте можно удалить `frontend/.next`).
 

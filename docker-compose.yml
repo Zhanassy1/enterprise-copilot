@@ -73,8 +73,6 @@ services:
       DATABASE_URL: postgresql+psycopg://postgres:postgres@db:5432/enterprise_copilot
       REDIS_URL: redis://redis:6379/0
       INGESTION_ASYNC_ENABLED: "1"
-      # Явно в compose (не только .env.docker), чтобы /admin не терял доступ из‑за локального .env в volume
-      PLATFORM_ADMIN_EMAILS: platform-admin@example.invalid
       CORS_ORIGINS: http://localhost:3000,http://127.0.0.1:3000,http://localhost:5173,http://127.0.0.1:5173
     ports:
       # Если :8000 занят: в .env в корне проекта задай HOST_API_PORT=8001 (или export перед docker compose)
