@@ -17,9 +17,11 @@ from collections.abc import Generator
 
 # Importing ``app`` instantiates ``Settings()`` once. Integration jobs have no Celery/Redis;
 # sync indexing must be allowed before that import (env vars in ``test_api_integration`` run too late).
-if os.environ.get("RUN_INTEGRATION_TESTS") == "1":
-    os.environ.setdefault("INGESTION_ASYNC_ENABLED", "0")
-    os.environ.setdefault("ALLOW_SYNC_INGESTION_FOR_DEV", "1")
+# Use assignment (not setdefault): repo/org Actions variables must not leave ALLOW_SYNC_INGESTION_FOR_DEV=0.
+# Async pipeline smoke (``RUN_ASYNC_PIPELINE_SMOKE=1``) keeps async flags from the environment.
+if os.environ.get("RUN_INTEGRATION_TESTS") == "1" and os.environ.get("RUN_ASYNC_PIPELINE_SMOKE") != "1":
+    os.environ["INGESTION_ASYNC_ENABLED"] = "0"
+    os.environ["ALLOW_SYNC_INGESTION_FOR_DEV"] = "1"
 
 import pytest
 from fastapi.testclient import TestClient
