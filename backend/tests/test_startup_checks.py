@@ -1,7 +1,22 @@
 import unittest
+import unittest.mock
 
 from app.core.config import Settings
 from app.core.startup_checks import validate_production_settings
+
+_ping_patcher = unittest.mock.patch(
+    "app.core.startup_checks.ping_redis_url",
+    autospec=True,
+    return_value=None,
+)
+
+
+def setUpModule() -> None:
+    _ping_patcher.start()
+
+
+def tearDownModule() -> None:
+    _ping_patcher.stop()
 
 
 def _minimal_production_settings(**kwargs: object) -> Settings:
@@ -116,6 +131,28 @@ class StartupChecksTests(unittest.TestCase):
         with self.assertRaises(RuntimeError) as ctx:
             validate_production_settings(s)
         self.assertIn("ALLOW_SYNC_INGESTION_FOR_DEV", str(ctx.exception))
+
+    def test_production_rejects_celery_always_eager(self) -> None:
+        s = _minimal_production_settings(celery_task_always_eager=True)
+        with self.assertRaises(RuntimeError) as ctx:
+            validate_production_settings(s)
+        self.assertIn("CELERY_TASK_ALWAYS_EAGER", str(ctx.exception))
+
+    def test_production_redis_ping_failure(self) -> None:
+        with unittest.mock.patch(
+            "app.core.startup_checks.ping_redis_url",
+            side_effect=OSError("refused"),
+        ):
+            s = _minimal_production_settings()
+            with self.assertRaises(RuntimeError) as ctx:
+                validate_production_settings(s)
+        self.assertIn("Redis", str(ctx.exception))
+
+    def test_production_skips_redis_ping_when_rate_limit_flag_off(self) -> None:
+        with unittest.mock.patch("app.core.startup_checks.ping_redis_url") as mock_ping:
+            s = _minimal_production_settings(production_require_redis_rate_limiting=False)
+            validate_production_settings(s)
+        mock_ping.assert_not_called()
 
 
 if __name__ == "__main__":

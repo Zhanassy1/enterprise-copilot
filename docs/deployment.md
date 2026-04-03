@@ -38,6 +38,13 @@ Copy `.env.production.example` to your orchestration layer and replace placehold
 
 These default to **enabled** (`1`) in `Settings`: with `ENVIRONMENT=production`, the API fails fast unless `DATABASE_URL` indicates TLS (e.g. `?sslmode=require`), `STORAGE_BACKEND=s3` with bucket/keys, and `TRUSTED_PROXY_IPS` is non-empty. Set any flag to `0` only for intentional staging or for the reference `docker-compose.prod.yml` overlay (internal Postgres without TLS, no MinIO, no ingress).
 
+### Multi-instance: Redis rate limits, readiness, Celery
+
+- **`PRODUCTION_REQUIRE_REDIS_RATE_LIMITING`** (default `1`): in production, `startup_checks` pings `REDIS_URL` (and `CELERY_BROKER_URL` when it differs). The API **does not** fall back to per-process in-memory rate limits when Redis is down; clients get **503** from the rate-limit middleware instead of silently weaker limits across replicas.
+- **`/readyz`**: in production (or when **`READINESS_INCLUDE_REDIS=1`**), the handler pings Redis as well as PostgreSQL so load balancers do not mark a pod ready without a working broker/cache for limits and jobs.
+- **Celery worker**: importing `app.celery_app` runs the same **`validate_settings`** as the API — set **`ENVIRONMENT=production`** and the same critical variables on workers as on API pods.
+- **`CELERY_TASK_ALWAYS_EAGER`**: must be **`0`** in production (enforced by `startup_checks`).
+
 CORS in production uses **only** `CORS_ORIGINS` (no private-network `allow_origin_regex`); see [`docs/security.md`](security.md).
 
 Implemented in [`backend/app/core/startup_checks.py`](../backend/app/core/startup_checks.py); tests in [`backend/tests/test_startup_checks.py`](../backend/tests/test_startup_checks.py) and [`backend/tests/test_cors_config.py`](../backend/tests/test_cors_config.py).

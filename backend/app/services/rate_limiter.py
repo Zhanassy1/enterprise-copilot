@@ -19,9 +19,24 @@ class RateLimitOutcome:
     limited: bool
     limit: int
     remaining: int
-    """Approximate remaining quota in the current window after this check (0 if limited)."""
     retry_after: int
-    """Seconds clients should wait before retrying (only meaningful when ``limited`` is True)."""
+    # Redis / limiter backend down in production strict mode — middleware should return 503.
+    unavailable: bool = False
+
+
+def _redis_rate_limit_strict() -> bool:
+    env = settings.environment.lower().strip()
+    return env == "production" and bool(settings.production_require_redis_rate_limiting)
+
+
+def _outcome_redis_unavailable(limit: int, window_seconds: int) -> RateLimitOutcome:
+    return RateLimitOutcome(
+        limited=False,
+        limit=limit,
+        remaining=0,
+        retry_after=max(1, window_seconds),
+        unavailable=True,
+    )
 
 
 def _get_redis():
@@ -31,13 +46,18 @@ def _get_redis():
             import redis
         except Exception as e:
             logger.debug("redis package unavailable for rate limiting: %s", e)
+            if _redis_rate_limit_strict():
+                logger.error("redis package required for rate limiting in production: %s", e)
             _redis_client = False
             return None
         try:
             _redis_client = redis.Redis.from_url(settings.redis_url, decode_responses=True)
             _redis_client.ping()
         except Exception as e:
-            logger.warning("redis connection failed for rate limiting, using in-memory fallback: %s", e)
+            if _redis_rate_limit_strict():
+                logger.error("redis connection failed for rate limiting (production strict, no in-memory fallback): %s", e)
+            else:
+                logger.warning("redis connection failed for rate limiting, using in-memory fallback: %s", e)
             _redis_client = False
             return None
     if _redis_client is False:
@@ -83,14 +103,20 @@ def consume_rate_limit(scope: str, key: str, *, limit: int, window_seconds: int 
         return RateLimitOutcome(False, limit, limit, 0)
     client = _get_redis()
     if client is None:
+        if _redis_rate_limit_strict():
+            return _outcome_redis_unavailable(limit, window_seconds)
         return _memory_consume(scope, key, limit=limit, window_seconds=window_seconds)
     try:
         return _redis_consume(client, scope, key, limit=limit, window_seconds=window_seconds)
     except Exception as e:
+        if _redis_rate_limit_strict():
+            logger.error("redis rate limit consume failed (production strict, no in-memory fallback): %s", e)
+            return _outcome_redis_unavailable(limit, window_seconds)
         logger.warning("redis rate limit consume failed, using in-memory fallback: %s", e)
         return _memory_consume(scope, key, limit=limit, window_seconds=window_seconds)
 
 
 def is_rate_limited(scope: str, key: str, *, limit: int, window_seconds: int = 60) -> bool:
     """Prefer :func:`consume_rate_limit` when building 429 responses (avoids double-counting)."""
-    return consume_rate_limit(scope, key, limit=limit, window_seconds=window_seconds).limited
+    o = consume_rate_limit(scope, key, limit=limit, window_seconds=window_seconds)
+    return o.limited or o.unavailable

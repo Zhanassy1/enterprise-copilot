@@ -4,6 +4,7 @@ from sqlalchemy import text
 from sqlalchemy.exc import OperationalError
 
 from app.core.config import Settings
+from app.core.redis_ping import ping_redis_url
 from app.db.session import engine
 
 
@@ -34,9 +35,23 @@ def register_health_routes(app: FastAPI, settings: Settings) -> None:
         try:
             with engine.connect() as conn:
                 conn.execute(text("SELECT 1"))
-            return {"ok": True, "db": True}
         except OperationalError:
             return JSONResponse(
                 status_code=503,
                 content={"ok": False, "db": False, "detail": "Database unavailable — run Docker: docker compose up -d db"},
             )
+
+        want_redis = (
+            settings.environment.lower().strip() == "production" or bool(settings.readiness_include_redis)
+        )
+        if want_redis:
+            try:
+                ping_redis_url(settings.redis_url)
+            except Exception:
+                return JSONResponse(
+                    status_code=503,
+                    content={"ok": False, "db": True, "redis": False, "detail": "Redis unavailable"},
+                )
+            return {"ok": True, "db": True, "redis": True}
+
+        return {"ok": True, "db": True}

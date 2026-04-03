@@ -21,6 +21,9 @@ class OpsSettings(BaseModel):
     celery_task_always_eager: bool = Field(default=False)
     celery_task_eager_propagates: bool = Field(default=True)
 
+    # When True, /readyz pings Redis in addition to DB (also automatic when ENVIRONMENT=production).
+    readiness_include_redis: bool = Field(default=False)
+
     observability_metrics_enabled: bool = Field(default=True)
     sentry_dsn: str = Field(default="")
     sentry_traces_sample_rate: float = Field(default=0.0, ge=0.0, le=1.0)

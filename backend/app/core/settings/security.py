@@ -10,6 +10,8 @@ class SecuritySettings(BaseModel):
     production_require_s3_backend: bool = Field(default=True)
     # When True and ENVIRONMENT=production, TRUSTED_PROXY_IPS must be non-empty (API always behind a known LB/ingress).
     production_require_trusted_proxy_ips: bool = Field(default=True)
+    # When True and ENVIRONMENT=production, Redis must be reachable for distributed rate limiting (no per-process fallback).
+    production_require_redis_rate_limiting: bool = Field(default=True)
     access_token_exp_minutes: int = Field(default=60 * 24)
     refresh_token_exp_days: int = Field(default=14, ge=1, le=365)
     email_verification_token_exp_minutes: int = Field(default=60 * 24, ge=5, le=60 * 24 * 30)

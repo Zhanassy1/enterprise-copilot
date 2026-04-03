@@ -6,6 +6,7 @@ import re
 from urllib.parse import urlparse
 
 from app.core.config import Settings
+from app.core.redis_ping import ping_redis_url
 
 
 def _normalize_jdbc_url(database_url: str) -> str:
@@ -100,6 +101,12 @@ def validate_production_settings(settings: Settings) -> None:
             "(ingestion runs in Celery worker only)"
         )
 
+    if settings.celery_task_always_eager:
+        raise RuntimeError(
+            "Production configuration invalid: CELERY_TASK_ALWAYS_EAGER must be false in production "
+            "(tasks must run on workers, not in the API process)"
+        )
+
     if settings.allow_sync_ingestion_for_dev:
         raise RuntimeError(
             "Production configuration invalid: ALLOW_SYNC_INGESTION_FOR_DEV must be false in production "
@@ -114,6 +121,16 @@ def validate_production_settings(settings: Settings) -> None:
         rerr = _redis_url_missing_password_in_production(url)
         if rerr:
             raise RuntimeError(f"Production configuration invalid ({label}): {rerr}")
+
+    if settings.production_require_redis_rate_limiting:
+        for label, url in urls_to_check:
+            try:
+                ping_redis_url(url)
+            except Exception as e:
+                raise RuntimeError(
+                    "Production configuration invalid: cannot reach Redis for rate limiting / Celery "
+                    f"({label}): {type(e).__name__}"
+                ) from e
 
     sb = settings.storage_backend.lower().strip()
     if settings.production_require_s3_backend and sb != "s3":

@@ -3,6 +3,7 @@ import logging
 from celery import Celery
 
 from app.core.config import settings
+from app.core.startup_checks import validate_settings
 
 logger = logging.getLogger(__name__)
 
@@ -28,6 +29,8 @@ celery_app.conf.update(
     accept_content=["json"],
     event_serializer="json",
 )
+
+validate_settings(settings)
 
 try:
     from celery.signals import worker_process_init

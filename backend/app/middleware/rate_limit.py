@@ -59,6 +59,17 @@ def _json_429(detail: str, request_id: str, outcome: RateLimitOutcome) -> JSONRe
     )
 
 
+def _json_503_rate_limit_backend(request_id: str, outcome: RateLimitOutcome) -> JSONResponse:
+    return JSONResponse(
+        status_code=503,
+        content={"detail": "Rate limiting backend unavailable"},
+        headers={
+            "X-Request-Id": request_id,
+            "Retry-After": str(outcome.retry_after),
+        },
+    )
+
+
 class RateLimitMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next):
         path = request.url.path
@@ -84,6 +95,8 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
             }:
                 lim = int(rl["auth_ip"])
                 out = consume_rate_limit("auth_ip", ip, limit=lim)
+                if out.unavailable:
+                    return _json_503_rate_limit_backend(request_id, out)
                 if out.limited:
                     return _json_429(
                         "Rate limit exceeded for authentication",
@@ -93,6 +106,8 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
             if method_u == "POST" and path == f"{settings.api_v1_prefix}/documents/upload" and user_token:
                 lim = int(rl["upload_user"])
                 out = consume_rate_limit("upload_user", user_token, limit=lim)
+                if out.unavailable:
+                    return _json_503_rate_limit_backend(request_id, out)
                 if out.limited:
                     return _json_429("Rate limit exceeded for uploads", request_id, out)
 
@@ -106,6 +121,8 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
             ):
                 lim = int(rl["rag_user"])
                 out = consume_rate_limit("rag_user", user_token, limit=lim)
+                if out.unavailable:
+                    return _json_503_rate_limit_backend(request_id, out)
                 if out.limited:
                     return _json_429(
                         "Rate limit exceeded for search/chat (RAG)",
@@ -115,12 +132,16 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
 
             lim_ip = int(rl["per_ip"])
             out_ip = consume_rate_limit("ip", ip, limit=lim_ip)
+            if out_ip.unavailable:
+                return _json_503_rate_limit_backend(request_id, out_ip)
             if out_ip.limited:
                 return _json_429("Rate limit exceeded for IP", request_id, out_ip)
 
             if user_token:
                 lim_u = int(rl["per_user"])
                 out_u = consume_rate_limit("user", user_token, limit=lim_u)
+                if out_u.unavailable:
+                    return _json_503_rate_limit_backend(request_id, out_u)
                 if out_u.limited:
                     return _json_429("Rate limit exceeded for user", request_id, out_u)
 
