@@ -68,11 +68,49 @@ export interface UserOut {
   id: string;
   email: string;
   full_name?: string | null;
+  email_verified?: boolean;
+  is_platform_admin?: boolean;
+}
+
+export interface MeOut extends UserOut {
+  impersonator_id?: string | null;
 }
 
 export interface Token {
   access_token: string;
   token_type: string;
+  refresh_token?: string | null;
+}
+
+export interface SubscriptionOut {
+  plan_slug: string;
+  subscription_status: string | null;
+  current_period_end: string | null;
+  grace_ends_at: string | null;
+  past_due_banner: boolean;
+  banner_message: string | null;
+}
+
+export interface BillingUrlOut {
+  url: string;
+}
+
+export interface InvitationOut {
+  id: string;
+  email: string;
+  role: string;
+  status: string;
+  expires_at: string | null;
+  created_at: string;
+}
+
+export interface InviteValidateOut {
+  workspace_id: string;
+  workspace_name: string;
+  email: string;
+  role: string;
+  expires_at: string | null;
+  user_exists: boolean;
 }
 
 export interface DocumentOut {
@@ -210,6 +248,82 @@ export const api = {
     request<Token>("/auth/login", {
       method: "POST",
       body: JSON.stringify({ email, password }),
+    }),
+
+  getMe: () => request<MeOut>("/auth/me"),
+
+  validateInvite: (token: string) =>
+    request<InviteValidateOut>(`/invitations/validate?token=${encodeURIComponent(token)}`),
+
+  acceptInvite: (token: string, password?: string | null, fullName?: string | null) =>
+    request<Token>("/invitations/accept", {
+      method: "POST",
+      body: JSON.stringify({
+        token,
+        password: password ?? null,
+        full_name: fullName ?? null,
+      }),
+    }),
+
+  createWorkspaceInvitation: (workspaceId: string, email: string, role: string) =>
+    request<InvitationOut>(`/workspaces/${workspaceId}/invitations`, {
+      method: "POST",
+      body: JSON.stringify({ email, role }),
+    }),
+
+  listWorkspaceInvitations: (workspaceId: string) =>
+    request<InvitationOut[]>(`/workspaces/${workspaceId}/invitations`),
+
+  revokeWorkspaceInvitation: (workspaceId: string, invitationId: string) =>
+    request<{ status: string }>(
+      `/workspaces/${workspaceId}/invitations/${invitationId}/revoke`,
+      { method: "POST", body: "{}" }
+    ),
+
+  resendWorkspaceInvitation: (workspaceId: string, invitationId: string) =>
+    request<InvitationOut>(
+      `/workspaces/${workspaceId}/invitations/${invitationId}/resend`,
+      { method: "POST", body: "{}" }
+    ),
+
+  getBillingSubscription: () => request<SubscriptionOut>("/billing/subscription"),
+
+  createBillingPortal: (returnUrl: string) =>
+    request<BillingUrlOut>("/billing/portal", {
+      method: "POST",
+      body: JSON.stringify({ return_url: returnUrl }),
+    }),
+
+  createBillingCheckout: (successUrl?: string | null, cancelUrl?: string | null) =>
+    request<BillingUrlOut>("/billing/checkout", {
+      method: "POST",
+      body: JSON.stringify({
+        success_url: successUrl ?? null,
+        cancel_url: cancelUrl ?? null,
+      }),
+    }),
+
+  adminImpersonate: (userId: string) =>
+    request<Token>("/admin/impersonation/start", {
+      method: "POST",
+      body: JSON.stringify({ user_id: userId }),
+    }),
+
+  adminWorkspaceUsage: (workspaceId: string) =>
+    request<UsageSummaryOut>(`/admin/workspaces/${workspaceId}/usage`),
+
+  adminQuotaAdjust: (
+    workspaceId: string,
+    body: {
+      monthly_request_limit?: number | null;
+      monthly_token_limit?: number | null;
+      extend_grace_days?: number | null;
+      plan_slug?: string | null;
+    }
+  ) =>
+    request<{ ok: string }>(`/admin/workspaces/${workspaceId}/quota`, {
+      method: "POST",
+      body: JSON.stringify(body),
     }),
 
   listDocuments: () => request<DocumentOut[]>("/documents"),

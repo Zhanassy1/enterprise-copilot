@@ -86,6 +86,10 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
 
         request_id = getattr(request.state, "request_id", None) or str(uuid.uuid4())
 
+        _pfx = settings.api_v1_prefix.rstrip("/")
+        if method_u == "POST" and path.rstrip("/") == f"{_pfx}/billing/webhooks/stripe":
+            return await call_next(request)
+
         _skip_rl_for_integration = os.environ.get("RUN_INTEGRATION_TESTS") == "1"
         if not _skip_rl_for_integration:
             if method_u == "POST" and path in {
@@ -111,7 +115,6 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
                 if out.limited:
                     return _json_429("Rate limit exceeded for uploads", request_id, out)
 
-            _pfx = settings.api_v1_prefix.rstrip("/")
             if method_u == "POST" and user_token and (
                 path == f"{_pfx}/search"
                 or (

@@ -1,5 +1,6 @@
 "use client";
 
+import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { Info, Mail, UserCog, Users } from "lucide-react";
 import { PageHeader } from "@/components/shared/page-header";
@@ -11,6 +12,9 @@ import { WorkspaceContextStrip } from "@/components/workspace/workspace-context-
 import { workspaceRoleLabel } from "@/lib/product-terminology";
 import { isOwnerOrAdmin, normalizeWorkspaceRole } from "@/lib/workspace-role";
 import { siteUrls } from "@/lib/site-urls";
+import { api, toErrorMessage, type InvitationOut } from "@/lib/api-client";
+import { toast } from "sonner";
+import { Input } from "@/components/ui/input";
 
 const ROLE_KEYS = ["owner", "admin", "member", "viewer"] as const;
 
@@ -64,9 +68,9 @@ const ROLE_MATRIX: { cap: string; owner: string; admin: string; member: string; 
     viewer: "По политике API",
   },
   {
-    cap: "Пригласить участника (когда будет API)",
-    owner: "Будет доступно",
-    admin: "Будет доступно",
+    cap: "Пригласить участника",
+    owner: "Да",
+    admin: "Да",
     member: "Нет",
     viewer: "Нет",
   },
@@ -77,6 +81,61 @@ export default function TeamPage() {
   const role = currentWorkspace?.role ?? "";
   const admin = isOwnerOrAdmin(role);
   const colKey = currentWorkspace ? roleColumnKey(currentWorkspace.role) : null;
+  const [invites, setInvites] = useState<InvitationOut[]>([]);
+  const [inviteEmail, setInviteEmail] = useState("");
+  const [inviteRole, setInviteRole] = useState("member");
+  const [invLoading, setInvLoading] = useState(false);
+
+  const loadInvites = useCallback(async () => {
+    if (!currentWorkspace?.id || !admin) return;
+    try {
+      const rows = await api.listWorkspaceInvitations(currentWorkspace.id);
+      setInvites(rows);
+    } catch (e) {
+      toast.error(toErrorMessage(e));
+    }
+  }, [admin, currentWorkspace?.id]);
+
+  useEffect(() => {
+    void loadInvites();
+  }, [loadInvites]);
+
+  const sendInvite = async () => {
+    if (!currentWorkspace?.id) return;
+    setInvLoading(true);
+    try {
+      await api.createWorkspaceInvitation(currentWorkspace.id, inviteEmail.trim(), inviteRole);
+      toast.success("Приглашение отправлено");
+      setInviteEmail("");
+      await loadInvites();
+    } catch (e) {
+      toast.error(toErrorMessage(e));
+    } finally {
+      setInvLoading(false);
+    }
+  };
+
+  const revokeInvite = async (id: string) => {
+    if (!currentWorkspace?.id) return;
+    try {
+      await api.revokeWorkspaceInvitation(currentWorkspace.id, id);
+      toast.success("Приглашение отозвано");
+      await loadInvites();
+    } catch (e) {
+      toast.error(toErrorMessage(e));
+    }
+  };
+
+  const resendInvite = async (id: string) => {
+    if (!currentWorkspace?.id) return;
+    try {
+      await api.resendWorkspaceInvitation(currentWorkspace.id, id);
+      toast.success("Письмо отправлено повторно");
+      await loadInvites();
+    } catch (e) {
+      toast.error(toErrorMessage(e));
+    }
+  };
 
   return (
     <div className="space-y-6">
@@ -270,52 +329,102 @@ export default function TeamPage() {
               <Mail className="h-4 w-4" aria-hidden />
               Приглашения по email
             </CardTitle>
+            <p className="text-xs text-muted-foreground">
+              Ссылка в письме ведёт на страницу принятия; для существующего пользователя нужен вход под тем же email.
+            </p>
           </CardHeader>
           <CardContent className="space-y-4 text-sm text-muted-foreground">
-            <p>
-              Исходящие приглашения (email, срок ссылки, принятие) подключаются на стороне API. Ниже — та же таблица, что
-              будет в продукте: пока очередь пуста и это явно видно.
-            </p>
-            <ul className="list-inside list-disc space-y-1 text-xs text-muted-foreground">
-              <li>Этап 1: маршрут создания приглашения и запись в очереди.</li>
-              <li>Этап 2: письмо и переход по ссылке для входа в workspace.</li>
-              <li>До запуска: новых людей добавляет оператор развёртывания (учётные записи и доступ).</li>
-            </ul>
+            {admin ? (
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
+                <div className="grid flex-1 gap-2 sm:grid-cols-2">
+                  <div className="space-y-1">
+                    <span className="text-xs font-medium text-foreground">Email</span>
+                    <Input
+                      type="email"
+                      placeholder="colleague@company.com"
+                      value={inviteEmail}
+                      onChange={(e) => setInviteEmail(e.target.value)}
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <span className="text-xs font-medium text-foreground">Роль</span>
+                    <select
+                      className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                      value={inviteRole}
+                      onChange={(e) => setInviteRole(e.target.value)}
+                    >
+                      <option value="admin">Админ</option>
+                      <option value="member">Участник</option>
+                      <option value="viewer">Наблюдатель</option>
+                    </select>
+                  </div>
+                </div>
+                <Button
+                  type="button"
+                  size="sm"
+                  className="gap-2"
+                  disabled={invLoading || !inviteEmail.includes("@")}
+                  onClick={() => void sendInvite()}
+                >
+                  <Mail className="h-4 w-4" aria-hidden />
+                  Отправить
+                </Button>
+              </div>
+            ) : (
+              <p className="rounded-lg border border-border/60 bg-muted/25 p-3 text-xs">
+                Отправка приглашений доступна <span className="font-medium text-foreground">владельцу</span> и{" "}
+                <span className="font-medium text-foreground">администратору</span>.
+              </p>
+            )}
             <div className="overflow-x-auto rounded-lg border bg-card">
-              <table className="w-full min-w-[20rem] text-left text-xs">
+              <table className="w-full min-w-[22rem] text-left text-xs">
                 <thead>
                   <tr className="border-b bg-muted/40 text-[11px] font-medium text-foreground">
                     <th className="p-2.5">Email</th>
                     <th className="p-2.5">Роль</th>
-                    <th className="p-2.5">Статус</th>
+                    <th className="p-2.5">Истекает</th>
+                    {admin ? <th className="p-2.5">Действия</th> : null}
                   </tr>
                 </thead>
                 <tbody>
-                  <tr>
-                    <td className="p-3 text-center text-muted-foreground" colSpan={3}>
-                      Исходящих приглашений нет — очередь готова к первой записи из API
-                    </td>
-                  </tr>
+                  {invites.length === 0 ? (
+                    <tr>
+                      <td className="p-3 text-center text-muted-foreground" colSpan={admin ? 4 : 3}>
+                        Нет ожидающих приглашений
+                      </td>
+                    </tr>
+                  ) : (
+                    invites.map((inv) => (
+                      <tr key={inv.id} className="border-b border-border/60">
+                        <td className="p-2.5 font-medium text-foreground">{inv.email}</td>
+                        <td className="p-2.5">{inv.role}</td>
+                        <td className="p-2.5 text-muted-foreground">
+                          {inv.expires_at ? new Date(inv.expires_at).toLocaleString("ru-RU") : "—"}
+                        </td>
+                        {admin ? (
+                          <td className="p-2.5">
+                            <div className="flex flex-wrap gap-1">
+                              <Button type="button" variant="outline" size="sm" onClick={() => void resendInvite(inv.id)}>
+                                Ещё раз
+                              </Button>
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="sm"
+                                className="text-destructive"
+                                onClick={() => void revokeInvite(inv.id)}
+                              >
+                                Отозвать
+                              </Button>
+                            </div>
+                          </td>
+                        ) : null}
+                      </tr>
+                    ))
+                  )}
                 </tbody>
               </table>
             </div>
-            {admin ? (
-              <div className="rounded-lg border border-dashed border-muted-foreground/35 bg-muted/30 p-3">
-                <Button type="button" variant="secondary" size="sm" className="gap-2" disabled>
-                  <Mail className="h-4 w-4 opacity-60" aria-hidden />
-                  Отправить приглашение
-                </Button>
-                <p className="mt-2 text-xs">
-                  Станет активной после появления маршрутов invitations. Сейчас новых людей в workspace добавляет оператор
-                  развёртывания или отдельный онбординг.
-                </p>
-              </div>
-            ) : (
-              <p className="rounded-lg border border-border/60 bg-muted/25 p-3 text-xs">
-                Отправка приглашений будет доступна <span className="font-medium text-foreground">владельцу</span> и{" "}
-                <span className="font-medium text-foreground">администратору</span> после подключения API.
-              </p>
-            )}
           </CardContent>
         </Card>
       </div>

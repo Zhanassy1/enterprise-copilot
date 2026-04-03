@@ -1,0 +1,12 @@
+{
+  "name": "enterprise-copilot",
+  "private": true,
+  "description": "Root scripts proxy to frontend/ (Next.js). Backend is Python in backend/.",
+  "scripts": {
+    "dev": "npm run dev --prefix frontend",
+    "build": "npm run build --prefix frontend",
+    "start": "npm run start --prefix frontend",
+    "lint": "npm run lint --prefix frontend",
+    "install:frontend": "npm install --prefix frontend"
+  }
+}

@@ -5,6 +5,7 @@ from sqlalchemy import select, update
 
 from app.api.deps import CurrentUser, DbDep
 from app.core.config import settings
+from app.core.platform_admin import user_is_platform_admin
 from app.core.security import (
     create_access_token,
     generate_opaque_token,
@@ -18,6 +19,7 @@ from app.models.user import User
 from app.schemas.auth import (
     LoginIn,
     LogoutIn,
+    MeOut,
     PasswordResetIn,
     RefreshTokenIn,
     RegisterIn,
@@ -65,7 +67,26 @@ def register(payload: RegisterIn, db: DbDep) -> UserOut:
     )
     db.commit()
     db.refresh(user)
-    return UserOut(id=user.id, email=user.email, full_name=user.full_name, email_verified=bool(user.email_verified))
+    return UserOut(
+        id=user.id,
+        email=user.email,
+        full_name=user.full_name,
+        email_verified=bool(user.email_verified),
+        is_platform_admin=user_is_platform_admin(user),
+    )
+
+
+@router.get("/me", response_model=MeOut)
+def auth_me(request: Request, user: CurrentUser) -> MeOut:
+    imp = getattr(request.state, "impersonator_id", None)
+    return MeOut(
+        id=user.id,
+        email=user.email,
+        full_name=user.full_name,
+        email_verified=bool(user.email_verified),
+        is_platform_admin=user_is_platform_admin(user),
+        impersonator_id=imp,
+    )
 
 
 @router.post("/login", response_model=Token)

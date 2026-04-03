@@ -25,6 +25,11 @@ class UserOut(BaseModel):
     email: EmailStr
     full_name: str | None = None
     email_verified: bool = False
+    is_platform_admin: bool = False
+
+
+class MeOut(UserOut):
+    impersonator_id: uuid.UUID | None = None
 
 
 class RefreshTokenIn(BaseModel):

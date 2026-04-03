@@ -12,7 +12,6 @@ from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
-from app.core.debug_log import debug_log
 from app.services.nlp import (
     boilerplate_penalty,
     expand_query,
@@ -241,137 +240,87 @@ def search_chunks_pgvector(
     Returns: [{document_id, chunk_id, chunk_index, text, score}]
     """
     expanded_query = expand_query(query_text)
-    debug_log(
-        hypothesisId="H_db",
-        location="backend/app/services/vector_search.py:search",
-        message="retrieval:execute",
-        data={
-            "top_k": int(top_k),
-            "workspace_id": str(workspace_id),
-            "qvec_type": type(query_embedding).__name__,
-            "qvec_len": len(query_embedding),
-            "qtext_len": len(query_text or ""),
-            "qtext_expanded_len": len(expanded_query),
-        },
+    candidate_k = max(int(top_k) * int(settings.retrieval_candidate_multiplier), int(settings.retrieval_candidate_floor))
+    dense = _dense_candidates(
+        db,
+        workspace_id=workspace_id,
+        query_embedding=query_embedding,
+        candidate_k=candidate_k,
     )
-    try:
-        candidate_k = max(int(top_k) * int(settings.retrieval_candidate_multiplier), int(settings.retrieval_candidate_floor))
-        dense = _dense_candidates(
-            db,
-            workspace_id=workspace_id,
-            query_embedding=query_embedding,
-            candidate_k=candidate_k,
-        )
-        keyword = _keyword_candidates(
-            db,
-            workspace_id=workspace_id,
-            query_text=expanded_query,
-            candidate_k=candidate_k,
-        )
+    keyword = _keyword_candidates(
+        db,
+        workspace_id=workspace_id,
+        query_text=expanded_query,
+        candidate_k=candidate_k,
+    )
 
-        if settings.retrieval_hybrid_enabled:
-            fused = _rrf_fuse(
-                dense,
-                keyword,
-                rrf_k=int(settings.retrieval_rrf_k),
-                dense_weight=float(settings.retrieval_rrf_weight_dense),
-                keyword_weight=float(settings.retrieval_rrf_weight_keyword),
+    if settings.retrieval_hybrid_enabled:
+        fused = _rrf_fuse(
+            dense,
+            keyword,
+            rrf_k=int(settings.retrieval_rrf_k),
+            dense_weight=float(settings.retrieval_rrf_weight_dense),
+            keyword_weight=float(settings.retrieval_rrf_weight_keyword),
+        )
+    else:
+        fused = []
+        for row in dense:
+            fused.append(
+                {
+                    "document_id": row["document_id"],
+                    "chunk_id": row["chunk_id"],
+                    "chunk_index": row["chunk_index"],
+                    "text": row["text"],
+                    "dense_score": float(row.get("dense_score") or 0.0),
+                    "keyword_score": 0.0,
+                    "score": float(row.get("dense_score") or 0.0),
+                }
             )
-        else:
-            fused = []
-            for row in dense:
-                fused.append(
-                    {
-                        "document_id": row["document_id"],
-                        "chunk_id": row["chunk_id"],
-                        "chunk_index": row["chunk_index"],
-                        "text": row["text"],
-                        "dense_score": float(row.get("dense_score") or 0.0),
-                        "keyword_score": 0.0,
-                        "score": float(row.get("dense_score") or 0.0),
-                    }
-                )
 
-        reranked = _apply_quality_heuristics(query_text, fused)
-        penalty_intent = is_penalty_intent(query_text)
-        price_intent = is_price_intent(query_text)
+    reranked = _apply_quality_heuristics(query_text, fused)
+    penalty_intent = is_penalty_intent(query_text)
+    price_intent = is_price_intent(query_text)
 
-        if penalty_intent:
-            intent_hits = [r for r in reranked if int(r.get("_intent_match") or 0) == 1]
-            if intent_hits:
-                reranked = intent_hits
-        if price_intent:
-            def _price_match(row: dict) -> bool:
-                txt = str(row.get("text") or "").lower()
-                return (any(m in txt for m in ("цен", "стоим", "тенге", "kzt", "руб")) and any(ch.isdigit() for ch in txt))
+    if penalty_intent:
+        intent_hits = [r for r in reranked if int(r.get("_intent_match") or 0) == 1]
+        if intent_hits:
+            reranked = intent_hits
+    if price_intent:
+        def _price_match(row: dict) -> bool:
+            txt = str(row.get("text") or "").lower()
+            return (any(m in txt for m in ("цен", "стоим", "тенге", "kzt", "руб")) and any(ch.isdigit() for ch in txt))
 
-            price_hits = [r for r in reranked if _price_match(r)]
-            if price_hits:
-                reranked = price_hits
-        # Keep only chunks with acceptable score to suppress weak/noisy matches.
-        min_score = float(settings.retrieval_min_score)
-        reranked = [r for r in reranked if float(r.get("score") or 0.0) >= min_score]
+        price_hits = [r for r in reranked if _price_match(r)]
+        if price_hits:
+            reranked = price_hits
+    # Keep only chunks with acceptable score to suppress weak/noisy matches.
+    min_score = float(settings.retrieval_min_score)
+    reranked = [r for r in reranked if float(r.get("score") or 0.0) >= min_score]
 
-        # De-duplicate near-identical chunks so context is diverse and useful.
-        deduped: list[dict] = []
-        max_dup_overlap = float(settings.retrieval_max_near_duplicate_overlap)
-        for row in reranked:
-            row_text = str(row.get("text") or "")
-            is_duplicate = False
-            for kept in deduped:
-                kept_text = str(kept.get("text") or "")
-                overlap = keyword_overlap(row_text, kept_text)
-                if overlap >= max_dup_overlap:
-                    is_duplicate = True
-                    break
-            if not is_duplicate:
-                deduped.append(row)
-            if len(deduped) >= int(top_k):
+    # De-duplicate near-identical chunks so context is diverse and useful.
+    deduped: list[dict] = []
+    max_dup_overlap = float(settings.retrieval_max_near_duplicate_overlap)
+    for row in reranked:
+        row_text = str(row.get("text") or "")
+        is_duplicate = False
+        for kept in deduped:
+            kept_text = str(kept.get("text") or "")
+            overlap = keyword_overlap(row_text, kept_text)
+            if overlap >= max_dup_overlap:
+                is_duplicate = True
                 break
-        out = deduped[: int(top_k)]
+        if not is_duplicate:
+            deduped.append(row)
+        if len(deduped) >= int(top_k):
+            break
+    out = deduped[: int(top_k)]
 
-        debug_log(
-            hypothesisId="H_rank",
-            location="backend/app/services/vector_search.py:rank",
-            message="retrieval:top_scores",
-            data={
-                "top3": [
-                    {
-                        "score": float(x.get("score") or 0.0),
-                        "base_score": float(x.get("_base_score") or 0.0),
-                        "overlap": float(x.get("_overlap") or 0.0),
-                        "boiler": float(x.get("_boiler") or 0.0),
-                        "length_penalty": float(x.get("_length_penalty") or 0.0),
-                        "hard_penalty": float(x.get("_hard_penalty") or 0.0),
-                        "intent_match": int(x.get("_intent_match") or 0),
-                        "dense_score": float(x.get("dense_score") or 0.0),
-                        "keyword_score": float(x.get("keyword_score") or 0.0),
-                        "chunk_index": int(x.get("chunk_index") or 0),
-                    }
-                    for x in out[:3]
-                ]
-            },
-        )
-        for row in out:
-            row.pop("_base_score", None)
-            row.pop("_overlap", None)
-            row.pop("_boiler", None)
-            row.pop("_length_penalty", None)
-            row.pop("_hard_penalty", None)
-            row.pop("_intent_match", None)
-        debug_log(
-            hypothesisId="H_db",
-            location="backend/app/services/vector_search.py:done",
-            message="retrieval:ok",
-            data={"hits": len(out)},
-        )
-        return out
-    except Exception as e:
-        debug_log(
-            hypothesisId="H_db",
-            location="backend/app/services/vector_search.py:error",
-            message="retrieval:error",
-            data={"type": type(e).__name__, "msg": str(e)},
-        )
-        raise
+    for row in out:
+        row.pop("_base_score", None)
+        row.pop("_overlap", None)
+        row.pop("_boiler", None)
+        row.pop("_length_penalty", None)
+        row.pop("_hard_penalty", None)
+        row.pop("_intent_match", None)
+    return out
 

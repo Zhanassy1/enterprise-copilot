@@ -12,6 +12,7 @@ import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import Link from "next/link";
 import { Loader2 } from "lucide-react";
+import { siteUrls } from "@/lib/site-urls";
 
 export function RegisterForm() {
   const router = useRouter();
@@ -93,6 +94,17 @@ export function RegisterForm() {
             {loading && <Loader2 className="animate-spin" />}
             Создать аккаунт
           </Button>
+          <p className="text-center text-xs text-muted-foreground">
+            Регистрируясь, вы соглашаетесь с{" "}
+            <a href={siteUrls.termsOfService} target="_blank" rel="noreferrer" className="underline underline-offset-2">
+              условиями
+            </a>{" "}
+            и{" "}
+            <a href={siteUrls.privacyPolicy} target="_blank" rel="noreferrer" className="underline underline-offset-2">
+              политикой конфиденциальности
+            </a>
+            .
+          </p>
           <p className="text-sm text-muted-foreground">
             Уже есть аккаунт?{" "}
             <Link href="/login" className="font-medium text-foreground underline-offset-4 hover:underline">

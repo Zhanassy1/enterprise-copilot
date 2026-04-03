@@ -4,7 +4,14 @@ const repo = (
 
 const repoRoot = `https://github.com/${repo}`;
 
+const terms =
+  process.env.NEXT_PUBLIC_TERMS_URL?.trim() || `${repoRoot}/blob/main/README.md#readme`;
+const privacy =
+  process.env.NEXT_PUBLIC_PRIVACY_URL?.trim() || `${repoRoot}/blob/main/README.md#readme`;
+
 export const siteUrls = {
+  termsOfService: terms,
+  privacyPolicy: privacy,
   githubRepo: repoRoot,
   githubDocs: `${repoRoot}/tree/main/docs`,
   githubReadme: `${repoRoot}/blob/main/README.md`,

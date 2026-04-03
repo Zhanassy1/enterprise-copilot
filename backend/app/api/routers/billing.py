@@ -1,10 +1,21 @@
-from fastapi import APIRouter, Query
+from datetime import UTC, datetime
+
+from fastapi import APIRouter, HTTPException, Query
 from sqlalchemy import func, select
 
-from app.api.deps import DbDep, WorkspaceReadAccess
+from app.api.deps import BillingOwnerAdmin, CurrentUser, DbDep, WorkspaceReadAccess
+from app.core.config import settings
 from app.models.billing import BillingLedgerEntry
 from app.models.document import Document
-from app.schemas.billing_api import BillingLedgerOut, UsageSummaryOut
+from app.schemas.billing_api import (
+    BillingCheckoutIn,
+    BillingLedgerOut,
+    BillingPortalIn,
+    BillingUrlOut,
+    SubscriptionOut,
+    UsageSummaryOut,
+)
+from app.services.stripe_billing import create_billing_portal_session, create_checkout_session
 from app.services.usage_metering import (
     EVENT_CHAT_MESSAGE,
     EVENT_DOCUMENT_UPLOAD,
@@ -17,6 +28,66 @@ from app.services.usage_metering import (
 )
 
 router = APIRouter(prefix="/billing", tags=["billing"])
+
+
+@router.get("/subscription", response_model=SubscriptionOut)
+def billing_subscription(db: DbDep, ws: WorkspaceReadAccess) -> SubscriptionOut:
+    quota = get_or_create_quota(db, ws.workspace.id)
+    status = (quota.subscription_status or "").lower() or None
+    now = datetime.now(UTC)
+    in_grace = quota.grace_ends_at is not None and quota.grace_ends_at > now
+    past_due_banner = status == "past_due" and in_grace
+    msg = None
+    if status == "past_due":
+        msg = "Оплата не прошла, обновите карту в разделе биллинга."
+    return SubscriptionOut(
+        plan_slug=quota.plan_slug,
+        subscription_status=quota.subscription_status,
+        current_period_end=quota.current_period_end,
+        grace_ends_at=quota.grace_ends_at,
+        past_due_banner=past_due_banner,
+        banner_message=msg,
+    )
+
+
+@router.post("/portal", response_model=BillingUrlOut)
+def billing_portal(body: BillingPortalIn, db: DbDep, ws: BillingOwnerAdmin) -> BillingUrlOut:
+    try:
+        url = create_billing_portal_session(db, workspace_id=ws.workspace.id, return_url=body.return_url)
+    except RuntimeError as e:
+        code = str(e)
+        if code == "stripe_not_configured":
+            raise HTTPException(status_code=503, detail="Stripe is not configured") from e
+        raise HTTPException(status_code=400, detail=code) from e
+    return BillingUrlOut(url=url)
+
+
+@router.post("/checkout", response_model=BillingUrlOut)
+def billing_checkout(
+    body: BillingCheckoutIn,
+    db: DbDep,
+    ws: BillingOwnerAdmin,
+    user: CurrentUser,
+) -> BillingUrlOut:
+    base = settings.app_base_url.rstrip("/")
+    success = body.success_url or f"{base}/billing?checkout=success"
+    cancel = body.cancel_url or f"{base}/billing?checkout=cancel"
+    try:
+        url = create_checkout_session(
+            db,
+            workspace_id=ws.workspace.id,
+            success_url=success,
+            cancel_url=cancel,
+            billing_email=user.email,
+        )
+    except RuntimeError as e:
+        code = str(e)
+        if code == "stripe_not_configured":
+            raise HTTPException(status_code=503, detail="Stripe is not configured") from e
+        if code == "stripe_price_not_configured":
+            raise HTTPException(status_code=503, detail="Stripe price id is not configured") from e
+        raise HTTPException(status_code=400, detail=code) from e
+    return BillingUrlOut(url=url)
 
 
 @router.get("/usage", response_model=UsageSummaryOut)

@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class UsageSummaryOut(BaseModel):
@@ -14,6 +14,28 @@ class UsageSummaryOut(BaseModel):
     usage_tokens_month: int
     usage_bytes_month: int
     document_count: int
+
+
+class SubscriptionOut(BaseModel):
+    plan_slug: str
+    subscription_status: str | None
+    current_period_end: datetime | None
+    grace_ends_at: datetime | None
+    past_due_banner: bool
+    banner_message: str | None
+
+
+class BillingPortalIn(BaseModel):
+    return_url: str = Field(min_length=8, max_length=2048)
+
+
+class BillingCheckoutIn(BaseModel):
+    success_url: str | None = Field(default=None, max_length=2048)
+    cancel_url: str | None = Field(default=None, max_length=2048)
+
+
+class BillingUrlOut(BaseModel):
+    url: str
 
 
 class BillingLedgerOut(BaseModel):

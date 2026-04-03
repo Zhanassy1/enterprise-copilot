@@ -2,7 +2,7 @@
 
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { toast } from "sonner";
 import { loginSchema, type LoginValues } from "@/lib/validations";
 import { useAuth } from "@/hooks/use-auth";
@@ -12,9 +12,11 @@ import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import Link from "next/link";
 import { Loader2 } from "lucide-react";
+import { siteUrls } from "@/lib/site-urls";
 
 export function LoginForm() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const { login, loading } = useAuth();
   const {
     register,
@@ -28,7 +30,8 @@ export function LoginForm() {
     const result = await login(data.email, data.password);
     if (result.ok) {
       toast.success("Вы вошли в систему");
-      router.push("/documents");
+      const next = searchParams.get("next");
+      router.push(next && next.startsWith("/") ? next : "/documents");
     } else {
       toast.error(result.error.trim() || "Не удалось войти.");
     }
@@ -71,6 +74,15 @@ export function LoginForm() {
             {loading && <Loader2 className="animate-spin" />}
             Войти
           </Button>
+          <p className="text-center text-xs text-muted-foreground">
+            <a href={siteUrls.termsOfService} target="_blank" rel="noreferrer" className="underline underline-offset-2">
+              Условия использования
+            </a>
+            {" · "}
+            <a href={siteUrls.privacyPolicy} target="_blank" rel="noreferrer" className="underline underline-offset-2">
+              Конфиденциальность
+            </a>
+          </p>
           <p className="text-sm text-muted-foreground">
             Нет аккаунта?{" "}
             <Link href="/register" className="font-medium text-foreground underline-offset-4 hover:underline">

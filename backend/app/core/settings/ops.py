@@ -36,6 +36,15 @@ class OpsSettings(BaseModel):
     email_capture_mode: bool = Field(default=False)
     app_base_url: str = Field(default="http://localhost:3000")
 
+    # Stripe (optional; leave empty for quota-only billing)
+    stripe_secret_key: str = Field(default="")
+    stripe_webhook_secret: str = Field(default="")
+    stripe_price_id: str = Field(default="", description="Default recurring price for Checkout")
+    billing_grace_period_days: int = Field(default=3, ge=1, le=30)
+
+    # Comma-separated emails treated as platform admins (in addition to users.is_platform_admin)
+    platform_admin_emails: str = Field(default="")
+
     @property
     def celery_broker(self) -> str:
         return (self.celery_broker_url or self.redis_url).strip()

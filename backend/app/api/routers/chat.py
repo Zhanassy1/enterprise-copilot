@@ -3,7 +3,7 @@ import uuid
 from fastapi import APIRouter
 from fastapi.responses import StreamingResponse
 
-from app.api.deps import CurrentUser, DbDep, WorkspaceReadAccess, WorkspaceWriteAccess
+from app.api.deps import BillingWorkspaceWriteAccess, CurrentUser, DbDep, WorkspaceReadAccess
 from app.schemas.chat import (
     ChatMessageIn,
     ChatMessageOut,
@@ -21,7 +21,7 @@ def list_sessions(db: DbDep, _user: CurrentUser, ws: WorkspaceReadAccess) -> lis
 
 
 @router.post("/sessions", response_model=ChatSessionOut)
-def create_session(payload: ChatSessionCreateIn, db: DbDep, user: CurrentUser, ws: WorkspaceWriteAccess) -> ChatSessionOut:
+def create_session(payload: ChatSessionCreateIn, db: DbDep, user: CurrentUser, ws: BillingWorkspaceWriteAccess) -> ChatSessionOut:
     return ChatService(db).create_session(ws.workspace.id, user.id, payload.title)
 
 
@@ -31,7 +31,7 @@ def list_messages(session_id: uuid.UUID, db: DbDep, _user: CurrentUser, ws: Work
 
 
 @router.post("/sessions/{session_id}/messages", response_model=ChatReplyOut)
-def send_message(session_id: uuid.UUID, payload: ChatMessageIn, db: DbDep, user: CurrentUser, ws: WorkspaceWriteAccess) -> ChatReplyOut:
+def send_message(session_id: uuid.UUID, payload: ChatMessageIn, db: DbDep, user: CurrentUser, ws: BillingWorkspaceWriteAccess) -> ChatReplyOut:
     return ChatService(db).send_message(ws.workspace.id, user.id, session_id, payload.message, payload.top_k)
 
 
@@ -41,7 +41,7 @@ def send_message_stream(
     payload: ChatMessageIn,
     db: DbDep,
     user: CurrentUser,
-    ws: WorkspaceWriteAccess,
+    ws: BillingWorkspaceWriteAccess,
 ) -> StreamingResponse:
     gen = ChatService(db).iter_chat_sse(ws.workspace.id, user.id, session_id, payload.message, payload.top_k)
     return StreamingResponse(

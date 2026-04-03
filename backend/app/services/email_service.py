@@ -67,3 +67,21 @@ def send_password_reset_email(email: str, token: str) -> bool:
         subject="Enterprise Copilot password reset",
         body=f"Reset password by opening: {link}",
     )
+
+
+def send_workspace_invite_email(
+    *,
+    to_email: str,
+    token: str,
+    workspace_name: str,
+    role_name: str,
+) -> bool:
+    link = f"{settings.app_base_url}/invite?token={token}"
+    return send_email(
+        to_email=to_email,
+        subject=f"Invitation to {workspace_name} on Enterprise Copilot",
+        body=(
+            f"You have been invited to workspace \"{workspace_name}\" as {role_name}.\n\n"
+            f"Accept the invitation: {link}\n"
+        ),
+    )

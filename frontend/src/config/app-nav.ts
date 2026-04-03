@@ -5,6 +5,7 @@ import {
   MessageSquare,
   Search,
   Shield,
+  ShieldEllipsis,
   Users,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
@@ -23,4 +24,5 @@ export const appNavItems: AppNavItem[] = [
   { href: "/billing", label: "План и лимиты", icon: CreditCard },
   { href: "/jobs", label: "Очередь обработки", icon: ListTree },
   { href: "/audit", label: "Аудит", icon: Shield },
+  { href: "/admin", label: "Админ", icon: ShieldEllipsis },
 ];

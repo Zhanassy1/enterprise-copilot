@@ -104,6 +104,16 @@ export default function ChatPage() {
           ) : null}
         </div>
         <div className="flex-1 overflow-hidden">
+          {!loadingSessions && sessions.length === 0 && canChatWrite ? (
+            <div className="flex flex-col items-center justify-center gap-3 border-b bg-muted/20 px-4 py-10 text-center">
+              <p className="max-w-sm text-sm text-muted-foreground">
+                Пока нет диалогов. Создайте первый — и задайте вопрос по документам workspace.
+              </p>
+              <Button type="button" onClick={() => void handleCreate()}>
+                Создать первый диалог
+              </Button>
+            </div>
+          ) : null}
           <ChatWindow
             messages={messages}
             loadingMessages={loadingMessages}

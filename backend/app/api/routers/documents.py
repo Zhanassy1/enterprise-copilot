@@ -5,7 +5,7 @@ from fastapi import APIRouter, Body, File, HTTPException, UploadFile
 from fastapi.responses import RedirectResponse, Response
 from sqlalchemy import select
 
-from app.api.deps import CurrentUser, DbDep, WorkspaceReadAccess, WorkspaceWriteAccess
+from app.api.deps import BillingWorkspaceWriteAccess, CurrentUser, DbDep, WorkspaceReadAccess
 from app.core.config import settings
 from app.models.document import IngestionJob
 from app.schemas.common_api import EmptyJSONBody
@@ -36,7 +36,7 @@ def list_documents(db: DbDep, _user: CurrentUser, ws: WorkspaceReadAccess) -> li
 
 
 @router.post("/upload", response_model=DocumentIngestOut)
-def upload_document(db: DbDep, user: CurrentUser, ws: WorkspaceWriteAccess, file: UploadFile = File(...)) -> DocumentIngestOut:
+def upload_document(db: DbDep, user: CurrentUser, ws: BillingWorkspaceWriteAccess, file: UploadFile = File(...)) -> DocumentIngestOut:
     service = DocumentIngestionService(db, get_storage_service())
     return service.upload_document(user.id, ws.workspace, file)
 
@@ -45,7 +45,7 @@ def upload_document(db: DbDep, user: CurrentUser, ws: WorkspaceWriteAccess, file
 def reindex_embeddings(
     db: DbDep,
     _user: CurrentUser,
-    ws: WorkspaceWriteAccess,
+    ws: BillingWorkspaceWriteAccess,
     _body: EmptyJSONBody | None = Body(default=None),
 ) -> ReindexEmbeddingsOut:
     """Backfill embedding_vector for chunks where NULL. Runs in Celery when async ingestion is enabled."""
@@ -124,7 +124,7 @@ def download_document(
 
 
 @router.delete("/{document_id}")
-def delete_document(document_id: uuid.UUID, db: DbDep, user: CurrentUser, ws: WorkspaceWriteAccess) -> dict:
+def delete_document(document_id: uuid.UUID, db: DbDep, user: CurrentUser, ws: BillingWorkspaceWriteAccess) -> dict:
     service = DocumentIngestionService(db, get_storage_service())
     doc = service.get_document(ws.workspace.id, document_id)
     if not doc:

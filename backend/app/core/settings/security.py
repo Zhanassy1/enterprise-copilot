@@ -16,6 +16,7 @@ class SecuritySettings(BaseModel):
     refresh_token_exp_days: int = Field(default=14, ge=1, le=365)
     email_verification_token_exp_minutes: int = Field(default=60 * 24, ge=5, le=60 * 24 * 30)
     password_reset_token_exp_minutes: int = Field(default=30, ge=5, le=60 * 24)
+    workspace_invitation_exp_hours: int = Field(default=168, ge=1, le=24 * 60)
     rate_limit_per_user_per_minute: int = Field(default=120, ge=10, le=2000)
     rate_limit_per_ip_per_minute: int = Field(default=240, ge=10, le=5000)
     # Stricter limits for brute-force / abuse-prone endpoints (applied in addition to global IP/user limits).

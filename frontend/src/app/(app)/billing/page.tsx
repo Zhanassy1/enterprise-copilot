@@ -20,6 +20,8 @@ import { InAppPlanComparison } from "@/components/billing/in-app-plan-comparison
 import { nextPublicPlanSlug, planDisplayName, normalizePlanSlug } from "@/lib/plan-labels";
 import { siteUrls } from "@/lib/site-urls";
 import { WorkspaceContextStrip } from "@/components/workspace/workspace-context-strip";
+import { useWorkspace } from "@/components/workspace/workspace-provider";
+import { isOwnerOrAdmin } from "@/lib/workspace-role";
 
 function monthPeriodLabelUtc(): string {
   const d = new Date();
@@ -51,10 +53,41 @@ function usageAlerts(data: UsageSummaryOut): string[] {
 }
 
 export default function BillingPage() {
+  const { currentWorkspace } = useWorkspace();
+  const canBilling = isOwnerOrAdmin(currentWorkspace?.role ?? "");
   const [data, setData] = useState<UsageSummaryOut | null>(null);
   const [ledger, setLedger] = useState<BillingLedgerOut[]>([]);
   const [err, setErr] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [billingAct, setBillingAct] = useState(false);
+
+  const openPortal = async () => {
+    if (!canBilling) return;
+    setBillingAct(true);
+    try {
+      const base =
+        typeof window !== "undefined" ? `${window.location.origin}/billing` : "http://localhost:3000/billing";
+      const { url } = await api.createBillingPortal(base);
+      window.location.assign(url);
+    } catch (e) {
+      toast.error(toErrorMessage(e));
+    } finally {
+      setBillingAct(false);
+    }
+  };
+
+  const openCheckout = async () => {
+    if (!canBilling) return;
+    setBillingAct(true);
+    try {
+      const { url } = await api.createBillingCheckout();
+      window.location.assign(url);
+    } catch (e) {
+      toast.error(toErrorMessage(e));
+    } finally {
+      setBillingAct(false);
+    }
+  };
 
   const reload = () => {
     setLoading(true);
@@ -94,6 +127,25 @@ export default function BillingPage() {
       />
 
       <WorkspaceContextStrip area="план, лимиты и счётчики usage относятся к этому workspace" />
+
+      {canBilling ? (
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-base">Онлайн-оплата (Stripe)</CardTitle>
+            <p className="text-sm text-muted-foreground">
+              Портал Stripe — смена карты, счета и тарифа. Checkout — оформить подписку, если включён в развёртывании.
+            </p>
+          </CardHeader>
+          <CardContent className="flex flex-wrap gap-2">
+            <Button type="button" variant="default" size="sm" disabled={billingAct} onClick={() => void openCheckout()}>
+              Оформить подписку
+            </Button>
+            <Button type="button" variant="outline" size="sm" disabled={billingAct} onClick={() => void openPortal()}>
+              Клиентский портал биллинга
+            </Button>
+          </CardContent>
+        </Card>
+      ) : null}
 
       <Card className="border-primary/30 bg-gradient-to-br from-primary/8 via-background to-background">
         <CardHeader className="pb-2">
