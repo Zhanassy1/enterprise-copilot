@@ -1,8 +1,7 @@
+import uuid
 from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Annotated
-
-import uuid
 
 from fastapi import Depends, Header, HTTPException
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
@@ -35,14 +34,14 @@ def get_current_user(
         if not sub:
             raise HTTPException(status_code=401, detail="Invalid token")
     except ExpiredSignatureError:
-        raise HTTPException(status_code=401, detail="Token expired")
+        raise HTTPException(status_code=401, detail="Token expired") from None
     except PyJWTError:
-        raise HTTPException(status_code=401, detail="Invalid token")
+        raise HTTPException(status_code=401, detail="Invalid token") from None
 
     try:
         user_id = uuid.UUID(str(sub))
     except ValueError:
-        raise HTTPException(status_code=401, detail="Invalid token")
+        raise HTTPException(status_code=401, detail="Invalid token") from None
 
     user = db.scalar(select(User).where(User.id == user_id))
     if not user:
@@ -73,7 +72,7 @@ def get_workspace_context(
         try:
             workspace_uuid = uuid.UUID(x_workspace_id)
         except ValueError:
-            raise HTTPException(status_code=400, detail="Invalid X-Workspace-Id")
+            raise HTTPException(status_code=400, detail="Invalid X-Workspace-Id") from None
 
         membership = db.scalar(
             select(WorkspaceMember)

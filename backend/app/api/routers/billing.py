@@ -1,3 +1,4 @@
+from fastapi import APIRouter, Query
 from sqlalchemy import func, select
 
 from app.api.deps import DbDep, WorkspaceReadAccess
@@ -14,8 +15,6 @@ from app.services.usage_metering import (
     get_or_create_quota,
     month_window,
 )
-
-from fastapi import APIRouter, Query
 
 router = APIRouter(prefix="/billing", tags=["billing"])
 

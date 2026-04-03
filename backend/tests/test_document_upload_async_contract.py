@@ -1,9 +1,9 @@
 import io
 import os
-import uuid
 import unittest
+import uuid
 from contextlib import contextmanager
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from types import SimpleNamespace
 from unittest.mock import patch
 
@@ -39,7 +39,7 @@ class _FakeDb:
 
     def add(self, obj) -> None:
         if getattr(obj, "id", None) is None:
-            setattr(obj, "id", uuid.uuid4())
+            obj.id = uuid.uuid4()
         self._objects.append(obj)
 
     def flush(self) -> None:
@@ -59,7 +59,7 @@ class _FakeDb:
 
     def refresh(self, obj) -> None:
         if getattr(obj, "created_at", None) is None:
-            obj.created_at = datetime.now(timezone.utc)
+            obj.created_at = datetime.now(UTC)
 
 
 class DocumentUploadAsyncContractTests(unittest.TestCase):

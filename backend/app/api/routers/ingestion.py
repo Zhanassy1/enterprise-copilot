@@ -1,4 +1,3 @@
-import uuid
 
 from fastapi import APIRouter, Query
 from sqlalchemy import select

@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 import logging
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from fastapi import HTTPException
 from sqlalchemy import select
@@ -25,8 +25,14 @@ from app.services.nlp import (
     decide_response_mode,
     filter_ungrounded_sentences,
 )
+from app.services.usage_metering import (
+    EVENT_CHAT_MESSAGE,
+    EVENT_TOKENS,
+    assert_quota,
+    estimate_tokens,
+    record_event,
+)
 from app.services.vector_search import search_chunks_pgvector
-from app.services.usage_metering import EVENT_CHAT_MESSAGE, EVENT_TOKENS, assert_quota, estimate_tokens, record_event
 
 logger = logging.getLogger(__name__)
 
@@ -166,7 +172,7 @@ class ChatService:
         )
         self.db.add(user_msg)
         self.db.add(assistant_msg)
-        session.updated_at = datetime.now(timezone.utc)
+        session.updated_at = datetime.now(UTC)
         self.db.add(session)
         record_event(
             self.db,
@@ -334,7 +340,7 @@ class ChatService:
             )
             self.db.add(user_msg)
             self.db.add(assistant_msg)
-            session.updated_at = datetime.now(timezone.utc)
+            session.updated_at = datetime.now(UTC)
             self.db.add(session)
             record_event(
                 self.db,

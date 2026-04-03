@@ -4,9 +4,9 @@ Requires PostgreSQL (same as test_api_integration). Run: RUN_INTEGRATION_TESTS=1
 """
 
 import os
-import uuid
 import unittest
-from datetime import datetime, timezone
+import uuid
+from datetime import UTC, datetime
 from unittest.mock import patch
 
 from fastapi.testclient import TestClient
@@ -103,8 +103,8 @@ class CrossWorkspaceAccessTests(unittest.TestCase):
                 storage_key="/tmp/cross_workspace_placeholder_not_read",
                 status="ready",
                 file_size_bytes=10,
-                created_at=datetime.now(timezone.utc),
-                updated_at=datetime.now(timezone.utc),
+                created_at=datetime.now(UTC),
+                updated_at=datetime.now(UTC),
             )
             db.add(doc_b)
             db.flush()
@@ -307,8 +307,8 @@ class CrossWorkspaceAccessTests(unittest.TestCase):
                 storage_key="/tmp/cross_ws_admin_del_placeholder",
                 status="ready",
                 file_size_bytes=5,
-                created_at=datetime.now(timezone.utc),
-                updated_at=datetime.now(timezone.utc),
+                created_at=datetime.now(UTC),
+                updated_at=datetime.now(UTC),
             )
             db.add(doc)
             db.commit()

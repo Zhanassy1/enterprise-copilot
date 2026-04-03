@@ -12,7 +12,7 @@ class DocumentIndexingPageCapTests(unittest.TestCase):
     def test_raises_when_pages_exceed_plan_limit(self) -> None:
         mock_db = MagicMock()
         storage = MagicMock()
-        ctx = storage.local_path.return_value.__enter__.return_value
+        storage.local_path.return_value.__enter__.return_value = MagicMock()
         storage.local_path.return_value.__exit__.return_value = None
 
         doc = SimpleNamespace(

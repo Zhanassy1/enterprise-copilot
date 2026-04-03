@@ -1,10 +1,9 @@
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 from fastapi import APIRouter, Body, HTTPException, Request
 from sqlalchemy import select, update
 
 from app.api.deps import CurrentUser, DbDep
-from app.core.trusted_proxy import get_effective_client_ip
 from app.core.config import settings
 from app.core.security import (
     create_access_token,
@@ -13,9 +12,9 @@ from app.core.security import (
     hash_password,
     verify_password,
 )
+from app.core.trusted_proxy import get_effective_client_ip
 from app.models.security import EmailVerificationToken, PasswordResetToken, RefreshToken
 from app.models.user import User
-from app.schemas.common_api import EmptyJSONBody
 from app.schemas.auth import (
     LoginIn,
     LogoutIn,
@@ -27,6 +26,7 @@ from app.schemas.auth import (
     UserOut,
     VerifyEmailIn,
 )
+from app.schemas.common_api import EmptyJSONBody
 from app.services.audit import write_audit_log
 from app.services.email_service import send_password_reset_email, send_verification_email
 from app.services.workspace_service import create_personal_workspace
@@ -49,7 +49,7 @@ def register(payload: RegisterIn, db: DbDep) -> UserOut:
         EmailVerificationToken(
             user_id=user.id,
             token_hash=hash_opaque_token(verify_token),
-            expires_at=datetime.now(timezone.utc) + timedelta(minutes=int(settings.email_verification_token_exp_minutes)),
+            expires_at=datetime.now(UTC) + timedelta(minutes=int(settings.email_verification_token_exp_minutes)),
             used=False,
         )
     )
@@ -93,7 +93,7 @@ def login(payload: LoginIn, db: DbDep, request: Request) -> Token:
         RefreshToken(
             user_id=user.id,
             token_hash=hash_opaque_token(refresh_token),
-            expires_at=datetime.now(timezone.utc) + timedelta(days=int(settings.refresh_token_exp_days)),
+            expires_at=datetime.now(UTC) + timedelta(days=int(settings.refresh_token_exp_days)),
             revoked=False,
         )
     )
@@ -167,7 +167,7 @@ def refresh_token(payload: RefreshTokenIn, db: DbDep) -> Token:
         )
         db.commit()
         raise HTTPException(status_code=401, detail="Refresh token reuse detected; all sessions revoked")
-    if token_row.expires_at < datetime.now(timezone.utc):
+    if token_row.expires_at < datetime.now(UTC):
         raise HTTPException(status_code=401, detail="Refresh token expired")
 
     token_row.revoked = True
@@ -176,7 +176,7 @@ def refresh_token(payload: RefreshTokenIn, db: DbDep) -> Token:
         RefreshToken(
             user_id=token_row.user_id,
             token_hash=hash_opaque_token(new_refresh),
-            expires_at=datetime.now(timezone.utc) + timedelta(days=int(settings.refresh_token_exp_days)),
+            expires_at=datetime.now(UTC) + timedelta(days=int(settings.refresh_token_exp_days)),
             revoked=False,
         )
     )
@@ -194,7 +194,7 @@ def request_password_reset(payload: RequestPasswordResetIn, db: DbDep) -> dict:
         PasswordResetToken(
             user_id=user.id,
             token_hash=hash_opaque_token(token),
-            expires_at=datetime.now(timezone.utc) + timedelta(minutes=int(settings.password_reset_token_exp_minutes)),
+            expires_at=datetime.now(UTC) + timedelta(minutes=int(settings.password_reset_token_exp_minutes)),
             used=False,
         )
     )
@@ -218,7 +218,7 @@ def reset_password(payload: PasswordResetIn, db: DbDep) -> dict:
     row = db.scalar(
         select(PasswordResetToken).where(PasswordResetToken.token_hash == token_hash, PasswordResetToken.used.is_(False))
     )
-    if not row or row.expires_at < datetime.now(timezone.utc):
+    if not row or row.expires_at < datetime.now(UTC):
         raise HTTPException(status_code=400, detail="Invalid or expired reset token")
     user = db.scalar(select(User).where(User.id == row.user_id))
     if not user:
@@ -247,7 +247,7 @@ def verify_email(payload: VerifyEmailIn, db: DbDep) -> dict:
     row = db.scalar(
         select(EmailVerificationToken).where(EmailVerificationToken.token_hash == token_hash, EmailVerificationToken.used.is_(False))
     )
-    if not row or row.expires_at < datetime.now(timezone.utc):
+    if not row or row.expires_at < datetime.now(UTC):
         raise HTTPException(status_code=400, detail="Invalid or expired verification token")
     user = db.scalar(select(User).where(User.id == row.user_id))
     if not user:

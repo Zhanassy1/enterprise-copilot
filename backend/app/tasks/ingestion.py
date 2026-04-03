@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import logging
 import uuid
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 from celery import Task
 from sqlalchemy import select
@@ -12,7 +12,10 @@ from app.core.config import settings
 from app.db.session import SessionLocal
 from app.models.document import Document, IngestionJob
 from app.services.audit import write_audit_log
-from app.services.document_indexing import DocumentIndexingService, reindex_null_embeddings_for_workspace
+from app.services.document_indexing import (
+    DocumentIndexingService,
+    reindex_null_embeddings_for_workspace,
+)
 from app.services.storage import get_storage_service
 
 logger = logging.getLogger(__name__)
@@ -22,7 +25,7 @@ ingestion_retries_total = 0
 
 
 def _utcnow() -> datetime:
-    return datetime.now(timezone.utc)
+    return datetime.now(UTC)
 
 
 def _truncate_error(exc: Exception, max_length: int = 3000) -> str:
@@ -198,7 +201,7 @@ def ingest_document_task(
                 ),
             )
             ingestion_retries_total += 1
-            raise self.retry(exc=exc, countdown=delay)
+            raise self.retry(exc=exc, countdown=delay)  # noqa: B904
 
         ingestion_terminal_failures_total += 1
         job.status = "failed"

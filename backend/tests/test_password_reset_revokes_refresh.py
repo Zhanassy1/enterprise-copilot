@@ -2,7 +2,7 @@
 
 import unittest
 import uuid
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from unittest.mock import MagicMock, patch
 
 from app.api.routers import auth as auth_router
@@ -14,7 +14,7 @@ class PasswordResetRevokesRefreshTests(unittest.TestCase):
         uid = uuid.uuid4()
         token_row = MagicMock()
         token_row.user_id = uid
-        token_row.expires_at = datetime.now(timezone.utc) + timedelta(hours=1)
+        token_row.expires_at = datetime.now(UTC) + timedelta(hours=1)
         user = MagicMock()
         user.id = uid
         user.password_hash = "old"

@@ -1,6 +1,6 @@
 import os
-import uuid
 import unittest
+import uuid
 
 # Sync indexing for this flow (no Celery worker in integration job). Force override shell/CI INGESTION_ASYNC_ENABLED=1.
 os.environ["INGESTION_ASYNC_ENABLED"] = "0"

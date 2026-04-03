@@ -164,7 +164,7 @@ def build_answer(query: str, hits: list[dict]) -> str:
 
     chunks_text = [str(h.get("text") or "") for h in hits[:6] if h.get("text")]
 
-    from app.services.llm import rag_answer, llm_enabled
+    from app.services.llm import llm_enabled, rag_answer
 
     if llm_enabled():
         llm_result = rag_answer(query, chunks_text)

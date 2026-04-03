@@ -6,10 +6,10 @@ from fastapi.responses import StreamingResponse
 from app.api.deps import CurrentUser, DbDep, WorkspaceReadAccess, WorkspaceWriteAccess
 from app.schemas.chat import (
     ChatMessageIn,
+    ChatMessageOut,
     ChatReplyOut,
     ChatSessionCreateIn,
     ChatSessionOut,
-    ChatMessageOut,
 )
 from app.services.chat_service import ChatService
 

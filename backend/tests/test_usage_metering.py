@@ -1,17 +1,22 @@
 import unittest
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 from fastapi import HTTPException
 
-from app.services.usage_metering import assert_quota, effective_rate_limits_for_plan, estimate_tokens, month_window
+from app.services.usage_metering import (
+    assert_quota,
+    effective_rate_limits_for_plan,
+    estimate_tokens,
+    month_window,
+)
 
 
 class UsageMeteringTests(unittest.TestCase):
     def test_month_window_bounds(self) -> None:
-        dt = datetime(2026, 3, 28, 12, 0, tzinfo=timezone.utc)
+        dt = datetime(2026, 3, 28, 12, 0, tzinfo=UTC)
         start, end = month_window(dt)
         self.assertEqual(start.isoformat(), "2026-03-01T00:00:00+00:00")
         self.assertEqual(end.isoformat(), "2026-04-01T00:00:00+00:00")

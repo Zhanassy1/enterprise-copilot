@@ -4,7 +4,7 @@ import logging
 import os
 import re
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 from fastapi import HTTPException, UploadFile
@@ -222,8 +222,8 @@ class DocumentIngestionService:
             sha256=stored.sha256,
             parser_version="v1",
             indexed_at=None,
-            created_at=datetime.now(timezone.utc),
-            updated_at=datetime.now(timezone.utc),
+            created_at=datetime.now(UTC),
+            updated_at=datetime.now(UTC),
         )
         self.db.add(doc)
         self.db.flush()
@@ -368,6 +368,6 @@ class DocumentIngestionService:
     def delete_document(self, document: Document, workspace_id: uuid.UUID) -> None:
         if document.workspace_id != workspace_id:
             raise HTTPException(status_code=403, detail="Forbidden")
-        document.deleted_at = datetime.now(timezone.utc)
+        document.deleted_at = datetime.now(UTC)
         self.db.add(document)
         self.db.commit()

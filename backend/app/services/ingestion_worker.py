@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import time
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -20,7 +20,7 @@ class IngestionWorkerService:
     def process_next(self) -> bool:
         db: Session = self.db_factory()
         try:
-            now = datetime.now(timezone.utc)
+            now = datetime.now(UTC)
             job = db.scalar(
                 select(IngestionJob)
                 .where(IngestionJob.status == "pending", IngestionJob.available_at <= now)
@@ -41,7 +41,7 @@ class IngestionWorkerService:
                 indexer.run(job.document)
                 job.status = "done"
                 job.error_message = None
-                job.completed_at = datetime.now(timezone.utc)
+                job.completed_at = datetime.now(UTC)
                 db.add(job)
                 db.commit()
                 return True
@@ -50,11 +50,11 @@ class IngestionWorkerService:
                 if job.attempts >= max_attempts:
                     job.status = "failed"
                     job.error_message = str(exc)
-                    job.completed_at = datetime.now(timezone.utc)
+                    job.completed_at = datetime.now(UTC)
                 else:
                     job.status = "pending"
                     job.error_message = str(exc)
-                    job.available_at = datetime.now(timezone.utc)
+                    job.available_at = datetime.now(UTC)
                     job.locked_at = None
                 db.add(job)
                 db.commit()

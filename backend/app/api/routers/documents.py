@@ -16,9 +16,9 @@ from app.schemas.documents import (
     IngestionJobOut,
     ReindexEmbeddingsOut,
 )
-from app.services.document_ingestion import DocumentIngestionService, validate_upload
-from app.services.document_indexing import reindex_null_embeddings_for_workspace
 from app.services.audit import write_audit_log
+from app.services.document_indexing import reindex_null_embeddings_for_workspace
+from app.services.document_ingestion import DocumentIngestionService, validate_upload
 from app.services.storage import get_storage_service
 from app.services.summary import summarize_document
 

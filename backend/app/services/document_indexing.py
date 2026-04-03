@@ -1,18 +1,18 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
 import re
 import uuid
+from datetime import UTC, datetime
 
 from sqlalchemy import delete, text
 from sqlalchemy.orm import Session
 
 from app.models.document import Document, DocumentChunk
-from app.services.usage_metering import max_pdf_pages_for_workspace
 from app.services.chunking import chunk_text
 from app.services.embeddings import embed_texts
 from app.services.storage.base import StorageService
 from app.services.text_extraction import extract_text_metadata_from_file
+from app.services.usage_metering import max_pdf_pages_for_workspace
 
 
 def _chunk_offsets(full_text: str, chunks: list[str]) -> list[tuple[int, int]]:
@@ -159,7 +159,7 @@ class DocumentIndexingService:
                 )
 
             document.status = "ready"
-            document.indexed_at = datetime.now(timezone.utc)
+            document.indexed_at = datetime.now(UTC)
             document.error_message = None
             document.parser_version = "v1"
             self.db.add(document)

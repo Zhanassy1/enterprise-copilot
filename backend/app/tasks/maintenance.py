@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 from sqlalchemy import select
 
@@ -19,7 +19,7 @@ logger = logging.getLogger("app.maintenance")
 @celery_app.task(name="maintenance.purge_soft_deleted_documents")
 def purge_soft_deleted_documents_task() -> dict:
     """Remove documents soft-deleted longer than retention; deletes blobs then rows (cascade chunks/jobs)."""
-    cutoff = datetime.now(timezone.utc) - timedelta(days=int(settings.document_retention_days_after_soft_delete))
+    cutoff = datetime.now(UTC) - timedelta(days=int(settings.document_retention_days_after_soft_delete))
     storage = get_storage_service()
     db = SessionLocal()
     removed = 0

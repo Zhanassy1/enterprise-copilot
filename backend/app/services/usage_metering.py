@@ -4,7 +4,7 @@ import json
 import logging
 import math
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 from fastapi import HTTPException
@@ -81,7 +81,7 @@ def effective_rate_limits_for_plan(plan_slug: str) -> dict[str, int]:
 
 
 def month_window(now: datetime | None = None) -> tuple[datetime, datetime]:
-    dt = now or datetime.now(timezone.utc)
+    dt = now or datetime.now(UTC)
     start = dt.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
     if start.month == 12:
         end = start.replace(year=start.year + 1, month=1)

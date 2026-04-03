@@ -1,8 +1,8 @@
 """Upload path calls assert_quota; 429 when quota enforcement raises."""
 
 import io
-import uuid
 import unittest
+import uuid
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
