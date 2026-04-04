@@ -71,3 +71,7 @@ DEMO_SCREENSHOTS_WITH_INGEST=1 npm run demo:screenshots
 ## Видео
 
 Слот на маркетинговой главной и чек-лист записи: **[docs/DEMO_MEDIA.md](../DEMO_MEDIA.md)**.
+
+## GitHub Social preview
+
+Для карточки ссылки (Telegram, Slack и т.д.): **Settings** репозитория → **General** → **Social preview** → загрузить **`github-social-preview.png`** из этого каталога (`docs/assets/`). Рекомендуемый формат: **1280×640** px, PNG/JPG до 1 MB.
