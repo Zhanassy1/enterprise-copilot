@@ -29,6 +29,12 @@ def _invite_expiry() -> datetime:
     return datetime.now(UTC) + timedelta(hours=int(settings.workspace_invitation_exp_hours))
 
 
+def _finalize_accepted_invitation(inv: WorkspaceInvitation) -> None:
+    inv.status = "accepted"
+    inv.accepted_at = datetime.now(UTC)
+    inv.token = None
+
+
 @dataclass
 class InviteValidation:
     workspace_id: uuid.UUID
@@ -143,6 +149,7 @@ def revoke_invitation(db: Session, *, workspace_id: uuid.UUID, invitation_id: uu
     if not inv or inv.status != "pending":
         return None
     inv.status = "revoked"
+    inv.token = None
     db.flush()
     return inv
 
@@ -175,8 +182,7 @@ def accept_invite_existing_user(
         )
     )
     if dup:
-        inv.status = "accepted"
-        inv.accepted_at = datetime.now(UTC)
+        _finalize_accepted_invitation(inv)
         db.flush()
         return inv.workspace_id
 
@@ -188,8 +194,7 @@ def accept_invite_existing_user(
             role_id=inv.role_id,
         )
     )
-    inv.status = "accepted"
-    inv.accepted_at = datetime.now(UTC)
+    _finalize_accepted_invitation(inv)
     db.flush()
     write_audit_log(
         db,
@@ -244,8 +249,7 @@ def accept_invite_new_user(
             role_id=inv.role_id,
         )
     )
-    inv.status = "accepted"
-    inv.accepted_at = datetime.now(UTC)
+    _finalize_accepted_invitation(inv)
     db.flush()
     write_audit_log(
         db,

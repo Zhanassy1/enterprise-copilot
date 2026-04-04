@@ -24,6 +24,7 @@ class Workspace(Base):
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     name: Mapped[str] = mapped_column(String(255), nullable=False)
+    slug: Mapped[str] = mapped_column(String(64), nullable=False, unique=True, index=True)
     owner_user_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), index=True)
     personal_for_user_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True),
@@ -77,7 +78,7 @@ class WorkspaceInvitation(Base):
     )
     email: Mapped[str] = mapped_column(String(320), nullable=False, index=True)
     role_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("roles.id", ondelete="RESTRICT"), nullable=False)
-    token: Mapped[str] = mapped_column(String(255), nullable=False, unique=True)
+    token: Mapped[str | None] = mapped_column(String(255), nullable=True, unique=True)
     status: Mapped[str] = mapped_column(String(32), nullable=False, default="pending")
     expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     accepted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

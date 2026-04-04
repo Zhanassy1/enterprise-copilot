@@ -63,12 +63,14 @@ class CrossWorkspaceAccessTests(unittest.TestCase):
             ws_a = Workspace(
                 id=uuid.uuid4(),
                 name="Workspace A",
+                slug=f"ws-a-{uuid.uuid4().hex[:8]}",
                 owner_user_id=user_a.id,
                 personal_for_user_id=user_a.id,
             )
             ws_b = Workspace(
                 id=uuid.uuid4(),
                 name="Workspace B",
+                slug=f"ws-b-{uuid.uuid4().hex[:8]}",
                 owner_user_id=user_b.id,
                 personal_for_user_id=user_b.id,
             )
@@ -170,6 +172,7 @@ class CrossWorkspaceAccessTests(unittest.TestCase):
             ws = Workspace(
                 id=uuid.uuid4(),
                 name="WS owner+viewer",
+                slug=f"ws-ov-{uuid.uuid4().hex[:8]}",
                 owner_user_id=owner.id,
                 personal_for_user_id=owner.id,
             )
@@ -223,6 +226,7 @@ class CrossWorkspaceAccessTests(unittest.TestCase):
             ws = Workspace(
                 id=uuid.uuid4(),
                 name="WS owner+member",
+                slug=f"ws-om-{uuid.uuid4().hex[:8]}",
                 owner_user_id=owner.id,
                 personal_for_user_id=owner.id,
             )
@@ -276,6 +280,7 @@ class CrossWorkspaceAccessTests(unittest.TestCase):
             ws = Workspace(
                 id=uuid.uuid4(),
                 name="WS owner+admin",
+                slug=f"ws-oa-{uuid.uuid4().hex[:8]}",
                 owner_user_id=owner.id,
                 personal_for_user_id=owner.id,
             )
@@ -346,6 +351,7 @@ class CrossWorkspaceAccessTests(unittest.TestCase):
         token = login.json()["access_token"]
         headers = {"Authorization": f"Bearer {token}", "X-Workspace-Id": str(ws_id)}
         with (
+            patch.dict(os.environ, {"INGESTION_ASYNC_ENABLED": "1"}, clear=False),
             patch("app.services.document_ingestion.settings.ingestion_async_enabled", True),
             patch("app.services.document_ingestion.ingest_document_task.apply_async") as mock_apply,
             patch("app.services.document_ingestion.scan_uploaded_file_safe"),

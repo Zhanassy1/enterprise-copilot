@@ -7,7 +7,10 @@ import { Card, CardContent } from "@/components/ui/card";
 import { fileTypeLabel, formatDate } from "@/lib/utils";
 import { BookOpen, Trash2 } from "lucide-react";
 import type { DocumentOut } from "@/lib/api-client";
+import { useWorkspace } from "@/components/workspace/workspace-provider";
+import { workspaceAppHref } from "@/lib/workspace-path";
 import { documentStatusLabel, ingestionJobStatusLabel } from "@/lib/product-terminology";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 
 interface DocumentCardProps {
   doc: DocumentOut;
@@ -18,6 +21,8 @@ interface DocumentCardProps {
 }
 
 export function DocumentCard({ doc, onSummary, onDelete, canMutate = true }: DocumentCardProps) {
+  const { currentWorkspace } = useWorkspace();
+  const jobsHref = currentWorkspace?.slug ? workspaceAppHref(currentWorkspace.slug, "/jobs") : "/jobs";
   return (
     <Card className="transition-shadow hover:shadow-md">
       <CardContent className="flex items-start gap-4 p-5">
@@ -33,7 +38,7 @@ export function DocumentCard({ doc, onSummary, onDelete, canMutate = true }: Doc
             )}
             {doc.ingestion_job_status ? (
               <Link
-                href="/jobs"
+                href={jobsHref}
                 className="text-[10px] text-primary underline-offset-2 hover:underline"
                 title={`Статус job: ${doc.ingestion_job_status}`}
               >
@@ -51,15 +56,24 @@ export function DocumentCard({ doc, onSummary, onDelete, canMutate = true }: Doc
           >
             <BookOpen className="h-4 w-4" />
           </Button>
-          <Button
-            variant="ghost"
-            size="icon"
-            title={canMutate ? "Удалить" : "Наблюдатель: удаление недоступно"}
-            disabled={!canMutate}
-            onClick={() => canMutate && onDelete(doc.id)}
-          >
-            <Trash2 className={canMutate ? "h-4 w-4 text-destructive" : "h-4 w-4 text-muted-foreground"} />
-          </Button>
+          {canMutate ? (
+            <Button variant="ghost" size="icon" title="Удалить" onClick={() => onDelete(doc.id)}>
+              <Trash2 className="h-4 w-4 text-destructive" />
+            </Button>
+          ) : (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <span
+                  className="inline-flex h-10 w-10 cursor-not-allowed items-center justify-center rounded-xl text-muted-foreground opacity-60"
+                  tabIndex={0}
+                  aria-label="Удаление недоступно"
+                >
+                  <Trash2 className="h-4 w-4" />
+                </span>
+              </TooltipTrigger>
+              <TooltipContent side="left">Только просмотр: нет права на изменение</TooltipContent>
+            </Tooltip>
+          )}
         </div>
       </CardContent>
     </Card>

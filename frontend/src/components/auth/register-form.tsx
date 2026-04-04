@@ -1,9 +1,11 @@
 "use client";
 
+import { useEffect, useMemo } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { toast } from "sonner";
+import { z } from "zod";
 import { registerSchema, type RegisterValues } from "@/lib/validations";
 import { useAuth } from "@/hooks/use-auth";
 import { Button } from "@/components/ui/button";
@@ -13,23 +15,57 @@ import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "@/componen
 import Link from "next/link";
 import { Loader2 } from "lucide-react";
 import { siteUrls } from "@/lib/site-urls";
+import { invitePathForToken } from "@/lib/invite-nav";
 
 export function RegisterForm() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const inviteToken = searchParams.get("invite")?.trim() ?? "";
+  const emailFromQuery = searchParams.get("email")?.trim() ?? "";
+  const lockInviteEmail =
+    inviteToken.length >= 16 && z.string().email().safeParse(emailFromQuery).success;
+  const defaultEmail = lockInviteEmail ? emailFromQuery : "";
+
+  const defaults = useMemo(
+    () => ({
+      full_name: "",
+      email: defaultEmail,
+      password: "",
+      confirm_password: "",
+    }),
+    [defaultEmail]
+  );
+
   const { register: registerUser, loading } = useAuth();
   const {
     register,
     handleSubmit,
+    reset,
     formState: { errors },
   } = useForm<RegisterValues>({
     resolver: zodResolver(registerSchema),
+    defaultValues: defaults,
   });
 
+  useEffect(() => {
+    reset(defaults);
+  }, [defaults, reset]);
+
   const onSubmit = async (data: RegisterValues) => {
-    const res = await registerUser(data.email, data.password, data.full_name);
+    const useInvite = inviteToken.length >= 16;
+    if (useInvite && data.password.length < 8) {
+      toast.error("По приглашению пароль — минимум 8 символов.");
+      return;
+    }
+    const res = await registerUser(data.email, data.password, data.full_name, useInvite ? inviteToken : null);
     if (res.ok) {
-      toast.success("Аккаунт создан. Войдите в систему.");
-      router.push("/login");
+      if (useInvite) {
+        toast.success("Аккаунт создан, вы вошли в систему.");
+        router.replace("/documents");
+      } else {
+        toast.success("Аккаунт создан. Войдите в систему.");
+        router.push("/login");
+      }
     } else {
       toast.error(res.error);
     }
@@ -56,6 +92,8 @@ export function RegisterForm() {
               id="email"
               type="email"
               placeholder="you@company.com"
+              disabled={lockInviteEmail}
+              readOnly={lockInviteEmail}
               {...register("email")}
             />
             {errors.email && (
@@ -107,7 +145,14 @@ export function RegisterForm() {
           </p>
           <p className="text-sm text-muted-foreground">
             Уже есть аккаунт?{" "}
-            <Link href="/login" className="font-medium text-foreground underline-offset-4 hover:underline">
+            <Link
+              href={
+                inviteToken.length >= 16
+                  ? `/login?next=${encodeURIComponent(invitePathForToken(inviteToken))}`
+                  : "/login"
+              }
+              className="font-medium text-foreground underline-offset-4 hover:underline"
+            >
               Войти
             </Link>
             {" · "}

@@ -7,5 +7,5 @@ test("auth pages render", async ({ page }) => {
 
   await page.goto("/register");
   await expect(page).toHaveURL(/register/);
-  await expect(page.getByText(/регист|register/i)).toBeVisible();
+  await expect(page.getByText("Регистрация", { exact: true })).toBeVisible();
 });

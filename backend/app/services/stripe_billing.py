@@ -117,6 +117,60 @@ def _workspace_id_from_meta(meta: dict[str, Any] | None) -> uuid.UUID | None:
         return None
 
 
+def _apply_stripe_subscription_to_quota(q: WorkspaceQuota, sub: Any) -> None:
+    """Sync status, period end, trial end from a Stripe Subscription object or dict."""
+    if isinstance(sub, dict):
+        status = sub.get("status")
+        cpe = sub.get("current_period_end")
+        te = sub.get("trial_end")
+        sid = sub.get("id")
+    else:
+        status = getattr(sub, "status", None)
+        cpe = getattr(sub, "current_period_end", None)
+        te = getattr(sub, "trial_end", None)
+        sid = getattr(sub, "id", None)
+    if sid:
+        q.stripe_subscription_id = str(sid)
+    if status:
+        q.subscription_status = str(status).lower()
+    if cpe:
+        q.current_period_end = datetime.fromtimestamp(int(cpe), tz=UTC)
+    if te:
+        q.trial_ends_at = datetime.fromtimestamp(int(te), tz=UTC)
+    else:
+        q.trial_ends_at = None
+
+
+def list_customer_invoices(db: Session, *, workspace_id: uuid.UUID, limit: int) -> list[dict[str, Any]]:
+    """Return Stripe invoices for the workspace customer (PDF / hosted URLs)."""
+    init_stripe()
+    if not _stripe_on():
+        raise RuntimeError("stripe_not_configured")
+    q = get_or_create_quota(db, workspace_id)
+    if not q.stripe_customer_id:
+        return []
+    lim = max(1, min(int(limit), 100))
+    result = stripe.Invoice.list(customer=q.stripe_customer_id, limit=lim)
+    rows: list[dict[str, Any]] = []
+    for inv in getattr(result, "data", []) or []:
+        d = inv.to_dict() if hasattr(inv, "to_dict") else {}
+        created = d.get("created")
+        rows.append(
+            {
+                "id": str(d.get("id") or ""),
+                "number": d.get("number"),
+                "status": d.get("status"),
+                "amount_due": int(d.get("amount_due") or 0),
+                "amount_paid": int(d.get("amount_paid") or 0),
+                "currency": str(d.get("currency") or "usd"),
+                "created": datetime.fromtimestamp(int(created), tz=UTC) if created else datetime.now(UTC),
+                "hosted_invoice_url": d.get("hosted_invoice_url"),
+                "invoice_pdf": d.get("invoice_pdf"),
+            }
+        )
+    return rows
+
+
 def _apply_pro_plan(q: WorkspaceQuota) -> None:
     slug = "pro"
     d = PLAN_LIMITS.get(slug, PLAN_LIMITS["free"])
@@ -149,17 +203,19 @@ def handle_stripe_event(db: Session, event: dict[str, Any]) -> None:
             q.stripe_customer_id = str(cust)
         if sub:
             q.stripe_subscription_id = str(sub)
-        q.subscription_status = "active"
-        q.grace_ends_at = None
         _apply_pro_plan(q)
+        q.grace_ends_at = None
         if sub:
             try:
                 s = stripe.Subscription.retrieve(str(sub))
-                cpe = getattr(s, "current_period_end", None)
-                if cpe:
-                    q.current_period_end = datetime.fromtimestamp(int(cpe), tz=UTC)
+                _apply_stripe_subscription_to_quota(q, s)
+                if (q.subscription_status or "") in ("active", "trialing"):
+                    q.grace_ends_at = None
             except Exception as ex:
                 logger.warning("subscription retrieve failed: %s", ex)
+                q.subscription_status = "active"
+        else:
+            q.subscription_status = "active"
         _ledger_append(db, workspace_id=wid, external_id=eid, event_type=et, meta={"session": obj.get("id")})
         return
 
@@ -184,10 +240,17 @@ def handle_stripe_event(db: Session, event: dict[str, Any]) -> None:
             logger.warning("invoice.paid could not resolve workspace")
             return
         q = get_or_create_quota(db, wid)
-        q.subscription_status = "active"
         q.grace_ends_at = None
         if sub:
             q.stripe_subscription_id = str(sub)
+            try:
+                s = stripe.Subscription.retrieve(str(sub))
+                _apply_stripe_subscription_to_quota(q, s)
+            except Exception as ex:
+                logger.warning("invoice.paid subscription retrieve failed: %s", ex)
+                q.subscription_status = "active"
+        else:
+            q.subscription_status = "active"
         cpe = inv.get("period_end")
         if cpe:
             q.current_period_end = datetime.fromtimestamp(int(cpe), tz=UTC)
@@ -220,6 +283,29 @@ def handle_stripe_event(db: Session, event: dict[str, Any]) -> None:
         _ledger_append(db, workspace_id=wid, external_id=eid, event_type=et, meta={"invoice": inv.get("id")})
         return
 
+    if et == "customer.subscription.updated":
+        sub = obj
+        meta = sub.get("metadata") if isinstance(sub.get("metadata"), dict) else {}
+        wid = _workspace_id_from_meta(meta)
+        if not wid:
+            sid = sub.get("id")
+            if sid:
+                qrow = db.scalar(select(WorkspaceQuota).where(WorkspaceQuota.stripe_subscription_id == str(sid)))
+                if qrow:
+                    wid = qrow.workspace_id
+        if not wid:
+            return
+        q = get_or_create_quota(db, wid)
+        _apply_stripe_subscription_to_quota(q, sub)
+        st = (q.subscription_status or "").lower()
+        if st in ("active", "trialing"):
+            q.grace_ends_at = None
+        cust = sub.get("customer")
+        if cust:
+            q.stripe_customer_id = str(cust)
+        _ledger_append(db, workspace_id=wid, external_id=eid, event_type=et, meta={"subscription": sub.get("id")})
+        return
+
     if et == "customer.subscription.deleted":
         sub = obj
         meta = sub.get("metadata") if isinstance(sub.get("metadata"), dict) else {}
@@ -236,6 +322,7 @@ def handle_stripe_event(db: Session, event: dict[str, Any]) -> None:
         q.stripe_subscription_id = None
         q.subscription_status = "canceled"
         q.current_period_end = None
+        q.trial_ends_at = None
         q.grace_ends_at = None
         q.plan_slug = "free"
         d = PLAN_LIMITS["free"]

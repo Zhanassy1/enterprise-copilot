@@ -8,7 +8,10 @@ import { Skeleton } from "@/components/ui/skeleton";
 
 export default function RootPage() {
   const router = useRouter();
-  const [mode, setMode] = useState<"unknown" | "guest" | "authed">("unknown");
+  // SSR has no token: render marketing shell immediately (SEO + E2E). Client then redirects if authed.
+  const [mode, setMode] = useState<"guest" | "authed">(() =>
+    typeof window !== "undefined" && isAuthenticated() ? "authed" : "guest",
+  );
 
   useEffect(() => {
     if (isAuthenticated()) {
@@ -18,15 +21,6 @@ export default function RootPage() {
       setMode("guest");
     }
   }, [router]);
-
-  if (mode === "unknown") {
-    return (
-      <div className="flex min-h-screen flex-col items-center justify-center gap-4 bg-background px-4">
-        <Skeleton className="h-10 w-48 rounded-lg" />
-        <Skeleton className="h-4 w-64 rounded" />
-      </div>
-    );
-  }
 
   if (mode === "authed") {
     return (

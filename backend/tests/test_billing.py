@@ -1,4 +1,4 @@
-"""Router ``/billing`` — usage & ledger (WorkspaceReadAccess)."""
+"""Router ``/billing`` — subscription, usage, ledger (owner/admin via ``BillingOwnerAdmin``)."""
 
 from __future__ import annotations
 

@@ -13,10 +13,16 @@ import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "@/componen
 import Link from "next/link";
 import { Loader2 } from "lucide-react";
 import { siteUrls } from "@/lib/site-urls";
+import { inviteTokenFromNextParam } from "@/lib/invite-nav";
 
 export function LoginForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
+  const inviteFromNext = inviteTokenFromNextParam(searchParams.get("next"));
+  const registerHref =
+    inviteFromNext != null
+      ? `/register?invite=${encodeURIComponent(inviteFromNext)}`
+      : "/register";
   const { login, loading } = useAuth();
   const {
     register,
@@ -27,11 +33,20 @@ export function LoginForm() {
   });
 
   const onSubmit = async (data: LoginValues) => {
-    const result = await login(data.email, data.password);
+    const next = searchParams.get("next");
+    const inviteTok = inviteTokenFromNextParam(next);
+    const result = await login(data.email, data.password, inviteTok);
     if (result.ok) {
       toast.success("Вы вошли в систему");
-      const next = searchParams.get("next");
-      router.push(next && next.startsWith("/") ? next : "/documents");
+      if (inviteTok) {
+        router.push("/documents");
+        return;
+      }
+      if (next && next.startsWith("/") && !next.startsWith("/invite")) {
+        router.push(next);
+        return;
+      }
+      router.push("/documents");
     } else {
       toast.error(result.error.trim() || "Не удалось войти.");
     }
@@ -85,7 +100,7 @@ export function LoginForm() {
           </p>
           <p className="text-sm text-muted-foreground">
             Нет аккаунта?{" "}
-            <Link href="/register" className="font-medium text-foreground underline-offset-4 hover:underline">
+            <Link href={registerHref} className="font-medium text-foreground underline-offset-4 hover:underline">
               Зарегистрироваться
             </Link>
             {" · "}

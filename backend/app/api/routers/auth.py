@@ -1,3 +1,4 @@
+import uuid
 from datetime import UTC, datetime, timedelta
 
 from fastapi import APIRouter, Body, HTTPException, Request
@@ -31,13 +32,77 @@ from app.schemas.auth import (
 from app.schemas.common_api import EmptyJSONBody
 from app.services.audit import write_audit_log
 from app.services.email_service import send_password_reset_email, send_verification_email
+from app.services.invitation_service import (
+    accept_invite_existing_user,
+    accept_invite_new_user,
+    normalize_email,
+    validate_invite_token,
+)
 from app.services.workspace_service import create_personal_workspace
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
 
-@router.post("/register", response_model=UserOut)
-def register(payload: RegisterIn, db: DbDep) -> UserOut:
+def _issue_session_tokens(db: DbDep, user_id: uuid.UUID) -> Token:
+    refresh_token = generate_opaque_token()
+    db.add(
+        RefreshToken(
+            user_id=user_id,
+            token_hash=hash_opaque_token(refresh_token),
+            expires_at=datetime.now(UTC) + timedelta(days=int(settings.refresh_token_exp_days)),
+            revoked=False,
+        )
+    )
+    return Token(access_token=create_access_token(str(user_id)), refresh_token=refresh_token)
+
+
+@router.post("/register", response_model=UserOut | Token)
+def register(payload: RegisterIn, db: DbDep) -> UserOut | Token:
+    if payload.invite_token:
+        try:
+            preview = validate_invite_token(db, token_plain=payload.invite_token)
+        except ValueError as e:
+            code = str(e.args[0] if e.args else "invalid")
+            raise HTTPException(status_code=400, detail=code) from e
+        if preview.user_exists:
+            raise HTTPException(status_code=400, detail="user_exists")
+        if normalize_email(str(payload.email)) != preview.email:
+            raise HTTPException(status_code=400, detail="email_mismatch_invite")
+        if len(payload.password) < 8:
+            raise HTTPException(status_code=400, detail="password required (min 8 characters)")
+        try:
+            user, _ws = accept_invite_new_user(
+                db,
+                token_plain=payload.invite_token,
+                password=payload.password,
+                full_name=payload.full_name,
+            )
+        except ValueError as e:
+            code = str(e.args[0] if e.args else "invalid")
+            raise HTTPException(status_code=400, detail=code) from e
+        verify_token = generate_opaque_token()
+        db.add(
+            EmailVerificationToken(
+                user_id=user.id,
+                token_hash=hash_opaque_token(verify_token),
+                expires_at=datetime.now(UTC) + timedelta(minutes=int(settings.email_verification_token_exp_minutes)),
+                used=False,
+            )
+        )
+        send_verification_email(user.email, verify_token)
+        write_audit_log(
+            db,
+            event_type="auth.register",
+            workspace_id=None,
+            user_id=user.id,
+            target_type="user",
+            target_id=str(user.id),
+            metadata={"email": user.email, "via_invite": True},
+        )
+        tok = _issue_session_tokens(db, user.id)
+        db.commit()
+        return tok
+
     existing = db.scalar(select(User).where(User.email == payload.email))
     if existing:
         raise HTTPException(status_code=409, detail="Email already registered")
@@ -109,15 +174,15 @@ def login(payload: LoginIn, db: DbDep, request: Request) -> Token:
         )
         db.commit()
         raise HTTPException(status_code=401, detail="Invalid email or password")
-    refresh_token = generate_opaque_token()
-    db.add(
-        RefreshToken(
-            user_id=user.id,
-            token_hash=hash_opaque_token(refresh_token),
-            expires_at=datetime.now(UTC) + timedelta(days=int(settings.refresh_token_exp_days)),
-            revoked=False,
-        )
-    )
+    if payload.invite_token:
+        try:
+            accept_invite_existing_user(db, token_plain=payload.invite_token, user=user)
+        except ValueError as e:
+            code = str(e.args[0] if e.args else "invalid")
+            db.rollback()
+            status_code = 403 if code == "email_mismatch" else 400
+            raise HTTPException(status_code=status_code, detail=code) from e
+    tok = _issue_session_tokens(db, user.id)
     write_audit_log(
         db,
         event_type="auth.login",
@@ -125,10 +190,10 @@ def login(payload: LoginIn, db: DbDep, request: Request) -> Token:
         user_id=user.id,
         target_type="user",
         target_id=str(user.id),
-        metadata={"email": user.email},
+        metadata={"email": user.email, "invite_accepted": bool(payload.invite_token)},
     )
     db.commit()
-    return Token(access_token=create_access_token(str(user.id)), refresh_token=refresh_token)
+    return tok
 
 
 @router.post("/logout")

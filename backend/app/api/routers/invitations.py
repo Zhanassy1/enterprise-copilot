@@ -106,15 +106,13 @@ def accept_invitation(
     return tok
 
 
-@router.post("/workspaces/{workspace_id}/invitations", response_model=InvitationOut)
+@router.post("/workspaces/{workspace_ref}/invitations", response_model=InvitationOut)
 def create_workspace_invitation(
-    workspace_id: uuid.UUID,
     body: InvitationCreateIn,
     db: DbDep,
     ws: WorkspaceInviteAdmin,
 ) -> InvitationOut:
-    if ws.workspace.id != workspace_id:
-        raise HTTPException(status_code=400, detail="Workspace mismatch")
+    workspace_id = ws.workspace.id
     try:
         inv, plain = create_or_refresh_invitation(
             db,
@@ -158,14 +156,12 @@ def create_workspace_invitation(
     )
 
 
-@router.get("/workspaces/{workspace_id}/invitations", response_model=list[InvitationOut])
+@router.get("/workspaces/{workspace_ref}/invitations", response_model=list[InvitationOut])
 def list_workspace_invitations(
-    workspace_id: uuid.UUID,
     db: DbDep,
     ws: WorkspaceInviteAdmin,
 ) -> list[InvitationOut]:
-    if ws.workspace.id != workspace_id:
-        raise HTTPException(status_code=400, detail="Workspace mismatch")
+    workspace_id = ws.workspace.id
     rows = list_pending_invitations(db, workspace_id)
     out: list[InvitationOut] = []
     for inv in rows:
@@ -183,15 +179,13 @@ def list_workspace_invitations(
     return out
 
 
-@router.post("/workspaces/{workspace_id}/invitations/{invitation_id}/revoke")
+@router.post("/workspaces/{workspace_ref}/invitations/{invitation_id}/revoke")
 def revoke_workspace_invitation(
-    workspace_id: uuid.UUID,
     invitation_id: uuid.UUID,
     db: DbDep,
     ws: WorkspaceInviteAdmin,
 ) -> dict[str, str]:
-    if ws.workspace.id != workspace_id:
-        raise HTTPException(status_code=400, detail="Workspace mismatch")
+    workspace_id = ws.workspace.id
     inv = revoke_invitation(db, workspace_id=workspace_id, invitation_id=invitation_id)
     if not inv:
         raise HTTPException(status_code=404, detail="Invitation not found")
@@ -208,15 +202,13 @@ def revoke_workspace_invitation(
     return {"status": "revoked"}
 
 
-@router.post("/workspaces/{workspace_id}/invitations/{invitation_id}/resend", response_model=InvitationOut)
+@router.post("/workspaces/{workspace_ref}/invitations/{invitation_id}/resend", response_model=InvitationOut)
 def resend_workspace_invitation(
-    workspace_id: uuid.UUID,
     invitation_id: uuid.UUID,
     db: DbDep,
     ws: WorkspaceInviteAdmin,
 ) -> InvitationOut:
-    if ws.workspace.id != workspace_id:
-        raise HTTPException(status_code=400, detail="Workspace mismatch")
+    workspace_id = ws.workspace.id
     try:
         inv, plain = resend_invitation(
             db,

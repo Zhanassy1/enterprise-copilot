@@ -82,13 +82,29 @@ export interface Token {
   refresh_token?: string | null;
 }
 
+export type BillingBannerVariant = "none" | "warning" | "critical";
+
 export interface SubscriptionOut {
   plan_slug: string;
   subscription_status: string | null;
   current_period_end: string | null;
+  trial_ends_at: string | null;
   grace_ends_at: string | null;
   past_due_banner: boolean;
+  banner_variant: BillingBannerVariant;
   banner_message: string | null;
+}
+
+export interface BillingInvoiceOut {
+  id: string;
+  number: string | null;
+  status: string | null;
+  amount_due: number;
+  amount_paid: number;
+  currency: string;
+  created: string;
+  hosted_invoice_url?: string | null;
+  invoice_pdf?: string | null;
 }
 
 export interface BillingUrlOut {
@@ -128,7 +144,16 @@ export interface DocumentOut {
 export interface WorkspaceOut {
   id: string;
   name: string;
+  slug: string;
   role: string;
+}
+
+export interface WorkspaceMemberOut {
+  user_id: string;
+  email: string;
+  full_name: string | null;
+  role: string;
+  joined_at: string;
 }
 
 export interface BillingLedgerOut {
@@ -238,16 +263,21 @@ export interface ChatReplyOut {
 /* ---------- API methods ---------- */
 
 export const api = {
-  register: (email: string, password: string, fullName?: string | null) =>
-    request<UserOut>("/auth/register", {
+  register: (email: string, password: string, fullName?: string | null, inviteToken?: string | null) =>
+    request<UserOut | Token>("/auth/register", {
       method: "POST",
-      body: JSON.stringify({ email, password, full_name: fullName ?? null }),
+      body: JSON.stringify({
+        email,
+        password,
+        full_name: fullName ?? null,
+        invite_token: inviteToken ?? null,
+      }),
     }),
 
-  login: (email: string, password: string) =>
+  login: (email: string, password: string, inviteToken?: string | null) =>
     request<Token>("/auth/login", {
       method: "POST",
-      body: JSON.stringify({ email, password }),
+      body: JSON.stringify({ email, password, invite_token: inviteToken ?? null }),
     }),
 
   getMe: () => request<MeOut>("/auth/me"),
@@ -265,28 +295,44 @@ export const api = {
       }),
     }),
 
-  createWorkspaceInvitation: (workspaceId: string, email: string, role: string) =>
-    request<InvitationOut>(`/workspaces/${workspaceId}/invitations`, {
+  createWorkspaceInvitation: (workspaceRef: string, email: string, role: string) =>
+    request<InvitationOut>(`/workspaces/${workspaceRef}/invitations`, {
       method: "POST",
       body: JSON.stringify({ email, role }),
     }),
 
-  listWorkspaceInvitations: (workspaceId: string) =>
-    request<InvitationOut[]>(`/workspaces/${workspaceId}/invitations`),
+  listWorkspaceInvitations: (workspaceRef: string) =>
+    request<InvitationOut[]>(`/workspaces/${workspaceRef}/invitations`),
 
-  revokeWorkspaceInvitation: (workspaceId: string, invitationId: string) =>
+  revokeWorkspaceInvitation: (workspaceRef: string, invitationId: string) =>
     request<{ status: string }>(
-      `/workspaces/${workspaceId}/invitations/${invitationId}/revoke`,
+      `/workspaces/${workspaceRef}/invitations/${invitationId}/revoke`,
       { method: "POST", body: "{}" }
     ),
 
-  resendWorkspaceInvitation: (workspaceId: string, invitationId: string) =>
+  resendWorkspaceInvitation: (workspaceRef: string, invitationId: string) =>
     request<InvitationOut>(
-      `/workspaces/${workspaceId}/invitations/${invitationId}/resend`,
+      `/workspaces/${workspaceRef}/invitations/${invitationId}/resend`,
       { method: "POST", body: "{}" }
     ),
+
+  listWorkspaceMembers: (workspaceRef: string) =>
+    request<WorkspaceMemberOut[]>(`/workspaces/${workspaceRef}/members`),
+
+  updateWorkspaceMemberRole: (workspaceRef: string, userId: string, role: string) =>
+    request<WorkspaceMemberOut>(`/workspaces/${workspaceRef}/members/${userId}`, {
+      method: "PATCH",
+      body: JSON.stringify({ role }),
+    }),
+
+  removeWorkspaceMember: (workspaceRef: string, userId: string) =>
+    request<{ status: string }>(`/workspaces/${workspaceRef}/members/${userId}`, {
+      method: "DELETE",
+    }),
 
   getBillingSubscription: () => request<SubscriptionOut>("/billing/subscription"),
+
+  getBillingInvoices: () => request<BillingInvoiceOut[]>("/billing/invoices"),
 
   createBillingPortal: (returnUrl: string) =>
     request<BillingUrlOut>("/billing/portal", {

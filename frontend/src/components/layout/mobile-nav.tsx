@@ -15,7 +15,8 @@ import { Separator } from "@/components/ui/separator";
 import { useAuth } from "@/hooks/use-auth";
 import { WorkspaceSwitcher } from "@/components/layout/workspace-switcher";
 import { NavRoleHint } from "@/components/layout/nav-role-hint";
-import { appNavItems } from "@/config/app-nav";
+import { appNavItems, navItemHref } from "@/config/app-nav";
+import { useWorkspace } from "@/components/workspace/workspace-provider";
 
 interface MobileNavProps {
   open: boolean;
@@ -25,6 +26,8 @@ interface MobileNavProps {
 export function MobileNav({ open, onOpenChange }: MobileNavProps) {
   const pathname = usePathname();
   const { logout } = useAuth();
+  const { currentWorkspace } = useWorkspace();
+  const slug = currentWorkspace?.slug;
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
@@ -38,11 +41,13 @@ export function MobileNav({ open, onOpenChange }: MobileNavProps) {
         </div>
         <nav className="flex-1 space-y-1 px-3 py-4">
           <NavRoleHint />
-          {appNavItems.map(({ href, label, icon: Icon }) => {
-            const active = pathname.startsWith(href);
+          {appNavItems.map((item) => {
+            const { label, icon: Icon } = item;
+            const href = navItemHref(slug, item);
+            const active = href.startsWith("/w/") ? pathname.startsWith(href) || pathname === href : pathname.startsWith(href);
             return (
               <Link
-                key={href}
+                key={`${item.segment}-${item.absolute ?? false}`}
                 href={href}
                 onClick={() => onOpenChange(false)}
                 className={cn(

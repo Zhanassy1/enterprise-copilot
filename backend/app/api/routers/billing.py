@@ -1,5 +1,3 @@
-from datetime import UTC, datetime
-
 from fastapi import APIRouter, HTTPException, Query
 from sqlalchemy import func, select
 
@@ -9,13 +7,19 @@ from app.models.billing import BillingLedgerEntry
 from app.models.document import Document
 from app.schemas.billing_api import (
     BillingCheckoutIn,
+    BillingInvoiceOut,
     BillingLedgerOut,
     BillingPortalIn,
     BillingUrlOut,
     SubscriptionOut,
     UsageSummaryOut,
 )
-from app.services.stripe_billing import create_billing_portal_session, create_checkout_session
+from app.services.billing_subscription import compute_subscription_banner
+from app.services.stripe_billing import (
+    create_billing_portal_session,
+    create_checkout_session,
+    list_customer_invoices,
+)
 from app.services.usage_metering import (
     EVENT_CHAT_MESSAGE,
     EVENT_DOCUMENT_UPLOAD,
@@ -33,21 +37,32 @@ router = APIRouter(prefix="/billing", tags=["billing"])
 @router.get("/subscription", response_model=SubscriptionOut)
 def billing_subscription(db: DbDep, ws: WorkspaceReadAccess) -> SubscriptionOut:
     quota = get_or_create_quota(db, ws.workspace.id)
-    status = (quota.subscription_status or "").lower() or None
-    now = datetime.now(UTC)
-    in_grace = quota.grace_ends_at is not None and quota.grace_ends_at > now
-    past_due_banner = status == "past_due" and in_grace
-    msg = None
-    if status == "past_due":
-        msg = "Оплата не прошла, обновите карту в разделе биллинга."
+    variant, msg, past_compat = compute_subscription_banner(quota)
     return SubscriptionOut(
         plan_slug=quota.plan_slug,
         subscription_status=quota.subscription_status,
         current_period_end=quota.current_period_end,
+        trial_ends_at=quota.trial_ends_at,
         grace_ends_at=quota.grace_ends_at,
-        past_due_banner=past_due_banner,
+        past_due_banner=past_compat,
+        banner_variant=variant,
         banner_message=msg,
     )
+
+
+@router.get("/invoices", response_model=list[BillingInvoiceOut])
+def billing_invoices(
+    db: DbDep,
+    ws: BillingOwnerAdmin,
+    limit: int = Query(default=24, ge=1, le=100),
+) -> list[BillingInvoiceOut]:
+    try:
+        rows = list_customer_invoices(db, workspace_id=ws.workspace.id, limit=limit)
+    except RuntimeError as e:
+        if str(e) == "stripe_not_configured":
+            raise HTTPException(status_code=503, detail="Stripe is not configured") from e
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    return [BillingInvoiceOut(**r) for r in rows]
 
 
 @router.post("/portal", response_model=BillingUrlOut)
@@ -91,7 +106,7 @@ def billing_checkout(
 
 
 @router.get("/usage", response_model=UsageSummaryOut)
-def billing_usage(db: DbDep, ws: WorkspaceReadAccess) -> UsageSummaryOut:
+def billing_usage(db: DbDep, ws: BillingOwnerAdmin) -> UsageSummaryOut:
     quota = get_or_create_quota(db, ws.workspace.id)
     start, end = month_window()
     req = _sum_events(
@@ -139,7 +154,7 @@ def billing_usage(db: DbDep, ws: WorkspaceReadAccess) -> UsageSummaryOut:
 @router.get("/ledger", response_model=list[BillingLedgerOut])
 def billing_ledger(
     db: DbDep,
-    ws: WorkspaceReadAccess,
+    ws: BillingOwnerAdmin,
     limit: int = Query(default=50, ge=1, le=200),
 ) -> list[BillingLedgerOut]:
     rows = db.scalars(

@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { cn } from "@/lib/utils";
 import { formatBytesIEC, formatQuotaNumber } from "@/lib/format-quota";
 
@@ -12,6 +13,8 @@ interface QuotaUsageRowProps {
   /** null = без потолка по плану (напр. документы Team) */
   limit: number | null;
   unit: QuotaUnit;
+  /** При использовании ≥90% показать ссылку (например #billing-payment-section на странице биллинга). */
+  upgradeHref?: string;
 }
 
 function displayUsed(used: number, unit: QuotaUnit): string {
@@ -24,7 +27,7 @@ function displayLimit(limit: number, unit: QuotaUnit): string {
   return formatQuotaNumber(limit);
 }
 
-export function QuotaUsageRow({ title, description, used, limit, unit }: QuotaUsageRowProps) {
+export function QuotaUsageRow({ title, description, used, limit, unit, upgradeHref }: QuotaUsageRowProps) {
   const unlimited = limit === null;
   const safeUsed = Math.max(0, used);
   const cap = limit ?? 0;
@@ -95,6 +98,16 @@ export function QuotaUsageRow({ title, description, used, limit, unit }: QuotaUs
       ) : (
         <p className="text-xs text-muted-foreground">Лимит 0 — уточните конфигурацию workspace.</p>
       )}
+      {upgradeHref && pct !== null && pct >= 90 && !unlimited && cap > 0 ? (
+        <p className="pt-1">
+          <Link
+            href={upgradeHref}
+            className="text-xs font-medium text-primary underline-offset-4 hover:underline"
+          >
+            Увеличить лимит
+          </Link>
+        </p>
+      ) : null}
     </div>
   );
 }

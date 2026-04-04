@@ -71,6 +71,7 @@ class DocumentUploadAsyncContractTests(unittest.TestCase):
         file = UploadFile(filename="contract.txt", file=io.BytesIO(b"contract body"), headers={"content-type": "text/plain"})
 
         with (
+            patch.dict(os.environ, {"INGESTION_ASYNC_ENABLED": "1"}, clear=False),
             patch("app.services.document_ingestion.settings.ingestion_async_enabled", True),
             patch("app.services.document_ingestion.ingest_document_task.apply_async") as publish_mock,
         ):

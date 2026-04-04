@@ -4,7 +4,20 @@
 
 [![CI](https://github.com/Zhanassy1/enterprise-copilot/actions/workflows/ci.yml/badge.svg)](https://github.com/Zhanassy1/enterprise-copilot/actions/workflows/ci.yml)
 [![Python 3.12](https://img.shields.io/badge/python-3.12-blue.svg)](https://www.python.org/downloads/)
-[![License](https://img.shields.io/github/license/Zhanassy1/enterprise-copilot)](LICENSE)
+[![Node 22](https://img.shields.io/badge/node-22-339933?logo=node.js&logoColor=white)](https://nodejs.org/)
+[![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
+
+### What’s implemented
+
+- [x] **Multi-tenant workspaces** — isolation by `workspace_id`, slug routes `/w/:slug/…`, role-aware UI ([docs/product-glossary.md](docs/product-glossary.md))
+- [x] **Documents + async ingestion** — upload API, Celery worker, job queue UI, pgvector chunks
+- [x] **Search + RAG chat + summaries** — semantic retrieval with workspace scope and citations
+- [x] **Plans + quotas** — tier limits, usage display, enforcement on hot paths ([docs/quotas.md](docs/quotas.md))
+- [x] **Team + invitations** — invitations API, Team page (roles matrix, invites); members API ([docs/WORKSPACE_ROUTING.md](docs/WORKSPACE_ROUTING.md))
+- [x] **Billing (optional)** — Stripe Checkout, Customer Portal, webhooks, grace period ([docs/billing.md](docs/billing.md))
+- [x] **Security + ops** — JWT/refresh, rate limits, audit log, metrics, production startup checks ([docs/security.md](docs/security.md))
+
+For maturity detail: [docs/IMPLEMENTATION_STATUS.md](docs/IMPLEMENTATION_STATUS.md). Contributing: [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ### Tech stack
 
@@ -28,7 +41,7 @@ Then open **http://localhost:3000** (UI) and **http://localhost:8000/docs** (API
 
 ### Enterprise (optional)
 
-- **Invitations**: emails link to `{APP_BASE_URL}/invite?token=…` (configure SMTP or relay). Pending invites: Team UI and `/api/v1/workspaces/{id}/invitations`.
+- **Invitations**: emails link to `{APP_BASE_URL}/invite/{token}` (legacy `?token=` redirects in the UI). Configure SMTP relay or `SENDGRID_API_KEY` (see `backend/.env.example`, `docs/email-testing.md`). Pending invites: Team UI and `/api/v1/workspaces/{id}/invitations`. After acceptance the invite token is cleared in the database. You can also pass `invite_token` on `POST /api/v1/auth/login` or `POST /api/v1/auth/register` (register with an invite returns JWT like `/invitations/accept`; password min. 8 characters in that path).
 - **Stripe**: `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `STRIPE_PRICE_ID`; webhook endpoint `POST /api/v1/billing/webhooks/stripe`. Grace after failed payment: `BILLING_GRACE_PERIOD_DAYS` (default 3). Customer Portal and Checkout from the Billing page (owner/admin).
 - **Platform admin**: database flag `users.is_platform_admin` and/or `PLATFORM_ADMIN_EMAILS` (comma-separated). API: `/api/v1/admin/…` (impersonation, usage, quota adjust). UI: `/admin`. Do not commit real addresses — set them only in local/private env (e.g. uncomment and fill `PLATFORM_ADMIN_EMAILS` in your copy of `backend/.env.docker`).
 
@@ -60,21 +73,48 @@ flowchart TB
 
 Upload and search requests hit **FastAPI**; **Celery** consumes **Redis** and writes chunks/embeddings to **PostgreSQL/pgvector**. Details: [docs/architecture.md](docs/architecture.md).
 
+**Product boundaries (team vs billing):** both layers share **authN + workspace scope** (`X-Workspace-Id`, [`backend/app/api/deps.py`](backend/app/api/deps.py)). **Team** flows use workspaces, invitations, and member APIs ([`backend/app/api/routers/invitations.py`](backend/app/api/routers/invitations.py), [`backend/app/api/routers/workspace_members.py`](backend/app/api/routers/workspace_members.py)). **Billing** uses Stripe Checkout/Portal and webhooks to update plan/subscription state, which feeds **quota checks** on uploads and RAG routes ([`backend/app/api/routers/billing.py`](backend/app/api/routers/billing.py)).
+
+```mermaid
+flowchart LR
+  subgraph team [Team_and_workspace]
+    WS[Workspaces]
+    INV[Invitations]
+    WM[Members_RBAC]
+  end
+  subgraph billing [Billing]
+    ST[Stripe_Checkout_Portal]
+    WH[Stripe_webhooks]
+    PLN[Plan_subscription_DB]
+  end
+  subgraph core [FastAPI]
+    DEPS[Auth_workspace_deps]
+    Q[Quota_enforcement]
+  end
+  PG[(PostgreSQL)]
+  team --> DEPS
+  billing --> PLN
+  PLN --> Q
+  DEPS --> PG
+  Q --> PG
+  WH --> PLN
+```
+
 ### Screenshots
 
 | Landing | Pricing | Documents |
 |:-------:|:-------:|:---------:|
 | ![Landing](docs/assets/screenshots/landing.png) | ![Pricing](docs/assets/screenshots/pricing.png) | ![Documents](docs/assets/screenshots/documents.png) |
 
-| Jobs | Billing | Search |
-|:----:|:-------:|:------:|
-| ![Jobs](docs/assets/screenshots/jobs.png) | ![Billing](docs/assets/screenshots/billing.png) | ![Search](docs/assets/screenshots/search.png) |
+| Jobs | Billing | Team |
+|:----:|:-------:|:----:|
+| ![Jobs](docs/assets/screenshots/jobs.png) | ![Billing](docs/assets/screenshots/billing.png) | ![Team](docs/assets/screenshots/team.png) |
 
-| Chat | Audit |
-|:----:|:-----:|
-| ![Chat](docs/assets/screenshots/chat.png) | ![Audit](docs/assets/screenshots/audit.png) |
+| Search | Chat | Audit |
+|:------:|:----:|:-----:|
+| ![Search](docs/assets/screenshots/search.png) | ![Chat](docs/assets/screenshots/chat.png) | ![Audit](docs/assets/screenshots/audit.png) |
 
-Caption index and Playwright capture: [Documentation (RU) — Скриншоты](#screenshots) · [docs/assets/SCREENSHOTS.md](docs/assets/SCREENSHOTS.md).
+Motion demo: embed a walkthrough via [docs/DEMO_MEDIA.md](docs/DEMO_MEDIA.md) (`NEXT_PUBLIC_DEMO_VIDEO_EMBED_URL` on the landing page). Caption index and Playwright capture: [Documentation (RU) — Скриншоты](#screenshots) · [docs/assets/SCREENSHOTS.md](docs/assets/SCREENSHOTS.md).
 
 ---
 
@@ -92,7 +132,7 @@ Caption index and Playwright capture: [Documentation (RU) — Скриншоты
 
 | Скорость | Что сделать |
 |----------|-------------|
-| **~20 сек** | Прокрутить [скриншоты](#screenshots) или открыть [docs/assets/SCREENSHOTS.md](docs/assets/SCREENSHOTS.md) — landing, `/pricing`, документы, jobs, billing, поиск, чат, аудит. |
+| **~20 сек** | Прокрутить [скриншоты](#screenshots) или открыть [docs/assets/SCREENSHOTS.md](docs/assets/SCREENSHOTS.md) — landing, `/pricing`, документы, jobs, billing, команда, поиск, чат, аудит. |
 | **~1 мин** | Поднять стек `docker compose up --build`, открыть **http://localhost:3000**, на маркетинговой главной — блок **«Демо за одну минуту»** (`/#demo-quick-1min`), затем **Регистрация** → приложение → **workspace** в переключателе → **Документы**. |
 | **Видео** | Сценарий записи и таймкоды: **[docs/DEMO_MEDIA.md](docs/DEMO_MEDIA.md#demo-quick-1min)**; встроенный плеер на главной при `NEXT_PUBLIC_DEMO_VIDEO_EMBED_URL` — см. [#demo-video](#demo-video). |
 
@@ -109,6 +149,12 @@ Caption index and Playwright capture: [Documentation (RU) — Скриншоты
 | **Проблемы** | Долгий поиск в документах, разрозненные файлы, ответы без привязки к источнику — закрываются поиском и чатом с цитатами, границами workspace и статусами обработки. |
 
 ### Ключевые возможности
+
+- [x] **Рабочие пространства и роли** — изоляция данных, slug-маршруты `/w/:slug/…`, матрица прав на странице «Команда».
+- [x] **Индексация и очередь** — загрузка, Celery, `/jobs`, pgvector.
+- [x] **Поиск, чат, summary** — RAG с источниками в границах workspace.
+- [x] **План и квоты** — лимиты тарифа, учёт usage, enforcement на API.
+- [x] **Приглашения и биллинг (опционально)** — цепочка invite, Stripe при настроенных ключах.
 
 - **Multi-tenant AI copilot** — данные и векторный индекс разделены по **рабочим пространствам (workspace)**; роли: **владелец / администратор / участник / наблюдатель** (в API: owner / admin / member / viewer). См. [глоссарий](docs/product-glossary.md).
 - **Асинхронная индексация** — после загрузки создаётся **задача индексации** (ingestion job); обработка в **worker**, не в HTTP-запросе. Статусы: **queued → processing / retrying → ready | failed** у документа и задачи.
@@ -188,6 +234,7 @@ Caption index and Playwright capture: [Documentation (RU) — Скриншоты
 | Документы | `documents.png` | Каталог workspace, статусы индексации |
 | Очередь | `jobs.png` | Задачи индексации по статусам |
 | План и лимиты | `billing.png` | Текущий план, расход квот |
+| Команда | `team.png` | `/w/…/team` — роли, участники, приглашения |
 | Поиск | `search.png` | Семантический поиск в границах workspace |
 | Чат | `chat.png` | RAG-диалог с источниками |
 | Аудит | `audit.png` | Журнал событий workspace |
@@ -196,13 +243,13 @@ Caption index and Playwright capture: [Documentation (RU) — Скриншоты
 |:-------:|:-------:|:---------:|
 | ![Landing](docs/assets/screenshots/landing.png) | ![Pricing](docs/assets/screenshots/pricing.png) | ![Documents](docs/assets/screenshots/documents.png) |
 
-| Jobs | Billing | Search |
-|:----:|:-------:|:------:|
-| ![Jobs](docs/assets/screenshots/jobs.png) | ![Billing](docs/assets/screenshots/billing.png) | ![Search](docs/assets/screenshots/search.png) |
+| Jobs | Billing | Team |
+|:----:|:-------:|:----:|
+| ![Jobs](docs/assets/screenshots/jobs.png) | ![Billing](docs/assets/screenshots/billing.png) | ![Team](docs/assets/screenshots/team.png) |
 
-| Chat | Audit |
-|:----:|:-----:|
-| ![Chat](docs/assets/screenshots/chat.png) | ![Audit](docs/assets/screenshots/audit.png) |
+| Search | Chat | Audit |
+|:------:|:----:|:-----:|
+| ![Search](docs/assets/screenshots/search.png) | ![Chat](docs/assets/screenshots/chat.png) | ![Audit](docs/assets/screenshots/audit.png) |
 
 <a id="demo-script"></a>
 
@@ -300,6 +347,7 @@ docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
 
 | Документ | Содержание |
 |----------|------------|
+| [CONTRIBUTING.md](CONTRIBUTING.md) | Как вносить изменения, проверки CI, безопасность |
 | [docs/deployment.md](docs/deployment.md) | Dev vs prod compose, TLS, S3/MinIO, миграции |
 | [docs/security.md](docs/security.md) | Секреты, proxy, rate limits, audit |
 | [docs/quotas.md](docs/quotas.md) | Планы free/pro/team, enforcement, 429 |

@@ -9,6 +9,7 @@ from app.api.routers import (
     ingestion,
     invitations,
     search,
+    workspace_members,
     workspaces,
 )
 
@@ -23,6 +24,7 @@ __all__ = [
     "invitations",
     "search",
     "chat",
+    "workspace_members",
     "workspaces",
 ]
 

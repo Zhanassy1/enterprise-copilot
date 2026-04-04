@@ -73,6 +73,6 @@ def two_workspaces(client: TestClient) -> dict[str, dict[str, str]]:
     assert len(wsa) >= 1 and len(wsb) >= 1
 
     return {
-        "a": {"token": ta, "ws": str(wsa[0]["id"])},
-        "b": {"token": tb, "ws": str(wsb[0]["id"])},
+        "a": {"token": ta, "ws": str(wsa[0]["id"]), "email": ea},
+        "b": {"token": tb, "ws": str(wsb[0]["id"]), "email": eb},
     }

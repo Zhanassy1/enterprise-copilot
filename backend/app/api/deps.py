@@ -1,3 +1,10 @@
+"""
+Workspace RBAC (team = workspace, scope via ``X-Workspace-Id``).
+
+Roles (highest to lowest): owner > admin > member > viewer.
+Use ``require_roles`` for non-linear permissions; ``require_at_least`` for hierarchy-based checks.
+"""
+
 import uuid
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -12,6 +19,7 @@ from sqlalchemy.orm import Session, selectinload
 from app.core.config import settings
 from app.core.platform_admin import user_is_platform_admin
 from app.core.security import decode_token
+from app.core.workspace_slug import resolve_workspace_ref_to_id
 from app.db.session import get_db
 from app.models.user import User
 from app.models.workspace import Workspace, WorkspaceMember
@@ -19,6 +27,14 @@ from app.services.audit import write_audit_log
 from app.services.billing_state import assert_workspace_billing_allows_writes
 
 bearer = HTTPBearer(auto_error=False)
+
+# Workspace role ordering for hierarchy checks (must match ``ensure_default_roles`` names).
+ROLE_ORDER: dict[str, int] = {"viewer": 0, "member": 1, "admin": 2, "owner": 3}
+
+
+def role_rank(role_name: str | None) -> int | None:
+    key = (role_name or "").strip().lower()
+    return ROLE_ORDER.get(key)
 
 
 DbDep = Annotated[Session, Depends(get_db)]
@@ -117,6 +133,7 @@ def get_workspace_context(
         membership = db.scalar(
             select(WorkspaceMember)
             .where(WorkspaceMember.workspace_id == workspace_uuid, WorkspaceMember.user_id == user.id)
+            .options(selectinload(WorkspaceMember.role))
             .limit(1)
         )
         if not membership:
@@ -136,6 +153,7 @@ def get_workspace_context(
             select(WorkspaceMember)
             .join(Workspace, Workspace.id == WorkspaceMember.workspace_id)
             .where(WorkspaceMember.user_id == user.id)
+            .options(selectinload(WorkspaceMember.role))
             .order_by(Workspace.personal_for_user_id.desc().nullslast(), Workspace.created_at.asc())
             .limit(1)
         )
@@ -163,8 +181,28 @@ def require_roles(*allowed_roles: str) -> Callable[[CurrentWorkspace], Workspace
     return _dep
 
 
+def require_at_least(min_role: str) -> Callable[[CurrentWorkspace], WorkspaceContext]:
+    """Allow this role and every role above it in ``ROLE_ORDER`` (e.g. min ``admin`` → admin + owner)."""
+    m = min_role.strip().lower()
+    min_rank = ROLE_ORDER.get(m)
+    if min_rank is None:
+        raise ValueError(f"unknown min workspace role: {min_role!r}")
+
+    def _dep(ctx: CurrentWorkspace) -> WorkspaceContext:
+        r = role_rank(ctx.membership.role.name if ctx.membership.role else None)
+        if r is None or r < min_rank:
+            raise HTTPException(status_code=403, detail="Insufficient workspace role")
+        return ctx
+
+    return _dep
+
+
 WorkspaceReadAccess = Annotated[WorkspaceContext, Depends(require_roles("owner", "admin", "member", "viewer"))]
 WorkspaceWriteAccess = Annotated[WorkspaceContext, Depends(require_roles("owner", "admin", "member"))]
+# Aliases for route readability (same dependencies as the names suggest).
+WorkspaceContentWriteAccess = WorkspaceWriteAccess
+WorkspaceMemberManageAccess = Annotated[WorkspaceContext, Depends(require_at_least("admin"))]
+WorkspaceOwnerOnly = Annotated[WorkspaceContext, Depends(require_at_least("owner"))]
 
 
 def require_platform_admin(user: CurrentUser) -> User:
@@ -183,7 +221,10 @@ def get_billing_write_workspace(ws: WorkspaceWriteAccess, db: DbDep) -> Workspac
 
 BillingWorkspaceWriteAccess = Annotated[WorkspaceContext, Depends(get_billing_write_workspace)]
 
-BillingOwnerAdmin = Annotated[WorkspaceContext, Depends(require_roles("owner", "admin"))]
+# Billing: Stripe portal/checkout/usage/ledger/invoices — owner + admin only.
+# GET /billing/subscription uses WorkspaceReadAccess (all roles) for dunning banners.
+BillingOwnerAdmin = Annotated[WorkspaceContext, Depends(require_at_least("admin"))]
+BillingReadAccess = BillingOwnerAdmin
 
 
 def get_workspace_context_for_id(
@@ -231,7 +272,75 @@ def require_workspace_roles_for_id(*allowed_roles: str) -> Callable[..., Workspa
     return _dep
 
 
+def get_workspace_context_for_ref(workspace_ref: str, db: DbDep, user: CurrentUser) -> WorkspaceContext:
+    workspace_id = resolve_workspace_ref_to_id(db, workspace_ref)
+    return get_workspace_context_for_id(workspace_id, db, user)
+
+
+def require_workspace_roles_for_ref(*allowed_roles: str) -> Callable[..., WorkspaceContext]:
+    allowed = {r.strip().lower() for r in allowed_roles if r.strip()}
+
+    def _dep(
+        workspace_ref: str,
+        db: DbDep,
+        user: CurrentUser,
+    ) -> WorkspaceContext:
+        ctx = get_workspace_context_for_ref(workspace_ref, db, user)
+        role_name = (ctx.membership.role.name or "").lower()
+        if role_name not in allowed:
+            raise HTTPException(status_code=403, detail="Insufficient workspace role")
+        return ctx
+
+    return _dep
+
+
+def require_workspace_at_least_for_id(min_role: str) -> Callable[..., WorkspaceContext]:
+    m = min_role.strip().lower()
+    min_rank = ROLE_ORDER.get(m)
+    if min_rank is None:
+        raise ValueError(f"unknown min workspace role: {min_role!r}")
+
+    def _dep(
+        workspace_id: uuid.UUID,
+        db: DbDep,
+        user: CurrentUser,
+    ) -> WorkspaceContext:
+        ctx = get_workspace_context_for_id(workspace_id, db, user)
+        r = role_rank(ctx.membership.role.name if ctx.membership.role else None)
+        if r is None or r < min_rank:
+            raise HTTPException(status_code=403, detail="Insufficient workspace role")
+        return ctx
+
+    return _dep
+
+
+def require_workspace_at_least_for_ref(min_role: str) -> Callable[..., WorkspaceContext]:
+    m = min_role.strip().lower()
+    min_rank = ROLE_ORDER.get(m)
+    if min_rank is None:
+        raise ValueError(f"unknown min workspace role: {min_role!r}")
+
+    def _dep(
+        workspace_ref: str,
+        db: DbDep,
+        user: CurrentUser,
+    ) -> WorkspaceContext:
+        ctx = get_workspace_context_for_ref(workspace_ref, db, user)
+        r = role_rank(ctx.membership.role.name if ctx.membership.role else None)
+        if r is None or r < min_rank:
+            raise HTTPException(status_code=403, detail="Insufficient workspace role")
+        return ctx
+
+    return _dep
+
+
 WorkspaceInviteAdmin = Annotated[
     WorkspaceContext,
-    Depends(require_workspace_roles_for_id("owner", "admin")),
+    Depends(require_workspace_at_least_for_ref("admin")),
+]
+
+# Path-scoped workspace (``/workspaces/{workspace_ref}/…``): UUID or slug; any member can read the roster.
+WorkspaceReadAccessForRef = Annotated[
+    WorkspaceContext,
+    Depends(require_workspace_roles_for_ref("owner", "admin", "member", "viewer")),
 ]

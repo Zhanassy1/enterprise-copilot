@@ -3,13 +3,13 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy import select
 
-from app.api.deps import DbDep, WorkspaceContext, WorkspaceReadAccess, require_roles
+from app.api.deps import DbDep, WorkspaceContext, WorkspaceReadAccess, require_at_least
 from app.models.security import AuditLog
 from app.schemas.audit_api import AuditLogOut
 
 router = APIRouter(prefix="/audit", tags=["audit"])
 
-AdminWorkspace = Annotated[WorkspaceContext, Depends(require_roles("owner", "admin"))]
+AdminWorkspace = Annotated[WorkspaceContext, Depends(require_at_least("admin"))]
 
 
 @router.get("/logs", response_model=list[AuditLogOut])

@@ -18,7 +18,7 @@ class WorkspaceApiContractTests(unittest.TestCase):
         upload_path = "/documents/upload"
         self.assertIn(upload_path, route_deps)
         joined = ",".join(route_deps[upload_path])
-        self.assertIn("_dep", joined)
+        self.assertIn("get_billing_write_workspace", joined)
 
     def test_search_router_uses_workspace_dependency(self) -> None:
         route = next(r for r in search.router.routes if r.path == "/search")

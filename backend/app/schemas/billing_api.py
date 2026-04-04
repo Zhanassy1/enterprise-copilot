@@ -1,5 +1,6 @@
 import uuid
 from datetime import datetime
+from typing import Literal
 
 from pydantic import BaseModel, Field
 
@@ -20,9 +21,25 @@ class SubscriptionOut(BaseModel):
     plan_slug: str
     subscription_status: str | None
     current_period_end: datetime | None
+    trial_ends_at: datetime | None
     grace_ends_at: datetime | None
-    past_due_banner: bool
+    past_due_banner: bool = Field(
+        description="True when a billing alert should show (warning or critical); prefer banner_variant.",
+    )
+    banner_variant: Literal["none", "warning", "critical"]
     banner_message: str | None
+
+
+class BillingInvoiceOut(BaseModel):
+    id: str
+    number: str | None
+    status: str | None
+    amount_due: int
+    amount_paid: int
+    currency: str
+    created: datetime
+    hosted_invoice_url: str | None = None
+    invoice_pdf: str | None = None
 
 
 class BillingPortalIn(BaseModel):

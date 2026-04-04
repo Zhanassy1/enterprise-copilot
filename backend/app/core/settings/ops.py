@@ -32,6 +32,8 @@ class OpsSettings(BaseModel):
     smtp_user: str = Field(default="")
     smtp_password: str = Field(default="")
     smtp_from_email: str = Field(default="noreply@enterprise-copilot.local")
+    # Optional: SendGrid Web API (v3). When set, outbound mail uses HTTPS instead of SMTP (see .env.example).
+    sendgrid_api_key: str = Field(default="")
     # In-memory capture for unit/integration tests only; must stay false in production (startup_checks).
     email_capture_mode: bool = Field(default=False)
     app_base_url: str = Field(default="http://localhost:3000")

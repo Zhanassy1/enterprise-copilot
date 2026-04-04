@@ -3,6 +3,7 @@ import uuid
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.core.workspace_slug import ensure_unique_slug, slugify_name
 from app.models.user import User
 from app.models.workspace import Role, Workspace, WorkspaceMember
 
@@ -22,9 +23,12 @@ def ensure_default_roles(db: Session) -> dict[str, Role]:
 
 def create_personal_workspace(db: Session, user: User) -> Workspace:
     roles = ensure_default_roles(db)
+    display = f"{(user.full_name or user.email).strip()} personal workspace"
+    slug = ensure_unique_slug(db, slugify_name(display))
     workspace = Workspace(
         id=uuid.uuid4(),
-        name=f"{(user.full_name or user.email).strip()} personal workspace",
+        name=display,
+        slug=slug,
         owner_user_id=user.id,
         personal_for_user_id=user.id,
     )

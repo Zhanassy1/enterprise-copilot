@@ -19,6 +19,9 @@ backend/share/
 # FastAPI / local files
 *.log
 
+# TypeScript incremental cache
+*.tsbuildinfo
+
 # Node.js
 node_modules/
 dist/

@@ -23,6 +23,8 @@ export interface WorkspaceContextValue {
   hadStaleSelection: boolean;
   refresh: () => Promise<void>;
   selectWorkspace: (id: string) => void;
+  /** Align localStorage + state with URL segment `/w/:slug` (no full reload). */
+  syncWorkspaceFromSlug: (slug: string) => void;
 }
 
 const WorkspaceContext = createContext<WorkspaceContextValue | null>(null);
@@ -72,8 +74,17 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   const selectWorkspace = useCallback((id: string) => {
     setWorkspaceId(id);
     setActiveId(id);
-    window.location.reload();
   }, []);
+
+  const syncWorkspaceFromSlug = useCallback(
+    (slug: string) => {
+      const w = workspaces.find((x) => x.slug === slug);
+      if (!w) return;
+      if (getWorkspaceId() !== w.id) setWorkspaceId(w.id);
+      setActiveId(w.id);
+    },
+    [workspaces]
+  );
 
   const currentWorkspace = useMemo(() => {
     if (!activeId) return null;
@@ -89,8 +100,9 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       hadStaleSelection,
       refresh,
       selectWorkspace,
+      syncWorkspaceFromSlug,
     }),
-    [workspaces, currentWorkspace, loading, error, hadStaleSelection, refresh, selectWorkspace]
+    [workspaces, currentWorkspace, loading, error, hadStaleSelection, refresh, selectWorkspace, syncWorkspaceFromSlug]
   );
 
   return <WorkspaceContext.Provider value={value}>{children}</WorkspaceContext.Provider>;

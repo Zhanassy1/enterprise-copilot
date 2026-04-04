@@ -29,6 +29,7 @@ class WorkspaceQuota(Base):
     stripe_subscription_id: Mapped[str | None] = mapped_column(String(255), nullable=True, index=True)
     subscription_status: Mapped[str | None] = mapped_column(String(64), nullable=True)
     current_period_end: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    trial_ends_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     grace_ends_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)

@@ -1,5 +1,6 @@
 "use client";
 
+import { usePathname, useRouter } from "next/navigation";
 import { Building2, RefreshCw } from "lucide-react";
 import { workspaceRoleLabel } from "@/lib/product-terminology";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -7,8 +8,11 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { useWorkspace } from "@/components/workspace/workspace-provider";
 import { cn } from "@/lib/utils";
+import { pathnameToWorkspaceSubpath, workspaceAppHref } from "@/lib/workspace-path";
 
 export function WorkspaceSwitcher() {
+  const router = useRouter();
+  const pathname = usePathname();
   const {
     workspaces,
     currentWorkspace,
@@ -76,8 +80,11 @@ export function WorkspaceSwitcher() {
                 {workspaceRoleLabel(currentWorkspace.role)}
               </Badge>
             </div>
-            <p className="mt-1 truncate font-mono text-[10px] leading-tight text-muted-foreground" title={currentWorkspace.id}>
-              {currentWorkspace.id}
+            <p
+              className="mt-1 truncate font-mono text-[10px] leading-tight text-muted-foreground"
+              title={`${currentWorkspace.slug} · ${currentWorkspace.id}`}
+            >
+              {currentWorkspace.slug}
             </p>
             {hadStaleSelection ? (
               <p className="mt-2 rounded-md bg-amber-500/15 px-2 py-1 text-[11px] text-amber-900 dark:text-amber-100">
@@ -96,7 +103,14 @@ export function WorkspaceSwitcher() {
           <select
             className="w-full rounded-lg border border-input bg-background px-2.5 py-2 text-sm text-foreground shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
             value={effectiveId}
-            onChange={(e) => selectWorkspace(e.target.value)}
+            onChange={(e) => {
+              const id = e.target.value;
+              const w = workspaces.find((x) => x.id === id);
+              if (!w) return;
+              const sub = pathnameToWorkspaceSubpath(pathname);
+              selectWorkspace(id);
+              router.push(workspaceAppHref(w.slug, sub));
+            }}
           >
             {workspaces.map((w) => (
               <option key={w.id} value={w.id}>

@@ -11,6 +11,7 @@
 | Workspace / документы | `documents.png` | Список документов (по умолчанию — сразу после входа; с worker см. ниже) |
 | Очередь / async | `jobs.png` | `/jobs` — задачи индексации |
 | План и usage | `billing.png` | `/billing` — план и лимиты |
+| Команда | `team.png` | `/w/…/team` — роли, участники, приглашения |
 | Поиск | `search.png` | `/search` |
 | Чат | `chat.png` | `/chat` |
 | Аудит (admin-friendly) | `audit.png` | `/audit` — журнал событий |
@@ -27,6 +28,7 @@
 | `documents.png` | то же (без ожидания worker — часто пустой список или документ «В очереди», если только что загрузили вручную) |
 | `jobs.png` | то же |
 | `billing.png` | то же |
+| `team.png` | то же (после `billing` — переход по пункту «Команда» в навигации) |
 | `search.png` | то же |
 | `chat.png` | то же |
 | `audit.png` | то же |

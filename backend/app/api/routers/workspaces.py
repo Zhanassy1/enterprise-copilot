@@ -24,6 +24,7 @@ def list_workspaces(db: DbDep, user: CurrentUser) -> list[WorkspaceOut]:
             WorkspaceOut(
                 id=m.workspace.id,
                 name=m.workspace.name,
+                slug=m.workspace.slug,
                 role=(m.role.name or "").lower(),
             )
         )

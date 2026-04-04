@@ -2,6 +2,14 @@
 
 Все workspace-scoped операции должны фильтровать по `workspace_id` из контекста (`WorkspaceReadAccess` / `WorkspaceWriteAccess` из `deps.py`) или из поля `IngestionJob.workspace_id` / `Document.workspace_id` в фоновых задачах. `owner_id` на моделях — метаданные/аудит, не путь авторизации.
 
+## Slug и публичные URL
+
+- У каждого `Workspace` есть уникальный **`slug`** (нижний регистр, индекс в БД): человекочитаемый идентификатор для путей API и UI. **Slug не является секретом** — доступ по-прежнему через JWT и проверку членства.
+- Заголовок **`X-Workspace-Id`** по-прежнему передаёт **UUID** workspace (клиент знает его из `GET /workspaces`); это не требует дополнительного lookup на каждый запрос.
+- Path-параметр **`/workspaces/{workspace_ref}/…`** принимает **либо UUID**, либо **slug** (`resolve_workspace_ref_to_id` в `deps.py` + `app/core/workspace_slug.py`). Админские маршруты `/admin/workspaces/{workspace_id}/…` остаются на UUID для однозначности.
+- **Фронтенд (Next.js):** основные экраны приложения живут под **`/w/{slug}/…`** (документы, команда, чат и т.д.); устаревшие пути без сегмента (`/documents`, …) редиректят на slug-версию после загрузки workspace.
+- **Stripe Checkout:** клиент передаёт в `POST /billing/checkout` абсолютные `success_url` / `cancel_url` с путём вида `/w/{slug}/billing/success` и `/w/{slug}/billing?checkout=cancel`, чтобы после оплаты открывался нужный workspace. Дефолт бэкенда (`{APP_BASE_URL}/billing?…`) оставлен для обратной совместимости без slug.
+
 В **production** синхронная индексация в процессе API отключена: `document_ingestion.py` (upload), `documents.reindex_embeddings` (sync-ветка), плюс `startup_checks` — `ALLOW_SYNC_INGESTION_FOR_DEV` не может быть `true` при `ENVIRONMENT=production`.
 
 Async upload: после `flush` строк `Document` + `IngestionJob` выполняется **`commit` до `apply_async`**, чтобы worker (отдельное соединение к БД) и Celery eager в тестах видели строки.
@@ -12,6 +20,7 @@ Async upload: после `flush` строк `Document` + `IngestionJob` выпо
 |--------|-------|------------|
 | `auth.py` | user | Без workspace; refresh/logout с audit |
 | `workspaces.py` | user | Список workspace пользователя |
+| `workspace_members.py` | path `workspace_ref` (UUID или slug) | Ростер участников; смена роли / kick — admin+ (`WorkspaceInviteAdmin`) |
 | `documents.py` | `ws.workspace.id` | `get_document`, upload, delete, summary, download, ingestion sub-resource — через `DocumentIngestionService` с `workspace_id` |
 | `ingestion.py` | `IngestionJob.workspace_id` | Список jobs только текущего workspace |
 | `search.py` | `ws.workspace.id` | `SearchService.search(workspace_id=...)` |
@@ -27,6 +36,10 @@ Async upload: после `flush` строк `Document` + `IngestionJob` выпо
 | `auth.py` | POST | `/auth/register` … | — | — |
 | `auth.py` | POST | `/auth/refresh`, `/logout`, `/logout-all` | — | refresh rotation + reuse |
 | `workspaces.py` | GET | `/workspaces` | — | только членства пользователя |
+| `workspace_members.py` | GET | `/workspaces/{workspace_ref}/members` | `WorkspaceReadAccessForRef` | все роли workspace |
+| `workspace_members.py` | PATCH | `/workspaces/{workspace_ref}/members/{user_id}` | `WorkspaceInviteAdmin` | смена роли (не owner) |
+| `workspace_members.py` | DELETE | `/workspaces/{workspace_ref}/members/{user_id}` | `WorkspaceInviteAdmin` | исключение участника |
+| `invitations.py` | POST/GET/… | `/workspaces/{workspace_ref}/invitations…` | `WorkspaceInviteAdmin` | приглашения по workspace |
 | `documents.py` | GET | `/documents` | `CurrentWorkspace` | read roles |
 | `documents.py` | POST | `/documents/upload` | `WorkspaceWriteAccess` | member+ |
 | `documents.py` | `GET/DELETE/…` | `/documents/{id}/*` | сервис + `Document.workspace_id == ws.id` | не по `owner_id` |

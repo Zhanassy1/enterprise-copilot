@@ -51,3 +51,11 @@ CI does **not** require SMTP. Integration job runs `unittest discover` with `RUN
 ## 5. Pool mode for tests
 
 See **[docs/testing-database.md](testing-database.md)** for `SQLALCHEMY_USE_NULLPOOL` (why integration CI sets it, and when `ResourceWarning` without it is expected).
+
+## 6. Production: SendGrid / Mailgun / Postmark
+
+**SMTP relay (simplest):** Most providers expose SMTP on port 587 with STARTTLS. Set `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASSWORD`, and `SMTP_FROM_EMAIL` (sender must be allowed in the provider dashboard). Same code path as local Mailpit — no extra dependencies.
+
+**SendGrid REST:** Set `SENDGRID_API_KEY` (and `SMTP_FROM_EMAIL` for the `from` address). When the key is present, the app uses HTTPS to `api.sendgrid.com` instead of SMTP. Handy if you prefer API keys over SMTP credentials.
+
+**Invite links** use `APP_BASE_URL` + `/invite/{token}` (see `send_workspace_invite_email`). **`EMAIL_CAPTURE_MODE`** still stores full bodies for tests; never enable capture in production.

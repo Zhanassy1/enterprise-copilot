@@ -1,13 +1,16 @@
 import json
 import unittest
-from pathlib import Path
 
 from app.services.nlp import decide_response_mode
+
+from tests.eval_paths import find_evals_file
 
 
 class RelevanceRegressionTests(unittest.TestCase):
     def test_regression_cases_decision_stability(self) -> None:
-        path = Path(__file__).resolve().parents[2] / "docs" / "evals" / "relevance_regression_cases.json"
+        path = find_evals_file("relevance_regression_cases.json")
+        if path is None:
+            self.skipTest("docs/evals/relevance_regression_cases.json not found (run from repo checkout)")
         cases = json.loads(path.read_text(encoding="utf-8"))
         for case in cases:
             with self.subTest(case_id=case["id"]):

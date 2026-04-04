@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { Eye } from "lucide-react";
 import { useWorkspace } from "@/components/workspace/workspace-provider";
+import { workspaceAppHref } from "@/lib/workspace-path";
 import { isViewer } from "@/lib/workspace-role";
 
 /** Краткая подсказка в сайдбаре / моб. меню: роль наблюдатель (viewer) без дублирования логики API. */
@@ -20,7 +21,10 @@ export function NavRoleHint() {
         политики API.
       </p>
       <p className="mt-1.5">
-        <Link href="/team" className="font-medium text-foreground underline underline-offset-2">
+        <Link
+          href={currentWorkspace?.slug ? workspaceAppHref(currentWorkspace.slug, "/team") : "/team"}
+          className="font-medium text-foreground underline underline-offset-2"
+        >
           Команда и доступ
         </Link>
       </p>

@@ -101,9 +101,10 @@ class DocumentIndexingService:
                 text(
                     """
                     INSERT INTO document_chunks (
-                        document_id, chunk_index, page_number, paragraph_index, text, embedding_vector
+                        id, document_id, chunk_index, page_number, paragraph_index, text, embedding_vector
                     )
                     SELECT
+                        gen_random_uuid(),
                         CAST(:document_id AS uuid),
                         t.chunk_index,
                         t.page_number,

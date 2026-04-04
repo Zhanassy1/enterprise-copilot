@@ -34,14 +34,13 @@ test.describe("demo screenshots", () => {
   });
 
   test("marketing: landing + pricing", async ({ page }) => {
-    await page.goto("/login");
-    await page.evaluate(() => {
+    await page.addInitScript(() => {
       localStorage.removeItem("ec_token");
       localStorage.removeItem("ec_workspace_id");
     });
-    await page.goto("/");
-    await expect(page.getByRole("heading", { name: /Находите ответы в своих документах/i })).toBeVisible({
-      timeout: 20000,
+    await page.goto("/", { waitUntil: "load" });
+    await expect(page.locator("main h1")).toContainText(/Находите ответы в своих документах/i, {
+      timeout: 20_000,
     });
     await page.screenshot({ path: shot("landing.png"), fullPage: true });
 
@@ -50,7 +49,7 @@ test.describe("demo screenshots", () => {
     await page.screenshot({ path: shot("pricing.png"), fullPage: true });
   });
 
-  test("app: documents, jobs, billing, search, chat, audit", async ({ page }) => {
+  test("app: documents, jobs, billing, team, search, chat, audit", async ({ page }) => {
     if (WITH_INGEST) test.setTimeout(240_000);
     const ingestFixture = path.join(__dirname, "fixtures", "demo-ingest.txt");
 
@@ -83,6 +82,12 @@ test.describe("demo screenshots", () => {
     await page.goto("/billing");
     await expect(page.getByRole("heading", { name: "План и лимиты" })).toBeVisible();
     await page.screenshot({ path: shot("billing.png"), fullPage: true });
+
+    await page.getByRole("navigation").getByRole("link", { name: "Команда" }).click();
+    await expect(page.getByRole("heading", { name: "Команда и доступ" })).toBeVisible({
+      timeout: 15_000,
+    });
+    await page.screenshot({ path: shot("team.png"), fullPage: true });
 
     await page.goto("/search");
     await expect(page.getByRole("heading", { name: "Поиск", exact: true })).toBeVisible();

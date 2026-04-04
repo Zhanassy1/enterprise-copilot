@@ -1,6 +1,6 @@
 ---
 name: Bug report
-about: Report unexpected behavior or a regression
+description: Report unexpected behavior or a regression
 title: "[Bug] "
 labels: bug
 ---
