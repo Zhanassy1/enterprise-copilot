@@ -616,9 +616,13 @@ export default function BillingPage() {
             <CardContent className="space-y-3 text-sm text-muted-foreground">
               <p>
                 Участники, приглашения (отправка, повтор, отзыв) и смена ролей доступны через API и UI на странице{" "}
-                <Link href={workspaceAppHref(wsSlug, "/team")} className="font-medium text-foreground underline underline-offset-2">
-                  Команда
-                </Link>
+                {wsSlug ? (
+                  <Link href={workspaceAppHref(wsSlug, "/team")} className="font-medium text-foreground underline underline-offset-2">
+                    Команда
+                  </Link>
+                ) : (
+                  <span className="font-medium text-foreground">Команда</span>
+                )}
                 .
               </p>
             </CardContent>

@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
 import { isAuthenticated } from "@/lib/auth";
 import { Sidebar } from "@/components/layout/sidebar";
 import { TopBar } from "@/components/layout/topbar";
@@ -12,20 +11,20 @@ import { AppShellBanners } from "@/components/layout/app-shell-banners";
 import { WorkspaceGettingStarted } from "@/components/workspace/workspace-getting-started";
 
 export function AppShell({ children }: { children: React.ReactNode }) {
-  const router = useRouter();
   const [mobileOpen, setMobileOpen] = useState(false);
   const [checked, setChecked] = useState(false);
 
   useEffect(() => {
+    if (typeof window === "undefined") return;
     if (!isAuthenticated()) {
-      const path =
-        typeof window !== "undefined" ? `${window.location.pathname}${window.location.search}` : "/documents";
+      const path = `${window.location.pathname}${window.location.search}`;
       const safe = path.startsWith("/") ? path : "/documents";
-      router.replace(`/login?next=${encodeURIComponent(safe)}`);
-    } else {
-      setChecked(true);
+      // Hard navigation: встроенные превью иногда не завершают client-side router.replace — тогда «Загрузка…» висит бесконечно.
+      window.location.assign(`/login?next=${encodeURIComponent(safe)}`);
+      return;
     }
-  }, [router]);
+    setChecked(true);
+  }, []);
 
   if (!checked) {
     return (

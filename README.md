@@ -39,6 +39,8 @@ docker compose up --build
 
 Then open **http://localhost:3000** (UI) and **http://localhost:8000/docs** (API). Docker dev defaults: [backend/.env.docker](backend/.env.docker); for local backend env see [env/.env.example](env/.env.example) → `backend/.env`.
 
+Если при `docker compose up` ошибка bind на порту **3000** (уже занят, например локальным Next): задайте другой хост-порт и откройте UI на нём — `HOST_FRONTEND_PORT=3001 docker compose up` (PowerShell: `$env:HOST_FRONTEND_PORT=3001; docker compose up`), затем **http://localhost:3001**.
+
 ### Enterprise (optional)
 
 - **Invitations**: emails link to `{APP_BASE_URL}/invite/{token}` (legacy `?token=` redirects in the UI). Configure SMTP relay or `SENDGRID_API_KEY` (see `backend/.env.example`, `docs/email-testing.md`). Pending invites: Team UI and `/api/v1/workspaces/{id}/invitations`. After acceptance the invite token is cleared in the database. You can also pass `invite_token` on `POST /api/v1/auth/login` or `POST /api/v1/auth/register` (register with an invite returns JWT like `/invitations/accept`; password min. 8 characters in that path).

@@ -32,7 +32,7 @@ export const appNavItems: AppNavItem[] = [
   { segment: "/admin", label: "Админ", icon: ShieldEllipsis, absolute: true },
 ];
 
-export function navItemHref(slug: string | undefined, item: AppNavItem): string {
+export function navItemHref(slug: string | null | undefined, item: AppNavItem): string {
   if (item.absolute) return item.segment;
   return slug ? workspaceAppHref(slug, item.segment) : item.segment;
 }

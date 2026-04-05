@@ -16,11 +16,23 @@ export class ApiError extends Error {
 
 export function toErrorMessage(err: unknown): string {
   if (err instanceof ApiError) {
-    const b = err.body as Record<string, unknown> | null;
+    const b = err.body as Record<string, unknown> | string | null;
     if (b && typeof b === "object" && "detail" in b) {
-      const d = b.detail;
+      const d = (b as Record<string, unknown>).detail;
       if (typeof d === "string") return d;
       if (Array.isArray(d)) return d.map((e) => e?.msg ?? String(e)).join("; ");
+    }
+    if (err.status === 502 || err.status === 503 || err.status === 504) {
+      return "API недоступен. Запустите backend на порту 8000 (см. README).";
+    }
+    // Next proxy к FastAPI при ECONNREFUSED часто отдаёт 500 без JSON detail (тело HTML/текст).
+    if (
+      err.status === 500 &&
+      (b === null ||
+        typeof b === "string" ||
+        (typeof b === "object" && b !== null && !("detail" in b)))
+    ) {
+      return "Не удалось связаться с API (часто: backend не запущен на :8000). Проверьте терминал и README.";
     }
     return `Ошибка ${err.status}`;
   }
