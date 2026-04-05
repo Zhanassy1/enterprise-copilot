@@ -10,10 +10,9 @@
 # REDIS_URL must include the same password as REDIS_PASSWORD (e.g. redis://:pass@redis:6379/0).
 # Never use postgres:postgres or unauthenticated redis in DATABASE_URL/REDIS_URL — startup_checks will fail.
 #
-# Reference stack below opts out of TLS-to-Postgres, S3-first, and mandatory TRUSTED_PROXY_IPS because the internal
-# `db` service has no TLS and there is no MinIO/ingress in this compose file. Hardened deploys: remove those three
-# PRODUCTION_REQUIRE_*=0 lines, add ?sslmode=require to DATABASE_URL, set STORAGE_BACKEND=s3 and S3_*, and set
-# USE_FORWARDED_HEADERS=1 with TRUSTED_PROXY_IPS for your LB CIDRs.
+# Minimal production profile (PRODUCTION_PROFILE=minimal): internal `db`/Redis only — no TLS to Postgres, no MinIO
+# in this file. Opt-outs below match that profile. Recommended path is hardened — see docs/hardened-deploy.md
+# (managed DB with ?sslmode=require, S3, TRUSTED_PROXY_IPS, PRODUCTION_PROFILE=hardened).
 
 services:
   db:
@@ -39,6 +38,7 @@ services:
   api:
     environment:
       ENVIRONMENT: production
+      PRODUCTION_PROFILE: minimal
       DATABASE_URL: ${DATABASE_URL:?DATABASE_URL is required for production compose}
       REDIS_URL: ${REDIS_URL:?REDIS_URL is required for production compose}
       SECRET_KEY: ${SECRET_KEY:?SECRET_KEY is required for production compose}
@@ -51,6 +51,7 @@ services:
   worker:
     environment:
       ENVIRONMENT: production
+      PRODUCTION_PROFILE: minimal
       DATABASE_URL: ${DATABASE_URL:?DATABASE_URL is required for production compose}
       REDIS_URL: ${REDIS_URL:?REDIS_URL is required for production compose}
       SECRET_KEY: ${SECRET_KEY:?SECRET_KEY is required for production compose}

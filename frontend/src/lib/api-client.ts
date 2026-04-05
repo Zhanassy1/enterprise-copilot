@@ -36,8 +36,10 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     headers.set("Content-Type", "application/json");
   }
   if (token) headers.set("Authorization", `Bearer ${token}`);
-  const ws = getWorkspaceId();
-  if (ws) headers.set("X-Workspace-Id", ws);
+  if (!headers.has("X-Workspace-Id")) {
+    const ws = getWorkspaceId();
+    if (ws) headers.set("X-Workspace-Id", ws);
+  }
 
   const res = await fetch(`${API_BASE}${path}`, { ...init, headers });
   const txt = await res.text();
@@ -84,12 +86,17 @@ export interface Token {
 
 export type BillingBannerVariant = "none" | "warning" | "critical";
 
+export type BillingState = "free" | "active" | "trialing" | "grace" | "past_due" | "canceled";
+
 export interface SubscriptionOut {
   plan_slug: string;
   subscription_status: string | null;
   current_period_end: string | null;
   trial_ends_at: string | null;
   grace_ends_at: string | null;
+  billing_state: BillingState;
+  renewal_at: string | null;
+  grace_until: string | null;
   past_due_banner: boolean;
   banner_variant: BillingBannerVariant;
   banner_message: string | null;
@@ -118,6 +125,8 @@ export interface InvitationOut {
   status: string;
   expires_at: string | null;
   created_at: string;
+  /** Present only when API runs with email capture (tests / dev). */
+  plain_token?: string | null;
 }
 
 export interface InviteValidateOut {
@@ -330,7 +339,11 @@ export const api = {
       method: "DELETE",
     }),
 
-  getBillingSubscription: () => request<SubscriptionOut>("/billing/subscription"),
+  getBillingSubscription: (workspaceId?: string) =>
+    request<SubscriptionOut>(
+      "/billing/subscription",
+      workspaceId ? { headers: { "X-Workspace-Id": workspaceId } } : undefined,
+    ),
 
   getBillingInvoices: () => request<BillingInvoiceOut[]>("/billing/invoices"),
 
@@ -340,12 +353,17 @@ export const api = {
       body: JSON.stringify({ return_url: returnUrl }),
     }),
 
-  createBillingCheckout: (successUrl?: string | null, cancelUrl?: string | null) =>
+  createBillingCheckout: (
+    successUrl?: string | null,
+    cancelUrl?: string | null,
+    planSlug: "pro" | "team" = "pro",
+  ) =>
     request<BillingUrlOut>("/billing/checkout", {
       method: "POST",
       body: JSON.stringify({
         success_url: successUrl ?? null,
         cancel_url: cancelUrl ?? null,
+        plan_slug: planSlug,
       }),
     }),
 

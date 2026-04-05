@@ -31,7 +31,9 @@ def test_invitations_create_list_revoke_flow(client: TestClient, two_workspaces:
         json={"email": invite_email, "role": "member"},
     )
     assert r.status_code == 200, r.text
-    inv_id = r.json()["id"]
+    created = r.json()
+    inv_id = created["id"]
+    assert created.get("plain_token") and len(str(created["plain_token"])) >= 16
 
     li = client.get(
         f"/api/v1/workspaces/{a['ws']}/invitations",

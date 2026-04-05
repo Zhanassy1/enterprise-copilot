@@ -2,11 +2,13 @@
 
 **Продуктовый контекст:** Enterprise Copilot — multi-tenant AI-платформа для документов; этот документ описывает, как безопасно выкатывать API, worker и зависимости (Postgres, Redis, S3). Обзор возможностей и лимитов: [README.md](../README.md), [quotas.md](quotas.md).
 
+**Recommended production path** is **hardened** (`PRODUCTION_PROFILE=hardened`, default): TLS to Postgres, S3-backed storage, documented trusted proxy CIDRs — see [hardened-deploy.md](hardened-deploy.md). The repo’s `docker-compose.yml` + `docker-compose.prod.yml` stack is a **minimal** self-hosted reference (`PRODUCTION_PROFILE=minimal` in the overlay), not a substitute for managed DB + object storage in real production.
+
 ## Development vs production
 
 | | Dev | Production (primary path) |
 |---|-----|---------------------------|
-| Compose | `docker compose up` — root `docker-compose.yml` | `docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build` |
+| Compose | `docker compose up` — root `docker-compose.yml` | **Minimal** reference: `docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build` (internal DB/Redis). **Hardened**: use [.env.production.example](../.env.production.example) with managed services and `PRODUCTION_PROFILE=hardened` — [hardened-deploy.md](hardened-deploy.md) |
 | DB/Redis ports | Published to host (e.g. 5433, 6380) for tooling | **Not** published; services only on internal network |
 | Credentials | Default `postgres:postgres` acceptable locally | Strong `POSTGRES_*`, `REDIS_PASSWORD`, `SECRET_KEY`; validated by `startup_checks` when `ENVIRONMENT=production` |
 | Ingestion | Worker + async recommended; optional sync indexing only with `ENVIRONMENT=local` + flags | **Async only** (`INGESTION_ASYNC_ENABLED=1`, `ALLOW_SYNC_INGESTION_FOR_DEV=0`) |
@@ -34,9 +36,11 @@ Optional: `POSTGRES_DB` (default `enterprise_copilot`).
 
 Copy `.env.production.example` to your orchestration layer and replace placeholders. Never commit real secrets.
 
-### `PRODUCTION_REQUIRE_DATABASE_SSL`, `PRODUCTION_REQUIRE_S3_BACKEND`, `PRODUCTION_REQUIRE_TRUSTED_PROXY_IPS`
+### `PRODUCTION_PROFILE`, `PRODUCTION_REQUIRE_DATABASE_SSL`, `PRODUCTION_REQUIRE_S3_BACKEND`, `PRODUCTION_REQUIRE_TRUSTED_PROXY_IPS`
 
-These default to **enabled** (`1`) in `Settings`: with `ENVIRONMENT=production`, the API fails fast unless `DATABASE_URL` indicates TLS (e.g. `?sslmode=require`), `STORAGE_BACKEND=s3` with bucket/keys, and `TRUSTED_PROXY_IPS` is non-empty. Set any flag to `0` only for intentional staging or for the reference `docker-compose.prod.yml` overlay (internal Postgres without TLS, no MinIO, no ingress).
+`PRODUCTION_PROFILE` defaults to **`hardened`**: you cannot disable the three `PRODUCTION_REQUIRE_*` flags above (startup fails if you try). With **`minimal`**, the same flags behave as optional opt-outs (`1` = enforce). The reference `docker-compose.prod.yml` sets **`PRODUCTION_PROFILE=minimal`** and `PRODUCTION_REQUIRE_*=0` for an internal Docker-only stack (no TLS to Postgres, no S3 service in compose).
+
+With `ENVIRONMENT=production` and the flags enabled, the API fails fast unless `DATABASE_URL` indicates TLS (e.g. `?sslmode=require`), `STORAGE_BACKEND=s3` with bucket/keys, and `TRUSTED_PROXY_IPS` is non-empty.
 
 ### Multi-instance: Redis rate limits, readiness, Celery
 
@@ -96,6 +100,7 @@ Use the same `STORAGE_BACKEND=s3` as for AWS; point `S3_ENDPOINT_URL` at your Mi
 
 ## Further reading
 
+- [hardened-deploy.md](hardened-deploy.md) — hardened vs minimal profiles and checklist
 - [security.md](security.md)
 - [quotas.md](quotas.md)
 - [runbook.md](runbook.md)

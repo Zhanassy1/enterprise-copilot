@@ -56,11 +56,27 @@ def _database_url_requires_ssl(database_url: str) -> bool:
     return "sslmode=require" in low or "ssl=true" in low or "sslmode=verify-full" in low
 
 
+def _hardened_disallows_opt_out_message(flag: str) -> str:
+    return (
+        f"Production configuration invalid: PRODUCTION_PROFILE=hardened requires {flag}=1 "
+        f"(remove {flag}=0 or set PRODUCTION_PROFILE=minimal for intentional self-hosted opt-outs)"
+    )
+
+
 def validate_production_settings(settings: Settings) -> None:
     """Raise RuntimeError when production configuration is unsafe or incomplete."""
     env = settings.environment.lower().strip()
     if env != "production":
         return
+
+    profile = (settings.production_profile or "hardened").lower().strip()
+    if profile == "hardened":
+        if not settings.production_require_database_ssl:
+            raise RuntimeError(_hardened_disallows_opt_out_message("PRODUCTION_REQUIRE_DATABASE_SSL"))
+        if not settings.production_require_s3_backend:
+            raise RuntimeError(_hardened_disallows_opt_out_message("PRODUCTION_REQUIRE_S3_BACKEND"))
+        if not settings.production_require_trusted_proxy_ips:
+            raise RuntimeError(_hardened_disallows_opt_out_message("PRODUCTION_REQUIRE_TRUSTED_PROXY_IPS"))
 
     sk = (settings.secret_key or "").strip()
     if not sk:

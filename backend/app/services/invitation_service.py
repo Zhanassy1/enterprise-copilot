@@ -74,7 +74,7 @@ def validate_invite_token(db: Session, *, token_plain: str) -> InviteValidation:
     )
 
 
-def create_or_refresh_invitation(
+def create_invitation(
     db: Session,
     *,
     workspace_id: uuid.UUID,
@@ -82,7 +82,7 @@ def create_or_refresh_invitation(
     role_name: str,
     invited_by_user_id: uuid.UUID,
 ) -> tuple[WorkspaceInvitation, str]:
-    """Returns (invitation row, plain_token for email)."""
+    """Create or refresh a pending invitation. Returns (invitation row, plain_token for email)."""
     email = normalize_email(email_raw)
     if not email or not _EMAIL_RE.match(email):
         raise ValueError("invalid_email")
@@ -154,7 +154,7 @@ def revoke_invitation(db: Session, *, workspace_id: uuid.UUID, invitation_id: uu
     return inv
 
 
-def accept_invite_existing_user(
+def _accept_invite_existing_user(
     db: Session,
     *,
     token_plain: str,
@@ -208,7 +208,7 @@ def accept_invite_existing_user(
     return inv.workspace_id
 
 
-def accept_invite_new_user(
+def _accept_invite_new_user(
     db: Session,
     *,
     token_plain: str,
@@ -288,7 +288,8 @@ def resend_invitation(
     return inv, plain
 
 
-def list_pending_invitations(db: Session, workspace_id: uuid.UUID) -> list[WorkspaceInvitation]:
+def list_invitations(db: Session, workspace_id: uuid.UUID) -> list[WorkspaceInvitation]:
+    """Pending invitations for a workspace (ordered newest first)."""
     rows = db.scalars(
         select(WorkspaceInvitation)
         .where(WorkspaceInvitation.workspace_id == workspace_id)
@@ -297,3 +298,23 @@ def list_pending_invitations(db: Session, workspace_id: uuid.UUID) -> list[Works
         .order_by(WorkspaceInvitation.created_at.desc())
     ).all()
     return list(rows)
+
+
+def accept_invitation(
+    db: Session,
+    *,
+    token_plain: str,
+    existing_user: User | None = None,
+    password: str | None = None,
+    full_name: str | None = None,
+) -> tuple[User, uuid.UUID]:
+    """
+    Accept an invitation: either as a logged-in user (existing_user) or new account (password required).
+    Does not commit the session.
+    """
+    if existing_user is not None:
+        ws_id = _accept_invite_existing_user(db, token_plain=token_plain, user=existing_user)
+        return existing_user, ws_id
+    if password is None or len(password) < 8:
+        raise ValueError("password_required")
+    return _accept_invite_new_user(db, token_plain=token_plain, password=password, full_name=full_name)

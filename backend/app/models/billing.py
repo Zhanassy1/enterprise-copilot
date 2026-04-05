@@ -9,6 +9,8 @@ from app.db.base import Base
 
 
 class WorkspaceQuota(Base):
+    """Per-workspace billing SoT: plan, Stripe ids, subscription status, renewal/grace timestamps."""
+
     __tablename__ = "workspace_quotas"
     __table_args__ = (UniqueConstraint("workspace_id", name="uq_workspace_quotas_workspace_id"),)
 

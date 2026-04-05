@@ -3,7 +3,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { api, toErrorMessage, ApiError, type AuditLogOut } from "@/lib/api-client";
-import { workspaceRoleLabel } from "@/lib/product-terminology";
+import { PRODUCT_SECTION, workspaceRoleLabel } from "@/lib/product-terminology";
+import { WorkspaceProductContext } from "@/components/workspace/workspace-product-context";
 import { useWorkspace } from "@/components/workspace/workspace-provider";
 import {
   AUDIT_SERVER_FILTER_PRESETS,
@@ -158,7 +159,13 @@ export default function AuditPage() {
     <div className="space-y-6">
       <PageHeader
         title="Журнал аудита"
-        description="События безопасности и действий в текущем рабочем пространстве (workspace). Данные приходят из API с ограничениями ниже — без догадок о несуществующих фильтрах."
+        description={`События безопасности и действий в текущем ${PRODUCT_SECTION.workspace.toLowerCase()}. Данные приходят из API с ограничениями ниже — без догадок о несуществующих фильтрах.`}
+      />
+
+      <WorkspaceProductContext
+        className="mt-4"
+        area="события аудита ниже относятся к этому рабочему пространству"
+        viewerDetail="Просмотр журнала доступен; расширенные фильтры вкладки «Админ» зависят от политики API и вашей роли."
       />
 
       {currentWs ? (

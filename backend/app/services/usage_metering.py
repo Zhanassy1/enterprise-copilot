@@ -109,6 +109,20 @@ def _defaults_for_plan(plan_slug: str) -> dict[str, int | None]:
     return dict(PLAN_LIMITS.get(slug, PLAN_LIMITS["free"]))
 
 
+def apply_plan_limits_to_quota(quota: WorkspaceQuota, plan_slug: str) -> None:
+    """Set ``plan_slug`` and monthly caps from ``PLAN_LIMITS`` (workspace billing SoT row)."""
+    slug = (plan_slug or "free").lower().strip()
+    if slug not in PLAN_LIMITS:
+        slug = "free"
+    d = PLAN_LIMITS[slug]
+    quota.plan_slug = slug
+    quota.monthly_request_limit = int(d["monthly_request_limit"] or 0)
+    quota.monthly_token_limit = int(d["monthly_token_limit"] or 0)
+    quota.monthly_upload_bytes_limit = int(d["monthly_upload_bytes_limit"] or 0)
+    cap = d.get("max_documents")
+    quota.max_documents = int(cap) if cap is not None else None
+
+
 def get_or_create_quota(db: Session, workspace_id: uuid.UUID) -> WorkspaceQuota:
     quota = db.scalar(select(WorkspaceQuota).where(WorkspaceQuota.workspace_id == workspace_id))
     if quota:

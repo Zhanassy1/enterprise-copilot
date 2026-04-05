@@ -130,8 +130,8 @@ export function LandingPage() {
               </Button>
             </div>
             <p className="mx-auto mt-8 max-w-lg text-xs text-muted-foreground">
-              Оплата банковской картой через провайдера в планах на будущее. Сейчас в интерфейсе отображаются план и использование
-              без списаний.
+              План workspace и расход квот отображаются в интерфейсе. При настроенных ключах Stripe владельцы оформляют подписку на
+              странице «План и лимиты»; без интеграции остаются лимиты и учёт без списаний.
             </p>
             <p className="mx-auto mt-4 max-w-lg text-center text-sm text-muted-foreground">
               <Link href="#demo-quick-1min" className="font-medium text-foreground underline-offset-4 hover:underline">

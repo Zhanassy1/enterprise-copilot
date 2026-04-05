@@ -33,8 +33,7 @@ from app.schemas.common_api import EmptyJSONBody
 from app.services.audit import write_audit_log
 from app.services.email_service import send_password_reset_email, send_verification_email
 from app.services.invitation_service import (
-    accept_invite_existing_user,
-    accept_invite_new_user,
+    accept_invitation,
     normalize_email,
     validate_invite_token,
 )
@@ -71,7 +70,7 @@ def register(payload: RegisterIn, db: DbDep) -> UserOut | Token:
         if len(payload.password) < 8:
             raise HTTPException(status_code=400, detail="password required (min 8 characters)")
         try:
-            user, _ws = accept_invite_new_user(
+            user, _ws = accept_invitation(
                 db,
                 token_plain=payload.invite_token,
                 password=payload.password,
@@ -176,7 +175,7 @@ def login(payload: LoginIn, db: DbDep, request: Request) -> Token:
         raise HTTPException(status_code=401, detail="Invalid email or password")
     if payload.invite_token:
         try:
-            accept_invite_existing_user(db, token_plain=payload.invite_token, user=user)
+            accept_invitation(db, token_plain=payload.invite_token, existing_user=user)
         except ValueError as e:
             code = str(e.args[0] if e.args else "invalid")
             db.rollback()

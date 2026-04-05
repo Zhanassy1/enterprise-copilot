@@ -6,7 +6,7 @@ workspace-scoped APIs. Routers ``auth`` and ``workspaces`` have no
 ``WorkspaceReadAccess`` routes, so their third test is ``pytest.skip`` with a
 pointer to scoped routers.
 
-Run: ``RUN_INTEGRATION_TESTS=1 pytest tests/test_billing.py -v`` (from ``backend/``).
+Run: ``RUN_INTEGRATION_TESTS=1 pytest tests/test_billing.py tests/test_billing_stripe_integration.py -v`` (from ``backend/``).
 """
 
 from __future__ import annotations

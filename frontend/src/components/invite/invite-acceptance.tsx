@@ -64,7 +64,7 @@ export function InviteAcceptance({ token }: { token: string }) {
       setToken(t.access_token);
       if (info?.workspace_id) setWorkspaceId(info.workspace_id);
       toast.success("Приглашение принято");
-      router.replace("/documents");
+      window.location.assign("/documents");
     } catch (e) {
       toast.error(toErrorMessage(e));
     } finally {
@@ -79,7 +79,7 @@ export function InviteAcceptance({ token }: { token: string }) {
       setToken(t.access_token);
       if (info?.workspace_id) setWorkspaceId(info.workspace_id);
       toast.success("Аккаунт создан, вы добавлены в workspace");
-      router.replace("/documents");
+      window.location.assign("/documents");
     } catch (e) {
       toast.error(toErrorMessage(e));
     } finally {

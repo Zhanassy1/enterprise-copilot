@@ -4,7 +4,7 @@ from typing import Annotated
 
 from fastapi import APIRouter, HTTPException, Query
 
-from app.api.deps import DbDep, OptionalUser, WorkspaceInviteAdmin
+from app.api.deps import DbDep, OptionalUser, WorkspaceInviteAdmin, WorkspaceReadAccessForRef
 from app.core.config import settings
 from app.core.security import create_access_token, generate_opaque_token, hash_opaque_token
 from app.models.security import RefreshToken
@@ -15,17 +15,9 @@ from app.schemas.invitations_api import (
     InviteAcceptIn,
     InviteValidateOut,
 )
+from app.services import invitation_service as invitation_svc
 from app.services.audit import write_audit_log
 from app.services.email_service import send_workspace_invite_email
-from app.services.invitation_service import (
-    accept_invite_existing_user,
-    accept_invite_new_user,
-    create_or_refresh_invitation,
-    list_pending_invitations,
-    resend_invitation,
-    revoke_invitation,
-    validate_invite_token,
-)
 
 router = APIRouter(tags=["invitations"])
 
@@ -36,7 +28,7 @@ def validate_invitation(
     token: Annotated[str, Query(min_length=16)],
 ) -> InviteValidateOut:
     try:
-        v = validate_invite_token(db, token_plain=token)
+        v = invitation_svc.validate_invite_token(db, token_plain=token)
     except ValueError as e:
         code = str(e.args[0] if e.args else "invalid")
         raise HTTPException(status_code=400, detail=code) from e
@@ -64,13 +56,13 @@ def _issue_login_token(db: DbDep, user_id: uuid.UUID) -> Token:
 
 
 @router.post("/invitations/accept", response_model=Token)
-def accept_invitation(
+def post_invitation_accept(
     payload: InviteAcceptIn,
     db: DbDep,
     optional_user: OptionalUser,
 ) -> Token:
     try:
-        preview = validate_invite_token(db, token_plain=payload.token)
+        preview = invitation_svc.validate_invite_token(db, token_plain=payload.token)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e.args[0] if e.args else "invalid")) from e
 
@@ -78,7 +70,7 @@ def accept_invitation(
         if not optional_user:
             raise HTTPException(status_code=401, detail="Login required to accept this invitation")
         try:
-            accept_invite_existing_user(db, token_plain=payload.token, user=optional_user)
+            invitation_svc.accept_invitation(db, token_plain=payload.token, existing_user=optional_user)
         except ValueError as e:
             code = str(e.args[0] if e.args else "invalid")
             if code == "email_mismatch":
@@ -93,14 +85,17 @@ def accept_invitation(
     if optional_user:
         raise HTTPException(status_code=400, detail="Use logged-out acceptance for new accounts")
     try:
-        user, _ws = accept_invite_new_user(
+        user, _ws = invitation_svc.accept_invitation(
             db,
             token_plain=payload.token,
             password=payload.password,
             full_name=payload.full_name,
         )
     except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e.args[0] if e.args else "invalid")) from e
+        code = str(e.args[0] if e.args else "invalid")
+        if code == "password_required":
+            raise HTTPException(status_code=400, detail="password required (min 8 characters)") from e
+        raise HTTPException(status_code=400, detail=code) from e
     tok = _issue_login_token(db, user.id)
     db.commit()
     return tok
@@ -114,7 +109,7 @@ def create_workspace_invitation(
 ) -> InvitationOut:
     workspace_id = ws.workspace.id
     try:
-        inv, plain = create_or_refresh_invitation(
+        inv, plain = invitation_svc.create_invitation(
             db,
             workspace_id=workspace_id,
             email_raw=body.email,
@@ -153,16 +148,17 @@ def create_workspace_invitation(
         status=inv.status,
         expires_at=inv.expires_at,
         created_at=inv.created_at,
+        plain_token=plain if settings.email_capture_mode else None,
     )
 
 
 @router.get("/workspaces/{workspace_ref}/invitations", response_model=list[InvitationOut])
 def list_workspace_invitations(
     db: DbDep,
-    ws: WorkspaceInviteAdmin,
+    ws: WorkspaceReadAccessForRef,
 ) -> list[InvitationOut]:
     workspace_id = ws.workspace.id
-    rows = list_pending_invitations(db, workspace_id)
+    rows = invitation_svc.list_invitations(db, workspace_id)
     out: list[InvitationOut] = []
     for inv in rows:
         rname = (inv.role.name or "").lower() if inv.role else ""
@@ -174,6 +170,7 @@ def list_workspace_invitations(
                 status=inv.status,
                 expires_at=inv.expires_at,
                 created_at=inv.created_at,
+                plain_token=None,
             )
         )
     return out
@@ -186,7 +183,7 @@ def revoke_workspace_invitation(
     ws: WorkspaceInviteAdmin,
 ) -> dict[str, str]:
     workspace_id = ws.workspace.id
-    inv = revoke_invitation(db, workspace_id=workspace_id, invitation_id=invitation_id)
+    inv = invitation_svc.revoke_invitation(db, workspace_id=workspace_id, invitation_id=invitation_id)
     if not inv:
         raise HTTPException(status_code=404, detail="Invitation not found")
     write_audit_log(
@@ -210,7 +207,7 @@ def resend_workspace_invitation(
 ) -> InvitationOut:
     workspace_id = ws.workspace.id
     try:
-        inv, plain = resend_invitation(
+        inv, plain = invitation_svc.resend_invitation(
             db,
             workspace_id=workspace_id,
             invitation_id=invitation_id,
@@ -246,4 +243,5 @@ def resend_workspace_invitation(
         status=inv.status,
         expires_at=inv.expires_at,
         created_at=inv.created_at,
+        plain_token=plain if settings.email_capture_mode else None,
     )

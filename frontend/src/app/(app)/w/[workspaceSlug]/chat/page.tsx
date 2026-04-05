@@ -9,7 +9,8 @@ import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { PanelLeftOpen } from "lucide-react";
 import { useWorkspace } from "@/components/workspace/workspace-provider";
-import { WorkspaceContextStrip } from "@/components/workspace/workspace-context-strip";
+import { WorkspaceProductContext } from "@/components/workspace/workspace-product-context";
+import { PRODUCT_SECTION } from "@/lib/product-terminology";
 import { canWriteInWorkspace } from "@/lib/workspace-role";
 import { QuotaLimitCtaBanner } from "@/components/billing/quota-limit-cta";
 import { isQuotaErrorMessage } from "@/lib/quota-error";
@@ -88,12 +89,11 @@ export default function ChatPage() {
           </div>
         ) : null}
         <div className="hidden border-b px-4 py-2 md:block">
-          <WorkspaceContextStrip area="диалоги и источники — только в этом workspace" />
-          {!canChatWrite ? (
-            <p className="mt-2 text-xs text-amber-800 dark:text-amber-200">
-              Роль «наблюдатель»: можно просматривать существующие диалоги, но создание и отправка сообщений отключены (политика API).
-            </p>
-          ) : null}
+          <WorkspaceProductContext
+            className="mt-0"
+            area={`диалоги и источники — только в этом ${PRODUCT_SECTION.workspace.toLowerCase()}`}
+            viewerDetail="Можно просматривать существующие диалоги; создание сессий и отправка сообщений отключены для роли «наблюдатель»."
+          />
         </div>
         <div className="flex flex-col gap-2 border-b px-4 py-2 md:hidden">
           <div className="flex items-center gap-2">
@@ -104,17 +104,17 @@ export default function ChatPage() {
               {sessions.find((s) => s.id === activeSessionId)?.title ?? "Чат"}
             </span>
           </div>
-          {!canChatWrite ? (
-            <p className="text-xs text-amber-800 dark:text-amber-200">
-              Наблюдатель: можно открыть существующие диалоги, отправка сообщений и новые сессии отключены.
-            </p>
-          ) : null}
+          <WorkspaceProductContext
+            className="mt-0"
+            area={`диалоги — в границах ${PRODUCT_SECTION.workspace.toLowerCase()}`}
+            viewerDetail="Можно открывать существующие диалоги; новые сессии и отправка сообщений отключены для роли «наблюдатель»."
+          />
         </div>
         <div className="flex-1 overflow-hidden">
           {!loadingSessions && sessions.length === 0 && canChatWrite ? (
             <div className="flex flex-col items-center justify-center gap-3 border-b bg-muted/20 px-4 py-10 text-center">
               <p className="max-w-sm text-sm text-muted-foreground">
-                Пока нет диалогов. Создайте первый — и задайте вопрос по документам workspace.
+                Пока нет диалогов. Создайте первый — и задайте вопрос по документам {PRODUCT_SECTION.workspace.toLowerCase()}.
               </p>
               <Button type="button" onClick={() => void handleCreate()}>
                 Создать первый диалог

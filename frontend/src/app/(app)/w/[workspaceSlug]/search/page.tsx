@@ -15,8 +15,8 @@ import {
   AccordionItem,
   AccordionTrigger,
 } from "@/components/ui/accordion";
-import { WorkspaceContextStrip } from "@/components/workspace/workspace-context-strip";
-import { WorkspaceViewerBanner } from "@/components/workspace/workspace-viewer-banner";
+import { WorkspaceProductContext } from "@/components/workspace/workspace-product-context";
+import { PRODUCT_SECTION } from "@/lib/product-terminology";
 import { useWorkspace } from "@/components/workspace/workspace-provider";
 import { QuotaLimitCtaBanner } from "@/components/billing/quota-limit-cta";
 import { isQuotaErrorMessage } from "@/lib/quota-error";
@@ -34,13 +34,14 @@ export default function SearchPage() {
     <>
       <PageHeader
         title="Поиск"
-        description="Семантический поиск только по проиндексированным документам выбранного workspace — без доступа к чужим пространствам."
+        description={`Семантический поиск только по проиндексированным документам выбранного ${PRODUCT_SECTION.workspace.toLowerCase()} — без доступа к чужим пространствам.`}
       />
 
-      <div className="mt-4 space-y-3">
-        <WorkspaceContextStrip area="индекс и ответы поиска — в границах этого workspace" />
-        <WorkspaceViewerBanner detail="Поиск и просмотр источников доступны в режиме чтения. Запросы поиска учитываются в месячной квоте workspace так же, как у остальных ролей." />
-      </div>
+      <WorkspaceProductContext
+        className="mt-4"
+        area="индекс и ответы поиска — в границах этого рабочего пространства"
+        viewerDetail="Поиск и просмотр источников доступны в режиме чтения. Запросы поиска учитываются в месячной квоте плана так же, как у остальных ролей."
+      />
 
       {error && !dismissed ? (
         <div className="mt-6 space-y-3">

@@ -42,7 +42,7 @@ Then open **http://localhost:3000** (UI) and **http://localhost:8000/docs** (API
 ### Enterprise (optional)
 
 - **Invitations**: emails link to `{APP_BASE_URL}/invite/{token}` (legacy `?token=` redirects in the UI). Configure SMTP relay or `SENDGRID_API_KEY` (see `backend/.env.example`, `docs/email-testing.md`). Pending invites: Team UI and `/api/v1/workspaces/{id}/invitations`. After acceptance the invite token is cleared in the database. You can also pass `invite_token` on `POST /api/v1/auth/login` or `POST /api/v1/auth/register` (register with an invite returns JWT like `/invitations/accept`; password min. 8 characters in that path).
-- **Stripe**: `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `STRIPE_PRICE_ID`; webhook endpoint `POST /api/v1/billing/webhooks/stripe`. Grace after failed payment: `BILLING_GRACE_PERIOD_DAYS` (default 3). Customer Portal and Checkout from the Billing page (owner/admin).
+- **Stripe**: `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `STRIPE_PRICE_ID` (Pro default), optional `STRIPE_PRICE_ID_PRO` / `STRIPE_PRICE_ID_TEAM` for explicit Price ids; webhook `POST /api/v1/billing/webhooks/stripe` updates the workspace `WorkspaceQuota` row (plan, Stripe ids, status, renewal/grace). Grace after failed payment: `BILLING_GRACE_PERIOD_DAYS` (default 3). Customer Portal and Checkout from the Billing page (owner/admin); `POST /api/v1/billing/checkout` accepts `plan_slug` `pro` or `team`.
 - **Platform admin**: database flag `users.is_platform_admin` and/or `PLATFORM_ADMIN_EMAILS` (comma-separated). API: `/api/v1/admin/…` (impersonation, usage, quota adjust). UI: `/admin`. Do not commit real addresses — set them only in local/private env (e.g. uncomment and fill `PLATFORM_ADMIN_EMAILS` in your copy of `backend/.env.docker`).
 
 **Docker / Next.js:** если UI отдаёт 500/404 или `Cannot find module './…js'`, очистите кэш и перезапустите фронт: `docker compose exec frontend rm -rf /app/.next && docker compose restart frontend` (на хосте можно удалить `frontend/.next`).
@@ -203,6 +203,8 @@ Motion demo: embed a walkthrough via [docs/DEMO_MEDIA.md](docs/DEMO_MEDIA.md) (`
 | 4 | **Асинхронная обработка** — job в UI и статус на карточке документа |
 | 5 | Поиск, чат, summary по документу |
 | 6 | Квоты и безопасность — лимиты на странице плана; аудит; ops — логи и метрики по [docs/observability.md](docs/observability.md) |
+
+Три компактных сценария (invite, upgrade, upload→job): **[docs/DEMO_MEDIA.md#product-demo-flows](docs/DEMO_MEDIA.md#product-demo-flows)**. В UI на `/w/:slug/…` — сворачиваемый блок «Быстрые сценарии» (см. тот же якорь).
 
 ---
 

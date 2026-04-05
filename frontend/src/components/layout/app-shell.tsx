@@ -9,6 +9,7 @@ import { MobileNav } from "@/components/layout/mobile-nav";
 import { WorkspaceProvider } from "@/components/workspace/workspace-provider";
 import { AppErrorBoundary } from "@/components/app-error-boundary";
 import { AppShellBanners } from "@/components/layout/app-shell-banners";
+import { WorkspaceGettingStarted } from "@/components/workspace/workspace-getting-started";
 
 export function AppShell({ children }: { children: React.ReactNode }) {
   const router = useRouter();
@@ -46,6 +47,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           <main className="flex-1 overflow-y-auto">
             <AppShellBanners />
             <div className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
+              <WorkspaceGettingStarted />
               <AppErrorBoundary>{children}</AppErrorBoundary>
             </div>
           </main>

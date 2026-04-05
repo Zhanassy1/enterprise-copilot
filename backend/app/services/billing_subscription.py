@@ -9,6 +9,39 @@ from app.models.billing import WorkspaceQuota
 
 BannerVariant = Literal["none", "warning", "critical"]
 
+# UI-facing subscription state; single source for GET /billing/subscription.
+BillingState = Literal["free", "active", "trialing", "grace", "past_due", "canceled"]
+
+
+def compute_billing_state(
+    quota: WorkspaceQuota,
+    *,
+    now: datetime | None = None,
+) -> BillingState:
+    """
+    Derive ``billing_state`` from ``WorkspaceQuota`` (Stripe fields + plan_slug).
+
+    - ``grace``: Stripe status past_due and current time before ``grace_ends_at``.
+    - ``free``: no Stripe subscription id (quota-only / never subscribed).
+    """
+    if now is None:
+        now = datetime.now(UTC)
+    has_sub = bool((quota.stripe_subscription_id or "").strip())
+    if not has_sub:
+        return "free"
+    status = (quota.subscription_status or "").lower().strip() or "active"
+    if status == "past_due":
+        if quota.grace_ends_at is not None and quota.grace_ends_at > now:
+            return "grace"
+        return "past_due"
+    if status in ("canceled", "unpaid", "incomplete_expired"):
+        return "canceled"
+    if status == "trialing":
+        return "trialing"
+    if status == "active":
+        return "active"
+    return "active"
+
 
 def _plan_feature_label(plan_slug: str) -> str:
     s = (plan_slug or "free").lower().strip()
@@ -34,7 +67,7 @@ def compute_subscription_banner(
     has_stripe = bool((quota.stripe_subscription_id or "").strip())
     plan_slug = (quota.plan_slug or "free").lower()
     status = (quota.subscription_status or "").lower() or None
-    in_grace = quota.grace_ends_at is not None and quota.grace_ends_at > now
+    in_grace = status == "past_due" and quota.grace_ends_at is not None and quota.grace_ends_at > now
     label = _plan_feature_label(plan_slug)
 
     if not has_stripe:

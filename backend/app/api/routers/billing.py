@@ -14,7 +14,7 @@ from app.schemas.billing_api import (
     SubscriptionOut,
     UsageSummaryOut,
 )
-from app.services.billing_subscription import compute_subscription_banner
+from app.services.billing_subscription import compute_billing_state, compute_subscription_banner
 from app.services.stripe_billing import (
     create_billing_portal_session,
     create_checkout_session,
@@ -38,12 +38,16 @@ router = APIRouter(prefix="/billing", tags=["billing"])
 def billing_subscription(db: DbDep, ws: WorkspaceReadAccess) -> SubscriptionOut:
     quota = get_or_create_quota(db, ws.workspace.id)
     variant, msg, past_compat = compute_subscription_banner(quota)
+    state = compute_billing_state(quota)
     return SubscriptionOut(
         plan_slug=quota.plan_slug,
         subscription_status=quota.subscription_status,
         current_period_end=quota.current_period_end,
         trial_ends_at=quota.trial_ends_at,
         grace_ends_at=quota.grace_ends_at,
+        billing_state=state,
+        renewal_at=quota.current_period_end,
+        grace_until=quota.grace_ends_at,
         past_due_banner=past_compat,
         banner_variant=variant,
         banner_message=msg,
@@ -94,6 +98,7 @@ def billing_checkout(
             success_url=success,
             cancel_url=cancel,
             billing_email=user.email,
+            plan_slug=body.plan_slug,
         )
     except RuntimeError as e:
         code = str(e)
@@ -101,6 +106,8 @@ def billing_checkout(
             raise HTTPException(status_code=503, detail="Stripe is not configured") from e
         if code == "stripe_price_not_configured":
             raise HTTPException(status_code=503, detail="Stripe price id is not configured") from e
+        if code == "stripe_team_price_not_configured":
+            raise HTTPException(status_code=503, detail="Stripe Team price id is not configured") from e
         raise HTTPException(status_code=400, detail=code) from e
     return BillingUrlOut(url=url)
 

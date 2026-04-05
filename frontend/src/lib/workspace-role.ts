@@ -19,3 +19,18 @@ export function isOwnerOrAdmin(role: string | null | undefined): boolean {
 export function isViewer(role: string | null | undefined): boolean {
   return normalizeWorkspaceRole(role) === "viewer";
 }
+
+/** Приглашения и смена ролей участников (owner / admin). */
+export function canInviteMembers(role: string | null | undefined): boolean {
+  return isOwnerOrAdmin(role);
+}
+
+/** Оформление подписки / Stripe checkout и портал (owner / admin). */
+export function canManageBillingCheckout(role: string | null | undefined): boolean {
+  return isOwnerOrAdmin(role);
+}
+
+/** Загрузка и удаление документов (не viewer). */
+export function canUploadDocuments(role: string | null | undefined): boolean {
+  return canWriteInWorkspace(role);
+}

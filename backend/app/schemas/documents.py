@@ -4,6 +4,8 @@ from typing import Literal
 
 from pydantic import BaseModel, Field, field_validator
 
+from app.constants.ingestion import INGESTION_JOB_STATUSES
+
 
 class DocumentOut(BaseModel):
     id: uuid.UUID
@@ -13,10 +15,13 @@ class DocumentOut(BaseModel):
     )
     filename: str
     content_type: str | None = None
-    status: str
+    status: str = Field(
+        description="Document pipeline status; canonical values match ingestion job phases (see INGESTION_JOB_STATUSES).",
+    )
     ingestion_job_status: str | None = Field(
         default=None,
         description="Latest ingestion job status for this document (if any), same vocabulary as IngestionJob.status.",
+        json_schema_extra={"enum": [*INGESTION_JOB_STATUSES]},
     )
     error_message: str | None = None
     file_size_bytes: int | None = None
@@ -63,7 +68,7 @@ class IngestionJobOut(BaseModel):
     id: uuid.UUID
     document_id: uuid.UUID
     workspace_id: uuid.UUID
-    status: str
+    status: str = Field(json_schema_extra={"enum": list(INGESTION_JOB_STATUSES)})
     attempts: int
     deduplication_key: str
     celery_task_id: str | None = None

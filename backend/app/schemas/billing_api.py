@@ -23,6 +23,15 @@ class SubscriptionOut(BaseModel):
     current_period_end: datetime | None
     trial_ends_at: datetime | None
     grace_ends_at: datetime | None
+    billing_state: Literal["free", "active", "trialing", "grace", "past_due", "canceled"]
+    renewal_at: datetime | None = Field(
+        default=None,
+        description="Alias for current_period_end (next renewal boundary in UTC).",
+    )
+    grace_until: datetime | None = Field(
+        default=None,
+        description="Alias for grace_ends_at (end of dunning grace window, UTC).",
+    )
     past_due_banner: bool = Field(
         description="True when a billing alert should show (warning or critical); prefer banner_variant.",
     )
@@ -49,6 +58,10 @@ class BillingPortalIn(BaseModel):
 class BillingCheckoutIn(BaseModel):
     success_url: str | None = Field(default=None, max_length=2048)
     cancel_url: str | None = Field(default=None, max_length=2048)
+    plan_slug: Literal["pro", "team"] = Field(
+        default="pro",
+        description="Which catalog plan to subscribe to (selects Stripe price id from settings).",
+    )
 
 
 class BillingUrlOut(BaseModel):

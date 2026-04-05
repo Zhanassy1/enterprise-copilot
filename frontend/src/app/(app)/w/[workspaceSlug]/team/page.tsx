@@ -2,22 +2,22 @@
 
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
-import { Info, Lock, Mail, UserCog, Users } from "lucide-react";
+import { Info, Mail, UserCog, Users } from "lucide-react";
 import { PageHeader } from "@/components/shared/page-header";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { useWorkspace } from "@/components/workspace/workspace-provider";
-import { WorkspaceContextStrip } from "@/components/workspace/workspace-context-strip";
+import { WorkspaceProductContext } from "@/components/workspace/workspace-product-context";
+import { PRODUCT_SECTION } from "@/lib/product-terminology";
 import { workspaceRoleLabel } from "@/lib/product-terminology";
-import { isOwnerOrAdmin, normalizeWorkspaceRole } from "@/lib/workspace-role";
+import { canInviteMembers, isOwnerOrAdmin, normalizeWorkspaceRole } from "@/lib/workspace-role";
 import { siteUrls } from "@/lib/site-urls";
 import { api, toErrorMessage, type InvitationOut, type WorkspaceMemberOut } from "@/lib/api-client";
 import { workspaceAppHref, workspaceRefForApi } from "@/lib/workspace-path";
 import { MembersTable } from "@/components/team/members-table";
 import { toast } from "sonner";
 import { Input } from "@/components/ui/input";
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 
 const ROLE_KEYS = ["owner", "admin", "member", "viewer"] as const;
 
@@ -93,7 +93,7 @@ export default function TeamPage() {
   const [myUserId, setMyUserId] = useState<string | null>(null);
 
   const loadInvites = useCallback(async () => {
-    if (!currentWorkspace || !admin) return;
+    if (!currentWorkspace) return;
     const ref = workspaceRefForApi(currentWorkspace);
     if (!ref) return;
     try {
@@ -102,7 +102,7 @@ export default function TeamPage() {
     } catch (e) {
       toast.error(toErrorMessage(e));
     }
-  }, [admin, currentWorkspace]);
+  }, [currentWorkspace]);
 
   useEffect(() => {
     void loadInvites();
@@ -176,71 +176,168 @@ export default function TeamPage() {
   };
 
   return (
-    <TooltipProvider delayDuration={300}>
     <div className="space-y-6">
       <PageHeader
-        title="Команда и доступ"
-        description="Один workspace — один изолированный контур: документы, квоты и аудит не пересекаются с другими пространствами. Ниже — ваша роль, матрица прав, список участников и приглашения."
+        title={PRODUCT_SECTION.team}
+        description={`Одно ${PRODUCT_SECTION.workspace.toLowerCase()} — один изолированный контур: документы, квоты и аудит не пересекаются с другими пространствами. Ниже — участники, ожидающие приглашения и политика ролей.`}
       />
 
-      <WorkspaceContextStrip area="роль, матрица прав и блоки ниже относятся к этому workspace" />
+      <WorkspaceProductContext
+        area="роль и блоки ниже относятся к этому рабочему пространству"
+        viewerDetail="Просмотр участников и списка приглашений доступен; отправка приглашений и смена ролей отключены в интерфейсе для роли «наблюдатель»."
+        memberLimit={!canInviteMembers(role) ? "invite" : null}
+      />
 
-      <Card className="border-border/80 bg-muted/20">
-        <CardHeader className="pb-2">
-          <CardTitle className="text-base">Как читать этот экран</CardTitle>
+      <Card className="border-dashed">
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2 text-base">
+            <Users className="h-4 w-4" aria-hidden />
+            Участники workspace
+          </CardTitle>
+          <p className="text-xs text-muted-foreground">
+            Список из <code className="rounded bg-muted px-1">GET /workspaces/…/members</code>. Владелец и администратор
+            меняют роли и исключают участников (не владельца и не себя в этом блоке).
+          </p>
         </CardHeader>
-        <CardContent className="grid gap-3 text-sm text-muted-foreground sm:grid-cols-3">
-          <p>
-            <span className="font-medium text-foreground">Владелец и администратор</span> — контур безопасности и
-            соответствия: аудит, план, контроль доступа; приглашения сюда же, когда появится backend.
-          </p>
-          <p>
-            <span className="font-medium text-foreground">Участник</span> — полный рабочий цикл с файлами, поиском и
-            чатом в пределах квот и политики API.
-          </p>
-          <p>
-            <span className="font-medium text-foreground">Наблюдатель</span> — контроль и чтение без изменения данных;
-            отдельные кнопки в приложении отключены намеренно.
-          </p>
+        <CardContent className="space-y-4 text-sm text-muted-foreground">
+          {currentWorkspace ? (
+            <MembersTable
+              workspaceRef={workspaceRefForApi(currentWorkspace)}
+              members={members}
+              loading={memLoading}
+              myUserId={myUserId}
+              actorRole={role}
+              onUpdated={() => void loadMembers()}
+            />
+          ) : null}
+          <div className="flex items-start gap-2 rounded-lg bg-muted/50 p-3 text-xs">
+            <Info className="mt-0.5 h-4 w-4 shrink-0 text-foreground" aria-hidden />
+            <p>
+              Наблюдатель и участник видят список без действий; смена роли и исключение — только у владельца и
+              администратора.
+            </p>
+          </div>
         </CardContent>
       </Card>
 
-      {currentWorkspace ? (
-        <Card>
-          <CardHeader className="flex flex-row flex-wrap items-start justify-between gap-3 pb-2">
-            <div>
-              <CardTitle className="text-base">Ваша роль в этом workspace</CardTitle>
-              <p className="mt-1 text-sm text-muted-foreground">{currentWorkspace.name}</p>
+      <Card className="border-dashed">
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2 text-base">
+            <Mail className="h-4 w-4" aria-hidden />
+            Ожидающие приглашения
+          </CardTitle>
+          <p className="text-xs text-muted-foreground">
+            Активные приглашения по email. Отправка и отзыв — только у владельца и администратора; остальные роли видят
+            список в режиме просмотра.
+          </p>
+        </CardHeader>
+        <CardContent className="space-y-4 text-sm text-muted-foreground">
+          {!admin ? (
+            <p className="rounded-lg border border-border/60 bg-muted/25 p-3 text-xs">
+              Управление приглашениями (отправка, повтор письма, отзыв) доступно{" "}
+              <span className="font-medium text-foreground">владельцу</span> и{" "}
+              <span className="font-medium text-foreground">администратору</span>. Ниже — текущие ожидающие приглашения
+              для прозрачности команды.
+            </p>
+          ) : null}
+          <div className="overflow-x-auto rounded-lg border bg-card">
+            <table className="w-full min-w-[22rem] text-left text-xs">
+              <thead>
+                <tr className="border-b bg-muted/40 text-[11px] font-medium text-foreground">
+                  <th className="p-2.5">Email</th>
+                  <th className="p-2.5">Роль</th>
+                  <th className="p-2.5">Истекает</th>
+                  {admin ? <th className="p-2.5">Действия</th> : null}
+                </tr>
+              </thead>
+              <tbody>
+                {invites.length === 0 ? (
+                  <tr>
+                    <td className="p-3 text-center text-muted-foreground" colSpan={admin ? 4 : 3}>
+                      Нет ожидающих приглашений
+                    </td>
+                  </tr>
+                ) : (
+                  invites.map((inv) => (
+                    <tr key={inv.id} className="border-b border-border/60">
+                      <td className="p-2.5 font-medium text-foreground">{inv.email}</td>
+                      <td className="p-2.5">{inv.role}</td>
+                      <td className="p-2.5 text-muted-foreground">
+                        {inv.expires_at ? new Date(inv.expires_at).toLocaleString("ru-RU") : "—"}
+                      </td>
+                      {admin ? (
+                        <td className="p-2.5">
+                          <div className="flex flex-wrap gap-1">
+                            <Button type="button" variant="outline" size="sm" onClick={() => void resendInvite(inv.id)}>
+                              Ещё раз
+                            </Button>
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="sm"
+                              className="text-destructive"
+                              onClick={() => void revokeInvite(inv.id)}
+                            >
+                              Отозвать
+                            </Button>
+                          </div>
+                        </td>
+                      ) : null}
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader className="pb-2">
+          <CardTitle className="flex items-center gap-2 text-base">
+            <UserCog className="h-4 w-4" aria-hidden />
+            Политика ролей и действия
+          </CardTitle>
+          <p className="text-sm text-muted-foreground">
+            Матрица прав, ваша роль в этом workspace и приглашение коллег (если у вас есть права администратора).
+          </p>
+        </CardHeader>
+        <CardContent className="space-y-6">
+          {currentWorkspace ? (
+            <div className="flex flex-row flex-wrap items-start justify-between gap-3 rounded-lg border border-border/60 bg-muted/15 p-4">
+              <div>
+                <p className="text-sm font-medium text-foreground">Ваша роль в этом workspace</p>
+                <p className="mt-1 text-sm text-muted-foreground">{currentWorkspace.name}</p>
+              </div>
+              <Badge variant={admin ? "default" : "secondary"} className="shrink-0">
+                {workspaceRoleLabel(role)}
+              </Badge>
             </div>
-            <Badge variant={admin ? "default" : "secondary"} className="shrink-0">
-              {workspaceRoleLabel(role)}
-            </Badge>
-          </CardHeader>
-          <CardContent className="space-y-3 text-sm text-muted-foreground">
+          ) : null}
+
+          <div className="space-y-3 text-sm text-muted-foreground">
             {role.toLowerCase() === "owner" ? (
               <p>
                 <span className="font-medium text-foreground">Владелец</span> задаёт верхний уровень доверия к этому
-                workspace: политика доступа, контроль событий в аудите и согласование плана; при появлении API —
-                раздача доступа коллегам из этого же раздела.
+                workspace: политика доступа, контроль событий в аудите и согласование плана; приглашения — из блока ниже.
               </p>
             ) : null}
             {role.toLowerCase() === "admin" ? (
               <p>
                 <span className="font-medium text-foreground">Администратор</span> ведёт операционную безопасность и
-                разбор инцидентов (аудит, лимиты); сценарии приглашений сойдутся с владельцем после подключения API.
+                разбор инцидентов (аудит, лимиты); приглашения и смена ролей — согласованы с владельцем по политике.
               </p>
             ) : null}
             {role.toLowerCase() === "member" ? (
               <p>
-                <span className="font-medium text-foreground">Участник</span> работает с документами в рамках квот, поиском
-                и чатом; администрирование workspace — у владельца и администратора.
+                <span className="font-medium text-foreground">Участник</span> работает с документами в рамках квот,
+                поиском и чатом; администрирование workspace — у владельца и администратора.
               </p>
             ) : null}
             {role.toLowerCase() === "viewer" ? (
               <p>
                 <span className="font-medium text-foreground">Наблюдатель</span> — чтение и просмотр там, где политика API
-                разрешает; изменения данных и отправка сообщений в чате отключены в UI. Подробнее — в матрице ниже и в
-                подсказке в сайдбаре.
+                разрешает; изменения данных и отправка сообщений в чате отключены в UI.
               </p>
             ) : null}
             {!["owner", "admin", "member", "viewer"].includes(role.toLowerCase()) ? (
@@ -249,119 +346,65 @@ export default function TeamPage() {
                 на ответы API и журнал аудита.
               </p>
             ) : null}
-          </CardContent>
-        </Card>
-      ) : null}
+          </div>
 
-      <Card>
-        <CardHeader className="pb-2">
-          <CardTitle className="text-base">Матрица ролей</CardTitle>
-          <p className="text-sm text-muted-foreground">
-            Одна таблица — ожидаемое поведение продукта; детали терминов:{" "}
-            <Link href={siteUrls.githubGlossary} className="underline underline-offset-2" target="_blank" rel="noreferrer">
-              docs/product-glossary.md
-            </Link>
-            .
-            {colKey ? (
-              <span className="mt-1 block text-xs font-medium text-primary">
-                Подсвечена колонка вашей текущей роли.
-              </span>
-            ) : null}
-          </p>
-        </CardHeader>
-        <CardContent className="overflow-x-auto">
-          <table className="w-full min-w-[36rem] border-collapse text-left text-xs">
-            <thead>
-              <tr className="border-b bg-muted/50 text-[11px] font-medium text-foreground">
-                <th className="p-2.5 pr-3">Возможность</th>
-                {ROLE_KEYS.map((k) => (
-                  <th
-                    key={k}
-                    className={`p-2.5 ${colKey === k ? "bg-primary/15 text-primary" : ""}`}
-                  >
-                    {k === "owner" ? "Владелец" : k === "admin" ? "Админ" : k === "member" ? "Участник" : "Наблюдатель"}
-                  </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody className="text-muted-foreground">
-              {ROLE_MATRIX.map((row) => (
-                <tr key={row.cap} className="border-b border-border/70">
-                  <td className="p-2.5 pr-3 text-foreground">{row.cap}</td>
-                  {ROLE_KEYS.map((k) => {
-                    const val =
-                      k === "owner" ? row.owner : k === "admin" ? row.admin : k === "member" ? row.member : row.viewer;
-                    return (
-                      <td key={k} className={`p-2.5 ${colKey === k ? "bg-primary/10 font-medium text-foreground" : ""}`}>
-                        {val}
-                      </td>
-                    );
-                  })}
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </CardContent>
-      </Card>
-
-      <div className="grid gap-4 md:grid-cols-2">
-        <Card className="border-dashed">
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2 text-base">
-              <Users className="h-4 w-4" aria-hidden />
-              Участники workspace
-            </CardTitle>
-            <p className="text-xs text-muted-foreground">
-              Список из <code className="rounded bg-muted px-1">GET /workspaces/…/members</code>. Владелец и администратор
-              могут менять роли и исключать участников (не владельца и не себя в этом блоке).
-            </p>
-          </CardHeader>
-          <CardContent className="space-y-4 text-sm text-muted-foreground">
-            {currentWorkspace ? (
-              <MembersTable
-                workspaceRef={workspaceRefForApi(currentWorkspace)}
-                members={members}
-                loading={memLoading}
-                myUserId={myUserId}
-                actorRole={role}
-                onUpdated={() => void loadMembers()}
-              />
-            ) : null}
-            <div className="flex items-start gap-2 rounded-lg bg-muted/50 p-3 text-xs">
-              <Info className="mt-0.5 h-4 w-4 shrink-0 text-foreground" aria-hidden />
-              <p>
-                Наблюдатель и участник видят список без действий; смена роли и исключение — только у владельца и
-                администратора.
-              </p>
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card className="border-dashed">
-          <CardHeader>
-            <CardTitle className="flex flex-wrap items-center gap-2 text-base">
-              <Mail className="h-4 w-4" aria-hidden />
-              Приглашения по email
-              {!admin ? (
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <span
-                      className="inline-flex cursor-help rounded-md text-muted-foreground outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
-                      tabIndex={0}
-                      aria-label="Ограничение доступа"
-                    >
-                      <Lock className="h-4 w-4" aria-hidden />
-                    </span>
-                  </TooltipTrigger>
-                  <TooltipContent side="bottom">Доступно только администраторам</TooltipContent>
-                </Tooltip>
+          <div>
+            <p className="mb-2 text-sm font-medium text-foreground">Матрица ролей</p>
+            <p className="mb-3 text-xs text-muted-foreground">
+              Одна таблица — ожидаемое поведение продукта; детали:{" "}
+              <Link href={siteUrls.githubGlossary} className="underline underline-offset-2" target="_blank" rel="noreferrer">
+                docs/product-glossary.md
+              </Link>
+              .
+              {colKey ? (
+                <span className="mt-1 block text-xs font-medium text-primary">
+                  Подсвечена колонка вашей текущей роли.
+                </span>
               ) : null}
-            </CardTitle>
-            <p className="text-xs text-muted-foreground">
-              Ссылка в письме ведёт на страницу принятия; для существующего пользователя нужен вход под тем же email.
             </p>
-          </CardHeader>
-          <CardContent className="space-y-4 text-sm text-muted-foreground">
+            <div className="overflow-x-auto rounded-lg border">
+              <table className="w-full min-w-[36rem] border-collapse text-left text-xs">
+                <thead>
+                  <tr className="border-b bg-muted/50 text-[11px] font-medium text-foreground">
+                    <th className="p-2.5 pr-3">Возможность</th>
+                    {ROLE_KEYS.map((k) => (
+                      <th
+                        key={k}
+                        className={`p-2.5 ${colKey === k ? "bg-primary/15 text-primary" : ""}`}
+                      >
+                        {k === "owner"
+                          ? "Владелец"
+                          : k === "admin"
+                            ? "Администратор"
+                            : k === "member"
+                              ? "Участник"
+                              : "Наблюдатель"}
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody className="text-muted-foreground">
+                  {ROLE_MATRIX.map((row) => (
+                    <tr key={row.cap} className="border-b border-border/70">
+                      <td className="p-2.5 pr-3 text-foreground">{row.cap}</td>
+                      {ROLE_KEYS.map((k) => {
+                        const val =
+                          k === "owner" ? row.owner : k === "admin" ? row.admin : k === "member" ? row.member : row.viewer;
+                        return (
+                          <td key={k} className={`p-2.5 ${colKey === k ? "bg-primary/10 font-medium text-foreground" : ""}`}>
+                            {val}
+                          </td>
+                        );
+                      })}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <div className="space-y-3 border-t border-border/60 pt-4">
+            <p className="text-sm font-medium text-foreground">Пригласить по email</p>
             {admin ? (
               <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
                 <div className="grid flex-1 gap-2 sm:grid-cols-2">
@@ -381,7 +424,7 @@ export default function TeamPage() {
                       value={inviteRole}
                       onChange={(e) => setInviteRole(e.target.value)}
                     >
-                      <option value="admin">Админ</option>
+                      <option value="admin">Администратор</option>
                       <option value="member">Участник</option>
                       <option value="viewer">Наблюдатель</option>
                     </select>
@@ -399,63 +442,40 @@ export default function TeamPage() {
                 </Button>
               </div>
             ) : (
-              <p className="rounded-lg border border-border/60 bg-muted/25 p-3 text-xs">
-                Отправка приглашений доступна <span className="font-medium text-foreground">владельцу</span> и{" "}
-                <span className="font-medium text-foreground">администратору</span>.
-              </p>
+              <fieldset disabled className="min-w-0 space-y-3 rounded-lg border border-border/60 bg-muted/20 p-3 opacity-80">
+                <legend className="sr-only">Приглашение недоступно для вашей роли</legend>
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
+                  <div className="grid flex-1 gap-2 sm:grid-cols-2">
+                    <div className="space-y-1">
+                      <span className="text-xs font-medium text-foreground">Email</span>
+                      <Input type="email" placeholder="colleague@company.com" readOnly value="" />
+                    </div>
+                    <div className="space-y-1">
+                      <span className="text-xs font-medium text-foreground">Роль</span>
+                      <select
+                        className="flex h-10 w-full cursor-not-allowed rounded-md border border-input bg-muted px-3 py-2 text-sm"
+                        value="member"
+                        disabled
+                      >
+                        <option value="member">Участник</option>
+                      </select>
+                    </div>
+                  </div>
+                  <Button type="button" size="sm" className="gap-2" disabled>
+                    <Mail className="h-4 w-4" aria-hidden />
+                    Отправить
+                  </Button>
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  Отправка приглашений доступна <span className="font-medium text-foreground">владельцу</span> и{" "}
+                  <span className="font-medium text-foreground">администратору</span>. Ссылка в письме ведёт на страницу
+                  принятия; для существующего пользователя нужен вход под тем же email.
+                </p>
+              </fieldset>
             )}
-            <div className="overflow-x-auto rounded-lg border bg-card">
-              <table className="w-full min-w-[22rem] text-left text-xs">
-                <thead>
-                  <tr className="border-b bg-muted/40 text-[11px] font-medium text-foreground">
-                    <th className="p-2.5">Email</th>
-                    <th className="p-2.5">Роль</th>
-                    <th className="p-2.5">Истекает</th>
-                    {admin ? <th className="p-2.5">Действия</th> : null}
-                  </tr>
-                </thead>
-                <tbody>
-                  {invites.length === 0 ? (
-                    <tr>
-                      <td className="p-3 text-center text-muted-foreground" colSpan={admin ? 4 : 3}>
-                        Нет ожидающих приглашений
-                      </td>
-                    </tr>
-                  ) : (
-                    invites.map((inv) => (
-                      <tr key={inv.id} className="border-b border-border/60">
-                        <td className="p-2.5 font-medium text-foreground">{inv.email}</td>
-                        <td className="p-2.5">{inv.role}</td>
-                        <td className="p-2.5 text-muted-foreground">
-                          {inv.expires_at ? new Date(inv.expires_at).toLocaleString("ru-RU") : "—"}
-                        </td>
-                        {admin ? (
-                          <td className="p-2.5">
-                            <div className="flex flex-wrap gap-1">
-                              <Button type="button" variant="outline" size="sm" onClick={() => void resendInvite(inv.id)}>
-                                Ещё раз
-                              </Button>
-                              <Button
-                                type="button"
-                                variant="ghost"
-                                size="sm"
-                                className="text-destructive"
-                                onClick={() => void revokeInvite(inv.id)}
-                              >
-                                Отозвать
-                              </Button>
-                            </div>
-                          </td>
-                        ) : null}
-                      </tr>
-                    ))
-                  )}
-                </tbody>
-              </table>
-            </div>
-          </CardContent>
-        </Card>
-      </div>
+          </div>
+        </CardContent>
+      </Card>
 
       <Card>
         <CardHeader>
@@ -486,6 +506,5 @@ export default function TeamPage() {
         </CardContent>
       </Card>
     </div>
-    </TooltipProvider>
   );
 }

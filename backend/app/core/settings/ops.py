@@ -41,7 +41,15 @@ class OpsSettings(BaseModel):
     # Stripe (optional; leave empty for quota-only billing)
     stripe_secret_key: str = Field(default="")
     stripe_webhook_secret: str = Field(default="")
-    stripe_price_id: str = Field(default="", description="Default recurring price for Checkout")
+    stripe_price_id: str = Field(
+        default="",
+        description="Legacy default Pro recurring price id; used when stripe_price_id_pro is empty",
+    )
+    stripe_price_id_pro: str = Field(
+        default="",
+        description="Pro Stripe Price id (falls back to stripe_price_id)",
+    )
+    stripe_price_id_team: str = Field(default="", description="Team Stripe Price id for Checkout / plan mapping")
     billing_grace_period_days: int = Field(default=3, ge=1, le=30)
 
     # Comma-separated emails treated as platform admins (in addition to users.is_platform_admin)

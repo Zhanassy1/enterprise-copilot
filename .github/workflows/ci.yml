@@ -58,6 +58,44 @@ jobs:
       - name: Build frontend
         run: npm run build
 
+  frontend-e2e-smoke:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "npm"
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install frontend deps
+        run: npm ci
+
+      - name: Build frontend
+        run: npm run build
+
+      - name: Install Playwright Chromium
+        run: npx playwright install chromium --with-deps
+
+      - name: Start Next.js and run e2e smoke
+        env:
+          E2E_BASE_URL: http://127.0.0.1:3000
+        run: |
+          set -euo pipefail
+          npm run start &
+          for i in $(seq 1 45); do
+            if curl -sf "http://127.0.0.1:3000/" >/dev/null; then break; fi
+            if [ "$i" -eq 45 ]; then echo "Next.js did not become ready"; exit 1; fi
+            sleep 2
+          done
+          npm run test:e2e:smoke
+
   backend-integration:
     runs-on: ubuntu-latest
     services:
@@ -158,3 +196,58 @@ jobs:
 
       - name: Async ingestion smoke (Celery eager + terminal document status)
         run: python -m unittest tests.test_ingestion_async_pipeline -v
+
+  compose-minimal-prod-smoke:
+    runs-on: ubuntu-latest
+    # docker-compose.yml + docker-compose.prod.yml with PRODUCTION_PROFILE=minimal (internal db/redis; see docs/hardened-deploy.md).
+    env:
+      POSTGRES_USER: ec_smoke
+      POSTGRES_PASSWORD: ec_smoke_pg_pass_012345678901234567890
+      POSTGRES_DB: enterprise_copilot
+      DATABASE_URL: postgresql+psycopg://ec_smoke:ec_smoke_pg_pass_012345678901234567890@db:5432/enterprise_copilot
+      REDIS_PASSWORD: ec_smoke_redis_pass_012345678901234567890
+      REDIS_URL: redis://:ec_smoke_redis_pass_012345678901234567890@redis:6379/0
+      SECRET_KEY: ec_smoke_secret_key_012345678901234567890abcdef
+      CORS_ORIGINS: http://localhost:3000
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Minimal prod compose — build and start (db, redis, migrate, api, worker)
+        run: |
+          set -euo pipefail
+          docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build db redis migrate api worker
+
+      - name: Wait for healthz and readyz
+        run: |
+          set -euo pipefail
+          timeout=180
+          elapsed=0
+          while ! curl -sf "http://127.0.0.1:8000/healthz" >/dev/null; do
+            elapsed=$((elapsed + 2))
+            if [ "$elapsed" -ge "$timeout" ]; then
+              docker compose -f docker-compose.yml -f docker-compose.prod.yml logs --tail=200 api
+              exit 1
+            fi
+            sleep 2
+          done
+          elapsed=0
+          while ! curl -sf "http://127.0.0.1:8000/readyz" >/dev/null; do
+            elapsed=$((elapsed + 2))
+            if [ "$elapsed" -ge "$timeout" ]; then
+              docker compose -f docker-compose.yml -f docker-compose.prod.yml logs --tail=200 api
+              exit 1
+            fi
+            sleep 2
+          done
+
+      - name: Worker process — settings import (minimal profile)
+        run: |
+          set -euo pipefail
+          sleep 3
+          docker compose -f docker-compose.yml -f docker-compose.prod.yml exec -T worker \
+            python -c "from app.core.config import settings; assert settings.environment == 'production'; assert settings.production_profile == 'minimal'"
+
+      - name: Tear down
+        if: always()
+        run: docker compose -f docker-compose.yml -f docker-compose.prod.yml down -v

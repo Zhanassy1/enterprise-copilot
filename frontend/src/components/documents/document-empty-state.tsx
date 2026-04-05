@@ -1,25 +1,38 @@
 import { FileText } from "lucide-react";
+import Link from "next/link";
+import { ProductEmptyState } from "@/components/shared/product-empty-state";
+import { PRODUCT_SECTION } from "@/lib/product-terminology";
+import { workspaceAppHref } from "@/lib/workspace-path";
 
-export function DocumentEmptyState({ canUpload = true }: { canUpload?: boolean }) {
+type Props = {
+  canUpload?: boolean;
+  workspaceSlug?: string | null;
+};
+
+export function DocumentEmptyState({ canUpload = true, workspaceSlug }: Props) {
   return (
-    <div className="flex flex-col items-center justify-center py-20 text-center">
-      <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-2xl bg-muted">
-        <FileText className="h-8 w-8 text-muted-foreground" />
-      </div>
-      <h3 className="text-lg font-medium">Нет документов</h3>
-      <p className="mt-1 max-w-sm text-sm text-muted-foreground">
-        {canUpload ? (
+    <ProductEmptyState
+      icon={FileText}
+      title="Нет документов"
+      description={
+        canUpload ? (
           <>
-            Загрузите первый документ — индексация выполнится в фоне; статус виден на карточке и в «Очереди обработки».
-            Форматы: PDF, DOCX, TXT.
+            Загрузите первый документ — индексация выполнится в фоне; статус виден на карточке и в разделе «
+            {PRODUCT_SECTION.ingestionQueue}». Форматы: PDF, DOCX, TXT.
           </>
         ) : (
           <>
-            В этом рабочем пространстве (workspace) пока нет файлов. У роли «наблюдатель» нет права загрузки — попросите
-            участника, администратора или владельца добавить документы.
+            В этом {PRODUCT_SECTION.workspace.toLowerCase()} пока нет файлов. У роли «наблюдатель» нет права загрузки —
+            попросите участника, администратора или владельца добавить документы.
           </>
-        )}
-      </p>
-    </div>
+        )
+      }
+    >
+      {!canUpload && workspaceSlug ? (
+        <Link href={workspaceAppHref(workspaceSlug, "/jobs")} className="text-sm text-primary underline-offset-2 hover:underline">
+          К {PRODUCT_SECTION.ingestionQueue.toLowerCase()}
+        </Link>
+      ) : null}
+    </ProductEmptyState>
   );
 }

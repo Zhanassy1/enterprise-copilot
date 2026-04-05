@@ -14,7 +14,7 @@ from sqlalchemy.orm import Session
 
 from app.core.config import settings
 from app.models.billing import BillingLedgerEntry, WorkspaceQuota
-from app.services.usage_metering import PLAN_LIMITS, get_or_create_quota
+from app.services.usage_metering import apply_plan_limits_to_quota, get_or_create_quota
 
 logger = logging.getLogger(__name__)
 
@@ -26,6 +26,80 @@ def _stripe_on() -> bool:
 def init_stripe() -> None:
     if _stripe_on():
         stripe.api_key = settings.stripe_secret_key
+
+
+def _stripe_price_id_pro_resolved() -> str:
+    return (settings.stripe_price_id_pro or settings.stripe_price_id or "").strip()
+
+
+def stripe_price_id_for_checkout(plan_slug: str) -> str:
+    """Resolve Stripe Price id for Checkout from settings (pro vs team)."""
+    s = (plan_slug or "pro").lower().strip()
+    if s == "team":
+        tid = (settings.stripe_price_id_team or "").strip()
+        if not tid:
+            raise RuntimeError("stripe_team_price_not_configured")
+        return tid
+    pid = _stripe_price_id_pro_resolved()
+    if not pid:
+        raise RuntimeError("stripe_price_not_configured")
+    return pid
+
+
+def plan_slug_from_stripe_price_id(price_id: str | None) -> str:
+    """Map a recurring Price id to catalog plan_slug (defaults to pro)."""
+    pid = (price_id or "").strip()
+    if not pid:
+        return "pro"
+    team = (settings.stripe_price_id_team or "").strip()
+    pro = _stripe_price_id_pro_resolved()
+    legacy = (settings.stripe_price_id or "").strip()
+    if team and pid == team:
+        return "team"
+    if pro and pid == pro:
+        return "pro"
+    if legacy and pid == legacy and not pro:
+        return "pro"
+    return "pro"
+
+
+def _subscription_as_dict(sub: Any) -> dict[str, Any]:
+    if isinstance(sub, dict):
+        return sub
+    if hasattr(sub, "to_dict"):
+        return sub.to_dict()  # type: ignore[no-any-return]
+    return {}
+
+
+def _primary_recurring_price_id(sub: dict[str, Any]) -> str | None:
+    items = sub.get("items")
+    if not items:
+        return None
+    data = items.get("data") if isinstance(items, dict) else None
+    if data is None:
+        data = getattr(items, "data", None)
+    if not data:
+        return None
+    first = data[0]
+    if not isinstance(first, dict):
+        first = first.to_dict() if hasattr(first, "to_dict") else {}
+    price = first.get("price") if isinstance(first, dict) else None
+    if isinstance(price, str):
+        return price.strip() or None
+    if isinstance(price, dict):
+        return str(price.get("id") or "").strip() or None
+    if price is not None and hasattr(price, "id"):
+        return str(getattr(price, "id", "") or "").strip() or None
+    return None
+
+
+def plan_slug_from_stripe_subscription(sub: Any) -> str:
+    d = _subscription_as_dict(sub)
+    return plan_slug_from_stripe_price_id(_primary_recurring_price_id(d))
+
+
+def _apply_plan_from_subscription(q: WorkspaceQuota, sub: Any) -> None:
+    apply_plan_limits_to_quota(q, plan_slug_from_stripe_subscription(sub))
 
 
 def ensure_stripe_customer(db: Session, *, workspace_id: uuid.UUID, billing_email: str | None) -> str:
@@ -51,11 +125,10 @@ def create_checkout_session(
     success_url: str,
     cancel_url: str,
     billing_email: str | None,
+    plan_slug: str = "pro",
 ) -> str:
     init_stripe()
-    price = (settings.stripe_price_id or "").strip()
-    if not price:
-        raise RuntimeError("stripe_price_not_configured")
+    price = stripe_price_id_for_checkout(plan_slug)
     cid = ensure_stripe_customer(db, workspace_id=workspace_id, billing_email=billing_email)
     session = stripe.checkout.Session.create(
         mode="subscription",
@@ -171,17 +244,6 @@ def list_customer_invoices(db: Session, *, workspace_id: uuid.UUID, limit: int) 
     return rows
 
 
-def _apply_pro_plan(q: WorkspaceQuota) -> None:
-    slug = "pro"
-    d = PLAN_LIMITS.get(slug, PLAN_LIMITS["free"])
-    q.plan_slug = slug
-    q.monthly_request_limit = int(d["monthly_request_limit"] or 0)
-    q.monthly_token_limit = int(d["monthly_token_limit"] or 0)
-    q.monthly_upload_bytes_limit = int(d["monthly_upload_bytes_limit"] or 0)
-    cap = d.get("max_documents")
-    q.max_documents = int(cap) if cap is not None else None
-
-
 def handle_stripe_event(db: Session, event: dict[str, Any]) -> None:
     init_stripe()
     et = str(event.get("type") or "")
@@ -203,19 +265,21 @@ def handle_stripe_event(db: Session, event: dict[str, Any]) -> None:
             q.stripe_customer_id = str(cust)
         if sub:
             q.stripe_subscription_id = str(sub)
-        _apply_pro_plan(q)
         q.grace_ends_at = None
         if sub:
             try:
                 s = stripe.Subscription.retrieve(str(sub))
                 _apply_stripe_subscription_to_quota(q, s)
+                _apply_plan_from_subscription(q, s)
                 if (q.subscription_status or "") in ("active", "trialing"):
                     q.grace_ends_at = None
             except Exception as ex:
                 logger.warning("subscription retrieve failed: %s", ex)
                 q.subscription_status = "active"
+                apply_plan_limits_to_quota(q, "pro")
         else:
             q.subscription_status = "active"
+            apply_plan_limits_to_quota(q, "pro")
         _ledger_append(db, workspace_id=wid, external_id=eid, event_type=et, meta={"session": obj.get("id")})
         return
 
@@ -246,6 +310,7 @@ def handle_stripe_event(db: Session, event: dict[str, Any]) -> None:
             try:
                 s = stripe.Subscription.retrieve(str(sub))
                 _apply_stripe_subscription_to_quota(q, s)
+                _apply_plan_from_subscription(q, s)
             except Exception as ex:
                 logger.warning("invoice.paid subscription retrieve failed: %s", ex)
                 q.subscription_status = "active"
@@ -297,6 +362,7 @@ def handle_stripe_event(db: Session, event: dict[str, Any]) -> None:
             return
         q = get_or_create_quota(db, wid)
         _apply_stripe_subscription_to_quota(q, sub)
+        _apply_plan_from_subscription(q, sub)
         st = (q.subscription_status or "").lower()
         if st in ("active", "trialing"):
             q.grace_ends_at = None
@@ -324,12 +390,6 @@ def handle_stripe_event(db: Session, event: dict[str, Any]) -> None:
         q.current_period_end = None
         q.trial_ends_at = None
         q.grace_ends_at = None
-        q.plan_slug = "free"
-        d = PLAN_LIMITS["free"]
-        q.monthly_request_limit = int(d["monthly_request_limit"] or 0)
-        q.monthly_token_limit = int(d["monthly_token_limit"] or 0)
-        q.monthly_upload_bytes_limit = int(d["monthly_upload_bytes_limit"] or 0)
-        cap = d.get("max_documents")
-        q.max_documents = int(cap) if cap is not None else None
+        apply_plan_limits_to_quota(q, "free")
         _ledger_append(db, workspace_id=wid, external_id=eid, event_type=et, meta={"subscription": sub.get("id")})
         return

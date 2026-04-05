@@ -23,6 +23,7 @@ def _minimal_production_settings(**kwargs: object) -> Settings:
     """Valid production Settings; override fields per test."""
     base: dict[str, object] = {
         "environment": "production",
+        "production_profile": "hardened",
         "secret_key": "not-the-default-dev-secret-change-me-xxxxxxxx",
         "database_url": "postgresql+psycopg://u:p@db.example.com:5432/app?sslmode=require",
         "redis_url": "redis://:somesecret@redis.example.com:6379/0",
@@ -58,6 +59,7 @@ class StartupChecksTests(unittest.TestCase):
 
     def test_production_requires_trusted_proxy_when_forwarded_headers(self) -> None:
         s = _minimal_production_settings(
+            production_profile="minimal",
             production_require_trusted_proxy_ips=False,
             use_forwarded_headers=True,
             trusted_proxy_ips=" ",
@@ -153,6 +155,46 @@ class StartupChecksTests(unittest.TestCase):
             s = _minimal_production_settings(production_require_redis_rate_limiting=False)
             validate_production_settings(s)
         mock_ping.assert_not_called()
+
+    def test_hardened_rejects_production_require_database_ssl_false(self) -> None:
+        s = _minimal_production_settings(
+            production_profile="hardened",
+            production_require_database_ssl=False,
+        )
+        with self.assertRaises(RuntimeError) as ctx:
+            validate_production_settings(s)
+        self.assertIn("PRODUCTION_PROFILE=hardened", str(ctx.exception))
+        self.assertIn("PRODUCTION_REQUIRE_DATABASE_SSL", str(ctx.exception))
+
+    def test_hardened_rejects_production_require_s3_backend_false(self) -> None:
+        s = _minimal_production_settings(
+            production_profile="hardened",
+            production_require_s3_backend=False,
+        )
+        with self.assertRaises(RuntimeError) as ctx:
+            validate_production_settings(s)
+        self.assertIn("PRODUCTION_REQUIRE_S3_BACKEND", str(ctx.exception))
+
+    def test_hardened_rejects_production_require_trusted_proxy_ips_false(self) -> None:
+        s = _minimal_production_settings(
+            production_profile="hardened",
+            production_require_trusted_proxy_ips=False,
+        )
+        with self.assertRaises(RuntimeError) as ctx:
+            validate_production_settings(s)
+        self.assertIn("PRODUCTION_REQUIRE_TRUSTED_PROXY_IPS", str(ctx.exception))
+
+    def test_minimal_allows_tls_s3_proxy_opt_outs_with_valid_base(self) -> None:
+        s = _minimal_production_settings(
+            production_profile="minimal",
+            production_require_database_ssl=False,
+            production_require_s3_backend=False,
+            production_require_trusted_proxy_ips=False,
+            database_url="postgresql+psycopg://u:p@db.internal.example:5432/app",
+            storage_backend="local",
+            trusted_proxy_ips="",
+        )
+        validate_production_settings(s)
 
 
 if __name__ == "__main__":

@@ -1,26 +1,32 @@
 "use client";
 
+import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
+import { ListTodo } from "lucide-react";
 import { toast } from "sonner";
 import { api, toErrorMessage, type IngestionJobOut } from "@/lib/api-client";
-import { ingestionJobStatusLabel } from "@/lib/product-terminology";
+import { pipelineStatusLabel, PRODUCT_SECTION } from "@/lib/product-terminology";
+import { PIPELINE_JOB_STATUSES } from "@/lib/ingestion-statuses";
+import { canUploadDocuments } from "@/lib/workspace-role";
+import { workspaceAppHref } from "@/lib/workspace-path";
+import { useWorkspace } from "@/components/workspace/workspace-provider";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { PageHeader } from "@/components/shared/page-header";
+import { ProductEmptyState } from "@/components/shared/product-empty-state";
 import { ProductErrorBanner } from "@/components/shared/product-error-banner";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
-import { WorkspaceContextStrip } from "@/components/workspace/workspace-context-strip";
-import { WorkspaceViewerBanner } from "@/components/workspace/workspace-viewer-banner";
-
-const STATUSES = ["queued", "processing", "retrying", "ready", "failed"] as const;
+import { WorkspaceProductContext } from "@/components/workspace/workspace-product-context";
 
 export default function JobsPage() {
-  const [tab, setTab] = useState<(typeof STATUSES)[number]>("queued");
+  const { currentWorkspace } = useWorkspace();
+  const canUpload = canUploadDocuments(currentWorkspace?.role);
+  const [tab, setTab] = useState<(typeof PIPELINE_JOB_STATUSES)[number]>("queued");
   const [jobs, setJobs] = useState<IngestionJobOut[]>([]);
   const [err, setErr] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
-  const load = useCallback((status: (typeof STATUSES)[number]) => {
+  const load = useCallback((status: (typeof PIPELINE_JOB_STATUSES)[number]) => {
     setLoading(true);
     setErr(null);
     void api
@@ -41,22 +47,22 @@ export default function JobsPage() {
   return (
     <div className="space-y-6">
       <PageHeader
-        title="Очередь обработки"
-        description="Задачи индексации (jobs) только для текущего workspace: в очереди → индексация или повтор → готово либо ошибка. Статус на карточке документа ссылается на ту же очередь."
+        title={PRODUCT_SECTION.ingestionQueue}
+        description={`${PRODUCT_SECTION.ingestionJob} только для текущего ${PRODUCT_SECTION.workspace.toLowerCase()}: те же фазы, что и статус документа в каталоге.`}
       />
-      <div className="mt-1 space-y-3">
-        <WorkspaceContextStrip area="задачи индексации ниже относятся к этому workspace" />
-        <WorkspaceViewerBanner detail="Очередь доступна для наблюдения. Перезапуск и администрирование задач, если появятся в API, будут скрыты или помечены до выдачи прав." />
-      </div>
+      <WorkspaceProductContext
+        area="задачи индексации ниже относятся к этому рабочему пространству"
+        viewerDetail="Очередь доступна для наблюдения. Перезапуск и администрирование задач, если появятся в API, будут скрыты или помечены до выдачи прав."
+      />
       <Card className="border-dashed bg-muted/20">
         <CardHeader className="pb-2">
-          <CardTitle className="text-sm font-medium">Статусы задачи (job)</CardTitle>
+          <CardTitle className="text-sm font-medium">Статусы задачи индексации</CardTitle>
         </CardHeader>
         <CardContent className="text-xs text-muted-foreground">
           <ul className="list-inside list-disc space-y-1">
             <li>
               <strong className="text-foreground">В очереди</strong> — ждёт обработки; <strong className="text-foreground">Индексация</strong> — идёт
-              разбор файла; <strong className="text-foreground">Повторная попытка</strong> — временная ошибка, будет ещё попытка.
+              разбор файла (та же подпись, что у документа в каталоге); <strong className="text-foreground">Повторная попытка</strong> — временная ошибка, будет ещё попытка.
             </li>
             <li>
               <strong className="text-foreground">Готово</strong> — документ доступен для поиска и чата; <strong className="text-foreground">Ошибка</strong>{" "}
@@ -66,7 +72,7 @@ export default function JobsPage() {
         </CardContent>
       </Card>
       <div className="flex flex-wrap gap-2">
-        {STATUSES.map((s) => (
+        {PIPELINE_JOB_STATUSES.map((s) => (
           <Button
             key={s}
             type="button"
@@ -75,7 +81,7 @@ export default function JobsPage() {
             className="text-xs"
             onClick={() => setTab(s)}
           >
-            {ingestionJobStatusLabel(s)}
+            {pipelineStatusLabel(s)}
             <span className="ml-1 font-mono text-[10px] opacity-70">({s})</span>
           </Button>
         ))}
@@ -91,9 +97,24 @@ export default function JobsPage() {
       ) : null}
       <div className="space-y-3">
         {!loading && jobs.length === 0 && !err && (
-          <p className="text-sm text-muted-foreground">
-            Нет задач со статусом «{ingestionJobStatusLabel(tab)}». Загрузите документ или переключите фильтр.
-          </p>
+          <ProductEmptyState
+            icon={ListTodo}
+            title="Нет задач в этом фильтре"
+            description={
+              <>
+                Нет задач со статусом «{pipelineStatusLabel(tab)}». Переключите фильтр выше
+                {canUpload && currentWorkspace?.slug
+                  ? " или загрузите документ — появится новая задача индексации."
+                  : " или попросите участника загрузить документ."}
+              </>
+            }
+          >
+            {canUpload && currentWorkspace?.slug ? (
+              <Button type="button" variant="outline" size="sm" asChild>
+                <Link href={workspaceAppHref(currentWorkspace.slug, "/documents")}>К документам</Link>
+              </Button>
+            ) : null}
+          </ProductEmptyState>
         )}
         {!loading &&
           jobs.map((j) => (
@@ -104,7 +125,7 @@ export default function JobsPage() {
               <CardContent className="space-y-1 text-sm">
                 <div>Документ: {j.document_id}</div>
                 <div>
-                  Статус: {ingestionJobStatusLabel(j.status)}{" "}
+                  Статус: {pipelineStatusLabel(j.status)}{" "}
                   <span className="font-mono text-xs text-muted-foreground">({j.status})</span>
                 </div>
                 <div>Попытки: {j.attempts}</div>

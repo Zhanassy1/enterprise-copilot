@@ -115,3 +115,16 @@ def test_invite_create_403_for_viewer(client: TestClient, two_workspaces: dict) 
         json={"email": "someone_else@example.com", "role": "member"},
     )
     assert r.status_code == 403, r.text
+
+
+def test_invite_list_200_for_viewer(client: TestClient, two_workspaces: dict) -> None:
+    """Pending invitations list is readable by all workspace members."""
+    a = two_workspaces["a"]
+    b = two_workspaces["b"]
+    _add_membership(workspace_id=uuid.UUID(a["ws"]), user_email=b["email"], role_key="viewer")
+    r = client.get(
+        f"/api/v1/workspaces/{a['ws']}/invitations",
+        headers={"Authorization": f"Bearer {b['token']}", "X-Workspace-Id": a["ws"]},
+    )
+    assert r.status_code == 200, r.text
+    assert isinstance(r.json(), list)

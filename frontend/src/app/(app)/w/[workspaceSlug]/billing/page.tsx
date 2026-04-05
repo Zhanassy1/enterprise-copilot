@@ -10,6 +10,7 @@ import {
   toErrorMessage,
   type BillingInvoiceOut,
   type BillingLedgerOut,
+  type BillingState,
   type SubscriptionOut,
   type UsageSummaryOut,
 } from "@/lib/api-client";
@@ -24,9 +25,10 @@ import { QuotaUsageRow } from "@/components/billing/quota-usage-row";
 import { InAppPlanComparison } from "@/components/billing/in-app-plan-comparison";
 import { nextPublicPlanSlug, planDisplayName, normalizePlanSlug } from "@/lib/plan-labels";
 import { siteUrls } from "@/lib/site-urls";
-import { WorkspaceContextStrip } from "@/components/workspace/workspace-context-strip";
+import { WorkspaceProductContext } from "@/components/workspace/workspace-product-context";
 import { useWorkspace } from "@/components/workspace/workspace-provider";
-import { isOwnerOrAdmin } from "@/lib/workspace-role";
+import { canManageBillingCheckout } from "@/lib/workspace-role";
+import { PRODUCT_SECTION } from "@/lib/product-terminology";
 import { billingCheckoutReturnUrls, workspaceAppHref } from "@/lib/workspace-path";
 
 function monthPeriodLabelUtc(): string {
@@ -57,20 +59,22 @@ function formatMoneyMinorUnits(cents: number, currency: string): string {
   }
 }
 
-function subscriptionStatusPresentation(sub: SubscriptionOut): {
+function subscriptionStatusPresentation(
+  sub: SubscriptionOut,
+): {
   label: string;
   variant: "default" | "secondary" | "destructive" | "outline";
 } {
-  const st = (sub.subscription_status || "").toLowerCase();
-  if (st === "trialing") return { label: "Пробный период", variant: "secondary" };
-  if (st === "past_due") return { label: "Просрочен (Past Due)", variant: "destructive" };
-  if (st === "active") return { label: "Активен", variant: "default" };
-  if (st === "canceled" || st === "unpaid" || st === "incomplete_expired") {
-    return { label: "Подписка неактивна", variant: "destructive" };
-  }
-  const slug = normalizePlanSlug(sub.plan_slug);
-  if (slug === "free" && !st) return { label: "Без платной подписки", variant: "outline" };
-  return { label: st || "—", variant: "outline" };
+  const ui = (sub.billing_state ?? "free") as BillingState;
+  const labels: Record<BillingState, { label: string; variant: "default" | "secondary" | "destructive" | "outline" }> = {
+    active: { label: "Активен", variant: "default" },
+    trialing: { label: "Пробный период", variant: "secondary" },
+    grace: { label: "Льготный период (grace)", variant: "secondary" },
+    past_due: { label: "Просрочен (past due)", variant: "destructive" },
+    canceled: { label: "Отменена", variant: "destructive" },
+    free: { label: "Без платной подписки", variant: "outline" },
+  };
+  return labels[ui] ?? { label: (sub.subscription_status || "").trim() || "—", variant: "outline" };
 }
 
 function usageAlerts(data: UsageSummaryOut): string[] {
@@ -102,7 +106,7 @@ export default function BillingPage() {
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const cancelToastShown = useRef(false);
-  const canBilling = isOwnerOrAdmin(currentWorkspace?.role ?? "");
+  const canBilling = canManageBillingCheckout(currentWorkspace?.role ?? "");
   const [data, setData] = useState<UsageSummaryOut | null>(null);
   const [ledger, setLedger] = useState<BillingLedgerOut[]>([]);
   const [sub, setSub] = useState<SubscriptionOut | null>(null);
@@ -213,11 +217,16 @@ export default function BillingPage() {
   return (
     <div className="space-y-8">
       <PageHeader
-        title="План и лимиты"
-        description={`Рабочее пространство (workspace): план и расход квот за календарный месяц — ${monthPeriodLabelUtc()}. Запросы — поиск, сообщения в чате и загрузки документов (считаются в одном месячном счётчике).`}
+        title={PRODUCT_SECTION.planAndQuotas}
+        description={`${PRODUCT_SECTION.workspace}: план и расход квот за календарный месяц — ${monthPeriodLabelUtc()}. Запросы — поиск, сообщения в чате и загрузки документов (считаются в одном месячном счётчике).`}
       />
 
-      <WorkspaceContextStrip area="план, лимиты и счётчики usage относятся к этому workspace" />
+      <WorkspaceProductContext
+        className="mt-1"
+        area="план, лимиты и счётчики usage относятся к этому рабочему пространству"
+        viewerDetail="Просмотр плана и квот доступен; оформление подписки и клиентский портал оплаты — только у владельца и администратора."
+        memberLimit={!canBilling ? "checkout" : null}
+      />
 
       {!loading && sub && statusUi ? (
         <Card id="billing-payment-section" className="border-primary/20">
@@ -246,17 +255,19 @@ export default function BillingPage() {
                   <dd className="font-medium">{formatUtcDateLabel(sub.trial_ends_at)}</dd>
                 </div>
               ) : null}
-              {formatUtcDateLabel(sub.current_period_end) ? (
+              {formatUtcDateLabel(sub.renewal_at ?? sub.current_period_end) ? (
                 <div>
-                  <dt className="text-muted-foreground">Конец текущего периода (UTC)</dt>
-                  <dd className="font-medium">{formatUtcDateLabel(sub.current_period_end)}</dd>
+                  <dt className="text-muted-foreground">Продление / конец периода (UTC)</dt>
+                  <dd className="font-medium">
+                    {formatUtcDateLabel(sub.renewal_at ?? sub.current_period_end)}
+                  </dd>
                 </div>
               ) : null}
-              {formatUtcDateLabel(sub.grace_ends_at) &&
-              (sub.subscription_status || "").toLowerCase() === "past_due" ? (
+              {formatUtcDateLabel(sub.grace_until ?? sub.grace_ends_at) &&
+              (sub.billing_state === "grace" || (sub.subscription_status || "").toLowerCase() === "past_due") ? (
                 <div>
-                  <dt className="text-muted-foreground">Льготный период (dunning) до (UTC)</dt>
-                  <dd className="font-medium">{formatUtcDateLabel(sub.grace_ends_at)}</dd>
+                  <dt className="text-muted-foreground">Льготный период (grace) до (UTC)</dt>
+                  <dd className="font-medium">{formatUtcDateLabel(sub.grace_until ?? sub.grace_ends_at)}</dd>
                 </div>
               ) : null}
             </dl>
@@ -291,9 +302,23 @@ export default function BillingPage() {
                 </Button>
               </div>
             ) : (
-              <p className="text-sm text-muted-foreground">
-                Управление картой и подпиской доступно владельцу и администраторам workspace.
-              </p>
+              <fieldset disabled className="space-y-2 border-t border-border/60 pt-4 opacity-75">
+                <legend className="sr-only">Действия оплаты недоступны для вашей роли</legend>
+                <div className="flex flex-wrap gap-2">
+                  <Button type="button" variant="default" size="sm" disabled title="Только владелец и администратор">
+                    Обновить карту
+                  </Button>
+                  <Button type="button" variant="outline" size="sm" disabled title="Только владелец и администратор">
+                    Отменить подписку
+                  </Button>
+                  <Button type="button" variant="secondary" size="sm" disabled title="Только владелец и администратор">
+                    Оформить подписку
+                  </Button>
+                </div>
+                <p className="text-sm text-muted-foreground">
+                  Управление картой и подпиской доступно владельцу и администраторам {PRODUCT_SECTION.workspace.toLowerCase()}.
+                </p>
+              </fieldset>
             )}
             {canBilling ? (
               <div className="space-y-2 border-t border-border/60 pt-4">
@@ -549,9 +574,9 @@ export default function BillingPage() {
               <CardTitle className="text-base">Оплата и учёт</CardTitle>
             </CardHeader>
             <CardContent className="text-sm text-muted-foreground">
-              Сейчас <span className="font-medium text-foreground">план и квоты</span> задаются конфигурацией вашего
-              развёртывания — UI показывает лимиты и расход прозрачно. Подключение Stripe, счетов или enterprise-договора
-              привяжет те же экраны к живому биллингу; таблица ledger заполнится, когда начнёт поступать провайдер.
+              <span className="font-medium text-foreground">План и лимиты</span> этого workspace хранятся в базе и
+              обновляются из Stripe (Checkout, Customer Portal, вебхуки). Счётчики usage — фактические; ledger ниже
+              отражает события биллинга.
             </CardContent>
           </Card>
 
@@ -605,7 +630,7 @@ export default function BillingPage() {
           ) : (
             !err && (
               <p className="text-sm text-muted-foreground">
-                Записей ledger пока нет — ожидаемо до подключения внешнего биллинга.
+                Записей ledger пока нет — появятся после событий Stripe (оплата, обновление подписки и т.д.).
               </p>
             )
           )}

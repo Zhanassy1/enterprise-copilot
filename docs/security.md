@@ -47,5 +47,6 @@
 
 ## Related
 
+- [hardened-deploy.md](hardened-deploy.md) — hardened vs minimal production profiles  
 - [deployment.md](deployment.md) — TLS and production compose  
 - [email-testing.md](email-testing.md) — verify/reset flows without production SMTP (capture mode)  

@@ -16,6 +16,8 @@ class InvitationOut(BaseModel):
     status: str
     expires_at: datetime | None
     created_at: datetime
+    # Only populated when `email_capture_mode` is enabled (tests / local dev), never in production mail flow.
+    plain_token: str | None = None
 
 
 class InviteValidateOut(BaseModel):

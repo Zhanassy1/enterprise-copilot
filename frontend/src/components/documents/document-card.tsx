@@ -9,7 +9,7 @@ import { BookOpen, Trash2 } from "lucide-react";
 import type { DocumentOut } from "@/lib/api-client";
 import { useWorkspace } from "@/components/workspace/workspace-provider";
 import { workspaceAppHref } from "@/lib/workspace-path";
-import { documentStatusLabel, ingestionJobStatusLabel } from "@/lib/product-terminology";
+import { documentStatusLabel, pipelineStatusLabel } from "@/lib/product-terminology";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 
 interface DocumentCardProps {
@@ -42,7 +42,7 @@ export function DocumentCard({ doc, onSummary, onDelete, canMutate = true }: Doc
                 className="text-[10px] text-primary underline-offset-2 hover:underline"
                 title={`Статус job: ${doc.ingestion_job_status}`}
               >
-                {ingestionJobStatusLabel(doc.ingestion_job_status)}
+                {pipelineStatusLabel(doc.ingestion_job_status)}
               </Link>
             ) : null}
           </div>

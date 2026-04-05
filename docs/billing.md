@@ -1,5 +1,11 @@
 # Billing (Stripe)
 
+## Source of truth
+
+Per-workspace subscription and limits live in **`workspace_quotas`** (one row per workspace): `plan_slug`, `subscription_status`, `current_period_end`, `grace_ends_at`, `stripe_customer_id`, `stripe_subscription_id`. The API exposes aliases `renewal_at` / `grace_until` and a computed **`billing_state`** (`free`, `active`, `trialing`, `grace`, `past_due`, `canceled`) on `GET /api/v1/billing/subscription`.
+
+Stripe Price ids map to catalog plans via **`STRIPE_PRICE_ID_TEAM`** and **`STRIPE_PRICE_ID_PRO`** / **`STRIPE_PRICE_ID`** (see `backend/.env.example`). Webhooks apply `PLAN_LIMITS` to the quota row when the subscription’s recurring price changes.
+
 ## Grace period (dunning)
 
 Configure `BILLING_GRACE_PERIOD_DAYS` in the backend environment (default `3`, max `30`). Typical production values are **3–7 days**.

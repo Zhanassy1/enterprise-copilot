@@ -13,16 +13,15 @@ import { DeleteConfirmDialog } from "@/components/documents/delete-confirm-dialo
 import { DocumentEmptyState } from "@/components/documents/document-empty-state";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useWorkspace } from "@/components/workspace/workspace-provider";
-import { WorkspaceContextStrip } from "@/components/workspace/workspace-context-strip";
-import { WorkspaceViewerBanner } from "@/components/workspace/workspace-viewer-banner";
-import { canWriteInWorkspace } from "@/lib/workspace-role";
+import { WorkspaceProductContext } from "@/components/workspace/workspace-product-context";
+import { canUploadDocuments } from "@/lib/workspace-role";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { QuotaLimitCtaBanner } from "@/components/billing/quota-limit-cta";
 import { isQuotaOrLimitError } from "@/lib/quota-error";
 
 export default function DocumentsPage() {
   const { currentWorkspace } = useWorkspace();
-  const canMutate = canWriteInWorkspace(currentWorkspace?.role);
+  const canMutate = canUploadDocuments(currentWorkspace?.role);
   const { documents, loading, error, uploadDocument, deleteDocument, getSummary, refresh } =
     useDocuments();
 
@@ -99,10 +98,11 @@ export default function DocumentsPage() {
         }
       />
 
-      <div className="mt-4 space-y-3">
-        <WorkspaceContextStrip area="каталог и операции с файлами ниже относятся к этому workspace" />
-        <WorkspaceViewerBanner detail="Загрузка и удаление документов отключены в интерфейсе. Краткое содержание по уже проиндексированным файлам можно открыть, если политика API разрешает чтение." />
-      </div>
+      <WorkspaceProductContext
+        className="mt-4"
+        area="каталог и операции с файлами ниже относятся к этому рабочему пространству"
+        viewerDetail="Загрузка и удаление документов отключены в интерфейсе. Краткое содержание по уже проиндексированным файлам можно открыть, если политика API разрешает чтение."
+      />
 
       {error ? (
         <div className="mt-4">
@@ -123,8 +123,8 @@ export default function DocumentsPage() {
             <Skeleton key={i} className="h-[88px] rounded-2xl" />
           ))}
         </div>
-      ) : documents.length === 0 ? (
-        <DocumentEmptyState canUpload={canMutate} />
+        ) : documents.length === 0 ? (
+        <DocumentEmptyState canUpload={canMutate} workspaceSlug={currentWorkspace?.slug} />
       ) : (
         <div className="mt-6 grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
           {documents.map((doc) => (

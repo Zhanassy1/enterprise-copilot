@@ -21,6 +21,7 @@ from app.services.usage_metering import (
     EVENT_UPLOAD_BYTES,
     PLAN_LIMITS,
     _sum_events,
+    apply_plan_limits_to_quota,
     get_or_create_quota,
     month_window,
 )
@@ -107,23 +108,15 @@ def admin_quota_adjust(
     if not ws:
         raise HTTPException(status_code=404, detail="Workspace not found")
     q = get_or_create_quota(db, workspace_id)
-    if body.monthly_request_limit is not None:
-        q.monthly_request_limit = int(body.monthly_request_limit)
-    if body.monthly_token_limit is not None:
-        q.monthly_token_limit = int(body.monthly_token_limit)
     if body.plan_slug is not None:
         slug = body.plan_slug.strip().lower()
         if slug not in PLAN_LIMITS:
             raise HTTPException(status_code=400, detail="Unknown plan_slug")
-        q.plan_slug = slug
-        d = PLAN_LIMITS[slug]
-        if body.monthly_request_limit is None:
-            q.monthly_request_limit = int(d["monthly_request_limit"] or 0)
-        if body.monthly_token_limit is None:
-            q.monthly_token_limit = int(d["monthly_token_limit"] or 0)
-        q.monthly_upload_bytes_limit = int(d["monthly_upload_bytes_limit"] or 0)
-        cap = d.get("max_documents")
-        q.max_documents = int(cap) if cap is not None else None
+        apply_plan_limits_to_quota(q, slug)
+    if body.monthly_request_limit is not None:
+        q.monthly_request_limit = int(body.monthly_request_limit)
+    if body.monthly_token_limit is not None:
+        q.monthly_token_limit = int(body.monthly_token_limit)
     if body.extend_grace_days is not None:
         q.grace_ends_at = datetime.now(UTC) + timedelta(days=int(body.extend_grace_days))
     write_audit_log(

@@ -1,8 +1,9 @@
 import Link from "next/link";
-import { ArrowRight, Check } from "lucide-react";
+import { Check } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { MarketingShell } from "@/components/marketing/marketing-shell";
+import { PricingPlanActions } from "@/components/marketing/pricing-plan-actions";
 import { marketingPlans } from "@/config/plan-marketing";
 import { siteUrls } from "@/lib/site-urls";
 
@@ -19,8 +20,8 @@ export default function PricingPage() {
               <span className="font-medium text-foreground">рабочего пространства (workspace)</span> на странице{" "}
               <span className="font-medium text-foreground">«План и лимиты»</span> (
               <code className="rounded bg-muted px-1 font-mono text-xs">/billing</code>) видны фактический тариф и остатки
-              квот в реальном времени. Онлайн-оплата подключается поверх тех же экранов; сейчас лимиты задаёт конфигурация
-              вашего инстанса.
+              квот в реальном времени. Онлайн-оплата (Stripe) подключена к тем же экранам: лимиты workspace обновляются из подписки
+              после подтверждения Checkout и вебхуков.
             </p>
             <div className="mx-auto mt-8 flex max-w-xl flex-col gap-2 sm:flex-row sm:justify-center">
               <Button variant="secondary" asChild>
@@ -64,17 +65,7 @@ export default function PricingPage() {
                       </li>
                     ))}
                   </ul>
-                  <Button className="w-full" variant={p.highlight ? "default" : "outline"} asChild>
-                    <Link href="/register">
-                      Начать с {p.name}
-                      <ArrowRight className="ml-2 h-4 w-4" />
-                    </Link>
-                  </Button>
-                  <p className="text-center text-xs text-muted-foreground">
-                    <Link href="/login" className="font-medium text-foreground underline-offset-4 hover:underline">
-                      Уже в аккаунте — смотреть фактические лимиты
-                    </Link>
-                  </p>
+                  <PricingPlanActions planSlug={p.slug} planName={p.name} highlight={p.highlight} />
                 </CardContent>
               </Card>
             ))}
@@ -175,8 +166,8 @@ export default function PricingPage() {
           <p className="mt-2 text-sm text-muted-foreground">
             Регистрация бесплатна. После входа выберите рабочее пространство (workspace) и откройте{" "}
             <strong className="text-foreground">«План и лимиты»</strong> — там счётчики месяца, прогресс по квотам и ссылки на
-            апгрейд. Смена тарифа согласуется с администратором развёртывания; онлайн-оплата накладывается на тот же UI
-            позже.
+            апгрейд.             Апгрейд через Stripe Checkout и управление картой в Customer Portal — на странице «План и лимиты»
+            внутри приложения.
           </p>
           <div className="mt-6 flex flex-wrap justify-center gap-3">
             <Button size="lg" asChild>
