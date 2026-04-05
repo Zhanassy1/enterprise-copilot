@@ -59,6 +59,15 @@ set E2E_BASE_URL=http://127.0.0.1:3000
 npm run test:e2e -- workspace-evaluator
 ```
 
+**Team + billing e2e** (`frontend/e2e/team-billing-e2e.spec.ts`): members/invites/matrix on `/w/…/team`, billing plan blocks on `/w/…/billing`, legacy `/team` redirect. Same API health check / skip as workspace evaluator. Run both integrated specs:
+
+```bash
+cd frontend
+set E2E_API_URL=http://127.0.0.1:8000/api/v1
+set E2E_BASE_URL=http://127.0.0.1:3000
+npm run test:e2e:integrated
+```
+
 **Invite flow e2e** (`frontend/e2e/invite-flow.spec.ts`): run against a stack where the backend has **`EMAIL_CAPTURE_MODE=1`** so `POST /api/v1/workspaces/…/invitations` includes `plain_token` in the JSON (tests/dev only). Without it, the test skips. Example:
 
 ```bash

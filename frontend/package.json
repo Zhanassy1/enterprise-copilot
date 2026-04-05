@@ -9,6 +9,7 @@
     "lint": "next lint",
     "test:e2e": "playwright test",
     "test:e2e:smoke": "playwright test e2e/evaluator-marketing.spec.ts e2e/auth-smoke.spec.ts",
+    "test:e2e:integrated": "playwright test e2e/workspace-evaluator.spec.ts e2e/team-billing-e2e.spec.ts",
     "demo:screenshots": "playwright test e2e/demo-screenshots.spec.ts"
   },
   "dependencies": {
