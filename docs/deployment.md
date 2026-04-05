@@ -8,7 +8,7 @@
 
 | | Dev | Production (primary path) |
 |---|-----|---------------------------|
-| Compose | `docker compose up` — root `docker-compose.yml` | **Minimal** reference: `docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build` (internal DB/Redis). **Hardened**: use [.env.production.example](../.env.production.example) with managed services and `PRODUCTION_PROFILE=hardened` — [hardened-deploy.md](hardened-deploy.md) |
+| Compose | `docker compose up` — root `docker-compose.yml` | **Minimal** reference: `docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build` (internal DB/Redis). **Hardened overlay** (strict env on API/worker, TLS DB + S3 vars): add `-f docker-compose.prod.hardened.yml` — [hardened-deploy.md](hardened-deploy.md). **Hardened** on VMs/k8s: use [.env.production.example](../.env.production.example) with managed services and `PRODUCTION_PROFILE=hardened` |
 | DB/Redis ports | Published to host (e.g. 5433, 6380) for tooling | **Not** published; services only on internal network |
 | Credentials | Default `postgres:postgres` acceptable locally | Strong `POSTGRES_*`, `REDIS_PASSWORD`, `SECRET_KEY`; validated by `startup_checks` when `ENVIRONMENT=production` |
 | Ingestion | Worker + async recommended; optional sync indexing only with `ENVIRONMENT=local` + flags | **Async only** (`INGESTION_ASYNC_ENABLED=1`, `ALLOW_SYNC_INGESTION_FOR_DEV=0`) |

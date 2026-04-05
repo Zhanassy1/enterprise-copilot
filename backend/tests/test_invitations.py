@@ -54,6 +54,13 @@ def test_invitations_create_list_revoke_flow(client: TestClient, two_workspaces:
     )
     assert rv.status_code == 200, rv.text
 
+    li_after = client.get(
+        f"/api/v1/workspaces/{a['ws']}/invitations",
+        headers={"Authorization": f"Bearer {a['token']}", "X-Workspace-Id": a["ws"]},
+    )
+    assert li_after.status_code == 200
+    assert not any(x.get("email") == invite_email for x in li_after.json())
+
 
 def _plain_token_from_invite_email_body(body: str) -> str:
     m = re.search(r"/invite/([^/\s<>\"'&]+)", body)

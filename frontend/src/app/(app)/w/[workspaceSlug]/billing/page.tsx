@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
-import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { useParams, usePathname, useRouter, useSearchParams } from "next/navigation";
 import { toast } from "sonner";
 import {
   ApiError,
@@ -23,13 +23,19 @@ import { Badge } from "@/components/ui/badge";
 import { ExternalLink, AlertTriangle } from "lucide-react";
 import { QuotaUsageRow } from "@/components/billing/quota-usage-row";
 import { InAppPlanComparison } from "@/components/billing/in-app-plan-comparison";
-import { nextPublicPlanSlug, planDisplayName, normalizePlanSlug } from "@/lib/plan-labels";
+import {
+  nextPublicPlanSlug,
+  planDisplayName,
+  normalizePlanSlug,
+  prevPublicPlanSlug,
+} from "@/lib/plan-labels";
 import { siteUrls } from "@/lib/site-urls";
 import { WorkspaceProductContext } from "@/components/workspace/workspace-product-context";
 import { useWorkspace } from "@/components/workspace/workspace-provider";
 import { canManageBillingCheckout } from "@/lib/workspace-role";
 import { PRODUCT_SECTION } from "@/lib/product-terminology";
 import { billingCheckoutReturnUrls, workspaceAppHref } from "@/lib/workspace-path";
+import { resolvedWorkspaceSlug } from "@/lib/workspace";
 
 function monthPeriodLabelUtc(): string {
   const d = new Date();
@@ -101,7 +107,10 @@ function usageAlerts(data: UsageSummaryOut): string[] {
 }
 
 export default function BillingPage() {
+  const params = useParams();
+  const routeWorkspaceSlug = typeof params.workspaceSlug === "string" ? params.workspaceSlug : "";
   const { currentWorkspace } = useWorkspace();
+  const wsSlug = routeWorkspaceSlug || resolvedWorkspaceSlug(currentWorkspace);
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
@@ -132,13 +141,13 @@ export default function BillingPage() {
     }
   };
 
-  const openCheckout = async () => {
-    if (!canBilling || !currentWorkspace?.slug) return;
+  const openCheckout = async (planSlug: "pro" | "team") => {
+    if (!canBilling || !wsSlug) return;
     setBillingAct(true);
     try {
       const origin = typeof window !== "undefined" ? window.location.origin : "";
-      const { successUrl, cancelUrl } = billingCheckoutReturnUrls(origin, currentWorkspace.slug);
-      const { url } = await api.createBillingCheckout(successUrl, cancelUrl);
+      const { successUrl, cancelUrl } = billingCheckoutReturnUrls(origin, wsSlug);
+      const { url } = await api.createBillingCheckout(successUrl, cancelUrl, planSlug);
       window.location.assign(url);
     } catch (e) {
       toast.error(toErrorMessage(e));
@@ -205,6 +214,9 @@ export default function BillingPage() {
 
   const planSlugForCta = data?.plan_slug ?? sub?.plan_slug ?? "free";
   const upgrade = nextPublicPlanSlug(planSlugForCta);
+  /** Следующий публичный тариф; на Team без следующего — остаёмся на team Checkout (продление/смена). */
+  const stripeCheckoutPlan = (upgrade ?? "team") as "pro" | "team";
+  const downgradeTarget = prevPublicPlanSlug(planSlugForCta);
   const planHref =
     upgrade === "pro"
       ? "/pricing#pricing-plan-pro"
@@ -233,10 +245,17 @@ export default function BillingPage() {
           <CardHeader className="pb-2">
             <CardTitle className="text-base">Настройки оплаты (Billing)</CardTitle>
             <p className="text-sm text-muted-foreground">
-              Статус подписки и счета. Смена карты и отмена подписки выполняются в{" "}
+              Статус подписки и счета. Смена карты, снижение тарифа (downgrade) и отмена подписки выполняются в{" "}
               <span className="font-medium text-foreground">клиентском портале Stripe</span> (включите нужные действия в
-              Stripe Dashboard → Billing → Customer portal).
+              Stripe Dashboard → Billing → Customer portal). Сроки смены плана — по правилам Stripe (часто до конца
+              оплаченного периода).
             </p>
+            {downgradeTarget && canBilling ? (
+              <p className="text-sm text-muted-foreground">
+                Понизить уровень с {planDisplayName(planSlugForCta)} до {planDisplayName(downgradeTarget)} можно в портале;
+                апгрейд на Pro или Team — кнопкой «Оформить подписку» или блоком сравнения планов ниже.
+              </p>
+            ) : null}
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="flex flex-wrap items-center gap-2">
@@ -296,9 +315,9 @@ export default function BillingPage() {
                   variant="secondary"
                   size="sm"
                   disabled={billingAct}
-                  onClick={() => void openCheckout()}
+                  onClick={() => void openCheckout(stripeCheckoutPlan)}
                 >
-                  Оформить подписку
+                  Оформить подписку ({planDisplayName(stripeCheckoutPlan)})
                 </Button>
               </div>
             ) : (
@@ -466,8 +485,8 @@ export default function BillingPage() {
                   <Link href="/pricing#pricing-comparison">Сравнить планы и лимиты</Link>
                 </Button>
                 {upgrade ? (
-                  <Button size="sm" asChild>
-                    <Link href={planHref}>Рекомендуемый апгрейд: {planDisplayName(upgrade)}</Link>
+                  <Button type="button" size="sm" disabled={billingAct} onClick={() => void openCheckout(upgrade)}>
+                    Оформить {planDisplayName(upgrade)} (Stripe)
                   </Button>
                 ) : null}
               </div>
@@ -495,12 +514,17 @@ export default function BillingPage() {
               </div>
               <div className="flex flex-wrap gap-2">
                 {upgrade ? (
-                  <Button asChild>
-                    <Link href={planHref} className="inline-flex items-center gap-2">
-                      Перейти на {planDisplayName(upgrade)}
-                      <ExternalLink className="h-4 w-4 opacity-80" aria-hidden />
-                    </Link>
-                  </Button>
+                  <>
+                    <Button type="button" disabled={billingAct} onClick={() => void openCheckout(upgrade)}>
+                      Оформить {planDisplayName(upgrade)} (Stripe)
+                    </Button>
+                    <Button variant="outline" asChild>
+                      <Link href={planHref} className="inline-flex items-center gap-2">
+                        Карточка на сайте
+                        <ExternalLink className="h-4 w-4 opacity-80" aria-hidden />
+                      </Link>
+                    </Button>
+                  </>
                 ) : (
                   <Button variant="secondary" asChild>
                     <Link href="/pricing">Обзор всех планов</Link>
@@ -567,7 +591,12 @@ export default function BillingPage() {
             </CardContent>
           </Card>
 
-          <InAppPlanComparison currentPlanSlug={data.plan_slug} />
+          <InAppPlanComparison
+            currentPlanSlug={data.plan_slug}
+            canCheckout={canBilling}
+            checkoutBusy={billingAct}
+            onCheckoutPlan={(plan) => void openCheckout(plan)}
+          />
 
           <Card className="border-dashed">
             <CardHeader>
@@ -586,12 +615,8 @@ export default function BillingPage() {
             </CardHeader>
             <CardContent className="space-y-3 text-sm text-muted-foreground">
               <p>
-                Управление участниками, приглашения и смена ролей в API этой версии не даны как полноценный CRUD.
-                Продуктовый контекст и честный статус — на странице{" "}
-                <Link
-                  href={currentWorkspace?.slug ? workspaceAppHref(currentWorkspace.slug, "/team") : "/team"}
-                  className="font-medium text-foreground underline underline-offset-2"
-                >
+                Участники, приглашения (отправка, повтор, отзыв) и смена ролей доступны через API и UI на странице{" "}
+                <Link href={workspaceAppHref(wsSlug, "/team")} className="font-medium text-foreground underline underline-offset-2">
                   Команда
                 </Link>
                 .

@@ -11,7 +11,7 @@ import {
 } from "react";
 import { api, toErrorMessage, type WorkspaceOut } from "@/lib/api-client";
 import { toast } from "sonner";
-import { getWorkspaceId, setWorkspaceId } from "@/lib/workspace";
+import { getWorkspaceId, setWorkspaceId, setWorkspaceSlug } from "@/lib/workspace";
 
 export interface WorkspaceContextValue {
   workspaces: WorkspaceOut[];
@@ -70,6 +70,11 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     void refresh();
   }, [refresh]);
+
+  useEffect(() => {
+    const ws = workspaces.find((x) => x.id === activeId);
+    if (ws?.slug) setWorkspaceSlug(ws.slug);
+  }, [workspaces, activeId]);
 
   const selectWorkspace = useCallback((id: string) => {
     setWorkspaceId(id);

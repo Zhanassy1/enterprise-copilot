@@ -21,6 +21,14 @@ Use [`.env.production.example`](../.env.production.example) as the **hardened** 
 
 The **minimal** reference for Docker-only stacks is [`docker-compose.prod.yml`](../docker-compose.prod.yml) (sets `PRODUCTION_PROFILE=minimal` and the corresponding `PRODUCTION_REQUIRE_*=0` overrides for API/worker).
 
+For the **same** compose stack but **hardened** env on API/worker (TLS DB URL, S3, `TRUSTED_PROXY_IPS`), add the third overlay — does not replace minimal prod:
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.prod.yml -f docker-compose.prod.hardened.yml up -d --build
+```
+
+See comments in [`docker-compose.prod.hardened.yml`](../docker-compose.prod.hardened.yml): `DATABASE_URL` must include TLS (`?sslmode=require`); the bundled `db` container is not sufficient unless you terminate TLS elsewhere.
+
 ## Checklist (hardened)
 
 1. **`ENVIRONMENT=production`** on API and Celery workers (same vars on every process).

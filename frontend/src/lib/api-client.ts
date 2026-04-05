@@ -1,5 +1,5 @@
 import { getToken, clearToken } from "./auth";
-import { getWorkspaceId } from "./workspace";
+import { getWorkspaceId, getWorkspaceSlug } from "./workspace";
 
 const API_BASE =
   process.env.NEXT_PUBLIC_API_BASE?.trim() || "http://localhost:8000/api/v1";
@@ -49,6 +49,19 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     clearToken();
     if (typeof window !== "undefined" && window.location.pathname !== "/login") {
       window.location.assign("/login");
+    }
+  }
+
+  if (res.status === 402 && typeof window !== "undefined") {
+    const slug = getWorkspaceSlug();
+    const billingPath = slug ? `/w/${slug}/billing` : "/billing";
+    const onBilling = slug ? window.location.pathname.startsWith(`/w/${slug}/billing`) : false;
+    if (onBilling) {
+      void import("sonner").then(({ toast }) =>
+        toast.error("Операция недоступна до восстановления оплаты или подписки."),
+      );
+    } else {
+      window.location.assign(billingPath);
     }
   }
 

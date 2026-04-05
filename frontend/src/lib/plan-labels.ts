@@ -23,6 +23,14 @@ export function nextPublicPlanSlug(current: string): "pro" | "team" | null {
   return null;
 }
 
+/** Предыдущий уровень (для копии про downgrade через портал). */
+export function prevPublicPlanSlug(current: string): "free" | "pro" | null {
+  const s = normalizePlanSlug(current);
+  if (s === "team") return "pro";
+  if (s === "pro") return "free";
+  return null;
+}
+
 export function isKnownMarketingPlan(slug: string): boolean {
   const s = normalizePlanSlug(slug);
   return ORDER.includes(s as (typeof ORDER)[number]);

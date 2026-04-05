@@ -49,22 +49,25 @@ test.describe("workspace evaluator (API + UI)", () => {
       timeout: 15_000,
     });
 
-    await page.goto("/jobs");
+    const slug = new URL(page.url()).pathname.match(/^\/w\/([^/]+)\//)?.[1];
+    expect(slug, "workspace slug from URL").toBeTruthy();
+
+    await page.goto(`/w/${slug}/jobs`);
     await expect(page.getByRole("heading", { name: "Очередь обработки" })).toBeVisible();
 
-    await page.goto("/billing");
+    await page.goto(`/w/${slug}/billing`);
     await expect(page.getByRole("heading", { name: "План и лимиты" })).toBeVisible();
 
-    await page.goto("/team");
+    await page.goto(`/w/${slug}/team`);
     await expect(page.getByRole("heading", { name: "Команда и доступ" })).toBeVisible();
 
-    await page.goto("/search");
+    await page.goto(`/w/${slug}/search`);
     await expect(page.getByRole("heading", { name: "Поиск", exact: true })).toBeVisible();
 
-    await page.goto("/chat");
+    await page.goto(`/w/${slug}/chat`);
     await expect(page.getByText("Диалоги").first()).toBeVisible();
 
-    await page.goto("/audit");
+    await page.goto(`/w/${slug}/audit`);
     await expect(page.getByRole("heading", { name: "Журнал аудита" })).toBeVisible();
   });
 });

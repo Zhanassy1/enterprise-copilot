@@ -4,11 +4,13 @@ import Link from "next/link";
 import { Eye } from "lucide-react";
 import { useWorkspace } from "@/components/workspace/workspace-provider";
 import { workspaceAppHref } from "@/lib/workspace-path";
+import { resolvedWorkspaceSlug } from "@/lib/workspace";
 import { isViewer } from "@/lib/workspace-role";
 
 /** Краткая подсказка в сайдбаре / моб. меню: роль наблюдатель (viewer) без дублирования логики API. */
 export function NavRoleHint() {
   const { currentWorkspace } = useWorkspace();
+  const slug = resolvedWorkspaceSlug(currentWorkspace);
   if (!isViewer(currentWorkspace?.role)) return null;
   return (
     <div className="mx-1 mb-2 rounded-lg border border-amber-500/40 bg-amber-500/10 px-2.5 py-2 text-[11px] leading-snug text-amber-950 dark:text-amber-50">
@@ -21,12 +23,13 @@ export function NavRoleHint() {
         политики API.
       </p>
       <p className="mt-1.5">
-        <Link
-          href={currentWorkspace?.slug ? workspaceAppHref(currentWorkspace.slug, "/team") : "/team"}
-          className="font-medium text-foreground underline underline-offset-2"
-        >
-          Команда и доступ
-        </Link>
+        {slug ? (
+          <Link href={workspaceAppHref(slug, "/team")} className="font-medium text-foreground underline underline-offset-2">
+            Команда и доступ
+          </Link>
+        ) : (
+          <span className="font-medium text-muted-foreground">Команда и доступ</span>
+        )}
       </p>
     </div>
   );

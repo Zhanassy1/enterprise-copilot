@@ -13,26 +13,39 @@ import { siteUrls } from "@/lib/site-urls";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 
+const TIER: Record<string, number> = { free: 0, pro: 1, team: 2 };
+
 function planAnchor(slug: string): string {
   return `/pricing#pricing-plan-${normalizePlanSlug(slug)}`;
 }
 
-function upgradeLabel(from: string): { href: string; label: string } | null {
+function upgradeLabel(from: string): { href: string; label: string; plan: "pro" | "team" } | null {
   const n = nextPublicPlanSlug(from);
   if (!n) return null;
   return {
     href: planAnchor(n),
+    plan: n,
     label: n === "pro" ? "Следующий уровень: Pro" : "Следующий уровень: Team",
   };
 }
 
 interface InAppPlanComparisonProps {
   currentPlanSlug: string;
+  /** Когда задано — кнопка апгрейда открывает Stripe Checkout с этим планом вместо только маркетинга. */
+  canCheckout?: boolean;
+  checkoutBusy?: boolean;
+  onCheckoutPlan?: (plan: "pro" | "team") => void;
 }
 
-export function InAppPlanComparison({ currentPlanSlug }: InAppPlanComparisonProps) {
+export function InAppPlanComparison({
+  currentPlanSlug,
+  canCheckout = false,
+  checkoutBusy = false,
+  onCheckoutPlan,
+}: InAppPlanComparisonProps) {
   const current = normalizePlanSlug(currentPlanSlug);
   const upgrade = upgradeLabel(current);
+  const curTier = TIER[current] ?? 0;
 
   return (
     <section id="plan-comparison" className="scroll-mt-8 space-y-4">
@@ -49,18 +62,30 @@ export function InAppPlanComparison({ currentPlanSlug }: InAppPlanComparisonProp
             >
               docs/quotas.md
             </a>
-            ). У вашего{" "}
+            . У вашего{" "}
             <span className="font-medium text-foreground">рабочего пространства (workspace)</span> фактические потолки
             приходят из API выше; при ручной настройке они могут отличаться от таблицы.
           </p>
         </div>
         {upgrade ? (
-          <Button asChild>
-            <Link href={upgrade.href} className="inline-flex items-center gap-2" title="Открыть маркетинговую страницу выбранного плана">
-              Апгрейд: {upgrade.label.replace(/^Следующий уровень:\s*/i, "")}
+          canCheckout && onCheckoutPlan ? (
+            <Button
+              type="button"
+              disabled={checkoutBusy}
+              onClick={() => onCheckoutPlan(upgrade.plan)}
+              className="inline-flex items-center gap-2"
+            >
+              Оформить {planDisplayName(upgrade.plan)} (Stripe)
               <ArrowRight className="h-4 w-4" aria-hidden />
-            </Link>
-          </Button>
+            </Button>
+          ) : (
+            <Button asChild>
+              <Link href={upgrade.href} className="inline-flex items-center gap-2" title="Маркетинговая карточка плана">
+                Апгрейд: {upgrade.label.replace(/^Следующий уровень:\s*/i, "")}
+                <ArrowRight className="h-4 w-4" aria-hidden />
+              </Link>
+            </Button>
+          )
         ) : (
           <Button variant="outline" asChild>
             <Link href="/pricing">Публичная страница тарифов</Link>
@@ -71,18 +96,22 @@ export function InAppPlanComparison({ currentPlanSlug }: InAppPlanComparisonProp
       <div className="flex gap-2 rounded-lg border border-dashed border-muted-foreground/35 bg-muted/30 p-3 text-sm text-muted-foreground">
         <Info className="mt-0.5 h-4 w-4 shrink-0 text-foreground/70" aria-hidden />
         <p>
-          Смена тарифа в один клик через внешнего провайдера оплаты запланирована как следующий слой; сейчас план в
-          данных workspace задаёт администратор развёртывания. Страница{" "}
+          Апгрейд на Pro или Team — через Stripe Checkout; снижение тарифа или отмена — в{" "}
+          <span className="font-medium text-foreground">клиентском портале Stripe</span> (настройте сценарии в Dashboard).
+          Справка по лимитам — на{" "}
           <Link href="/pricing" className="underline underline-offset-2">
             /pricing
-          </Link>{" "}
-          — чтобы согласовать с ним следующую ступень по цифрам ниже.
+          </Link>
+          .
         </p>
       </div>
 
       <div className="grid gap-4 lg:grid-cols-3">
         {marketingPlans.map((p: MarketingPlan) => {
           const active = normalizePlanSlug(p.slug) === current;
+          const cardTier = TIER[normalizePlanSlug(p.slug)] ?? 0;
+          const showStripeUpgrade =
+            canCheckout && onCheckoutPlan && !active && cardTier > curTier && (p.slug === "pro" || p.slug === "team");
           return (
             <Card
               key={p.slug}
@@ -124,12 +153,26 @@ export function InAppPlanComparison({ currentPlanSlug }: InAppPlanComparisonProp
                     ))}
                   </ul>
                 </div>
-                <Button variant={active ? "secondary" : "outline"} className="w-full" size="sm" asChild>
-                  <Link href={planAnchor(p.slug)} className="inline-flex items-center justify-center gap-1">
-                    Карточка {p.name} на сайте
-                    <ArrowRight className="h-3.5 w-3.5 opacity-70" aria-hidden />
-                  </Link>
-                </Button>
+                <div className="flex flex-col gap-2">
+                  <Button variant={active ? "secondary" : "outline"} className="w-full" size="sm" asChild>
+                    <Link href={planAnchor(p.slug)} className="inline-flex items-center justify-center gap-1">
+                      Карточка {p.name} на сайте
+                      <ArrowRight className="h-3.5 w-3.5 opacity-70" aria-hidden />
+                    </Link>
+                  </Button>
+                  {showStripeUpgrade ? (
+                    <Button
+                      type="button"
+                      variant="default"
+                      className="w-full"
+                      size="sm"
+                      disabled={checkoutBusy}
+                      onClick={() => onCheckoutPlan(p.slug as "pro" | "team")}
+                    >
+                      Оформить {p.name} (Stripe)
+                    </Button>
+                  ) : null}
+                </div>
               </CardContent>
             </Card>
           );

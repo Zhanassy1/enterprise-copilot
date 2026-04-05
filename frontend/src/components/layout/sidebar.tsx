@@ -12,12 +12,13 @@ import { NavRoleHint } from "@/components/layout/nav-role-hint";
 import { appNavItems, navItemHref } from "@/config/app-nav";
 import { useWorkspace } from "@/components/workspace/workspace-provider";
 import { workspaceAppHref } from "@/lib/workspace-path";
+import { resolvedWorkspaceSlug } from "@/lib/workspace";
 
 export function Sidebar() {
   const pathname = usePathname();
   const { logout } = useAuth();
   const { currentWorkspace } = useWorkspace();
-  const slug = currentWorkspace?.slug;
+  const slug = resolvedWorkspaceSlug(currentWorkspace);
 
   return (
     <aside className="flex h-full w-60 flex-col border-r bg-sidebar">

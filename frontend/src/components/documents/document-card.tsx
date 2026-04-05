@@ -9,6 +9,7 @@ import { BookOpen, Trash2 } from "lucide-react";
 import type { DocumentOut } from "@/lib/api-client";
 import { useWorkspace } from "@/components/workspace/workspace-provider";
 import { workspaceAppHref } from "@/lib/workspace-path";
+import { resolvedWorkspaceSlug } from "@/lib/workspace";
 import { documentStatusLabel, pipelineStatusLabel } from "@/lib/product-terminology";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 
@@ -22,7 +23,8 @@ interface DocumentCardProps {
 
 export function DocumentCard({ doc, onSummary, onDelete, canMutate = true }: DocumentCardProps) {
   const { currentWorkspace } = useWorkspace();
-  const jobsHref = currentWorkspace?.slug ? workspaceAppHref(currentWorkspace.slug, "/jobs") : "/jobs";
+  const wsSlug = resolvedWorkspaceSlug(currentWorkspace);
+  const jobsHref = wsSlug ? workspaceAppHref(wsSlug, "/jobs") : "/jobs";
   return (
     <Card className="transition-shadow hover:shadow-md">
       <CardContent className="flex items-start gap-4 p-5">

@@ -8,6 +8,7 @@ import { api } from "@/lib/api-client";
 import { getToken } from "@/lib/auth";
 import { normalizePlanSlug } from "@/lib/plan-labels";
 import { workspaceAppHref } from "@/lib/workspace-path";
+import { getWorkspaceSlug } from "@/lib/workspace";
 import { canManageBillingCheckout } from "@/lib/workspace-role";
 
 const TIER: Record<string, number> = { free: 0, pro: 1, team: 2 };
@@ -79,7 +80,8 @@ export function PricingPlanActions({ planSlug, planName, highlight }: PricingPla
     );
   }
 
-  const billingBase = workspaceSlug ? workspaceAppHref(workspaceSlug, "/billing") : "/billing";
+  const slugForBilling = workspaceSlug ?? getWorkspaceSlug();
+  const billingBase = slugForBilling ? workspaceAppHref(slugForBilling, "/billing") : "/billing";
   const billingPayment = `${billingBase}#billing-payment-section`;
   const isCurrent = userPlan === card;
   const canUpgradeHere = cardTier > userTier;

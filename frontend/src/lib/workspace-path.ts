@@ -1,5 +1,20 @@
 /** Workspace-scoped app URLs: `/w/{slug}/…` and API path refs (slug preferred). */
 
+/**
+ * Flat app routes under (app)/ that mirror /w/:slug/... — legacy redirects and docs.
+ * Keep in sync with page stubs that use WorkspaceLegacyRedirect.
+ */
+export const LEGACY_WORKSPACE_APP_SUBPATHS = [
+  "/documents",
+  "/chat",
+  "/team",
+  "/billing",
+  "/billing/success",
+  "/jobs",
+  "/audit",
+  "/search",
+] as const;
+
 export function workspaceRefForApi(ws: { id: string; slug?: string } | null | undefined): string {
   if (!ws) return "";
   return (ws.slug && ws.slug.trim()) || ws.id;

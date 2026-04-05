@@ -15,6 +15,7 @@ import { canInviteMembers, isOwnerOrAdmin, normalizeWorkspaceRole } from "@/lib/
 import { siteUrls } from "@/lib/site-urls";
 import { api, toErrorMessage, type InvitationOut, type WorkspaceMemberOut } from "@/lib/api-client";
 import { workspaceAppHref, workspaceRefForApi } from "@/lib/workspace-path";
+import { resolvedWorkspaceSlug } from "@/lib/workspace";
 import { MembersTable } from "@/components/team/members-table";
 import { toast } from "sonner";
 import { Input } from "@/components/ui/input";
@@ -81,6 +82,7 @@ const ROLE_MATRIX: { cap: string; owner: string; admin: string; member: string; 
 
 export default function TeamPage() {
   const { currentWorkspace } = useWorkspace();
+  const routeSlug = resolvedWorkspaceSlug(currentWorkspace);
   const role = currentWorkspace?.role ?? "";
   const admin = isOwnerOrAdmin(role);
   const colKey = currentWorkspace ? roleColumnKey(currentWorkspace.role) : null;
@@ -486,17 +488,17 @@ export default function TeamPage() {
         </CardHeader>
         <CardContent className="flex flex-wrap gap-2">
           <Button variant="outline" size="sm" asChild>
-            <Link href={currentWorkspace?.slug ? workspaceAppHref(currentWorkspace.slug, "/audit") : "/audit"}>
+            <Link href={routeSlug ? workspaceAppHref(routeSlug, "/audit") : "/audit"}>
               Журнал аудита workspace
             </Link>
           </Button>
           <Button variant="outline" size="sm" asChild>
-            <Link href={currentWorkspace?.slug ? workspaceAppHref(currentWorkspace.slug, "/billing") : "/billing"}>
+            <Link href={routeSlug ? workspaceAppHref(routeSlug, "/billing") : "/billing"}>
               План и лимиты
             </Link>
           </Button>
           <Button variant="outline" size="sm" asChild>
-            <Link href={currentWorkspace?.slug ? workspaceAppHref(currentWorkspace.slug, "/documents") : "/documents"}>
+            <Link href={routeSlug ? workspaceAppHref(routeSlug, "/documents") : "/documents"}>
               Документы
             </Link>
           </Button>

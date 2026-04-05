@@ -2,14 +2,17 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { api, type MeOut, type SubscriptionOut } from "@/lib/api-client";
+import { api, type MeOut } from "@/lib/api-client";
 import { useWorkspace } from "@/components/workspace/workspace-provider";
 import { workspaceAppHref } from "@/lib/workspace-path";
+import { resolvedWorkspaceSlug } from "@/lib/workspace";
+import { useWorkspaceBillingState } from "@/hooks/use-workspace-billing-state";
 
 export function AppShellBanners() {
   const { currentWorkspace } = useWorkspace();
+  const billingSlug = resolvedWorkspaceSlug(currentWorkspace);
   const [me, setMe] = useState<MeOut | null>(null);
-  const [sub, setSub] = useState<SubscriptionOut | null>(null);
+  const { sub } = useWorkspaceBillingState(currentWorkspace?.id);
 
   useEffect(() => {
     void api
@@ -17,17 +20,6 @@ export function AppShellBanners() {
       .then(setMe)
       .catch(() => setMe(null));
   }, []);
-
-  useEffect(() => {
-    if (!currentWorkspace?.id) {
-      setSub(null);
-      return;
-    }
-    void api
-      .getBillingSubscription()
-      .then(setSub)
-      .catch(() => setSub(null));
-  }, [currentWorkspace?.id]);
 
   const showBilling =
     sub != null &&
@@ -60,12 +52,13 @@ export function AppShellBanners() {
           role="alert"
         >
           {sub.banner_message}{" "}
-          <Link
-            href={currentWorkspace?.slug ? workspaceAppHref(currentWorkspace.slug, "/billing") : "/billing"}
-            className="font-medium underline underline-offset-2"
-          >
-            Открыть биллинг
-          </Link>
+          {billingSlug ? (
+            <Link href={workspaceAppHref(billingSlug, "/billing")} className="font-medium underline underline-offset-2">
+              Открыть биллинг
+            </Link>
+          ) : (
+            <span className="font-medium">Откройте раздел «План и лимиты» после загрузки workspace.</span>
+          )}
         </div>
       ) : null}
     </div>
