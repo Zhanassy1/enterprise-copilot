@@ -7,6 +7,7 @@ from datetime import UTC, datetime
 from sqlalchemy import delete, text
 from sqlalchemy.orm import Session
 
+from app.core.config import settings
 from app.models.document import Document, DocumentChunk
 from app.services.chunking import chunk_text
 from app.services.embeddings import embed_texts
@@ -84,7 +85,7 @@ class DocumentIndexingService:
             page_limit = max_pdf_pages_for_workspace(self.db, document.workspace_id)
             if page_limit is not None and int(extracted_doc.page_count or 0) > int(page_limit):
                 raise ValueError(f"Document exceeds plan page limit ({page_limit} pages max)")
-            chunks = chunk_text(extracted)
+            chunks = chunk_text(extracted, chunk_size=int(settings.chunk_size), overlap=int(settings.chunk_overlap))
             offsets = _chunk_offsets(extracted, chunks)
             spans = _page_spans(extracted)
             vectors = embed_texts(chunks)

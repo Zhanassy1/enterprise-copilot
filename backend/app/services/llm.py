@@ -3,7 +3,8 @@ from __future__ import annotations
 import logging
 
 from app.core.config import settings
-from app.services.prompt_templates import RAG_SYSTEM_PROMPT, SUMMARY_SYSTEM_PROMPT
+from app.services.nlp import is_price_intent
+from app.services.prompt_templates import RAG_PRICE_FOCUS_SUFFIX, RAG_SYSTEM_PROMPT, SUMMARY_SYSTEM_PROMPT
 
 logger = logging.getLogger(__name__)
 
@@ -84,7 +85,28 @@ def llm_chat(
         return ""
 
 
-def rag_answer(query: str, context_chunks: list[str]) -> str:
+def _rag_system_prompt(query: str) -> str:
+    if is_price_intent(query):
+        return f"{RAG_SYSTEM_PROMPT} {RAG_PRICE_FOCUS_SUFFIX}"
+    return RAG_SYSTEM_PROMPT
+
+
+def _rag_user_prompt(query: str, context: str, *, conversation_history: str | None) -> str:
+    if conversation_history:
+        return (
+            f"История диалога (кратко):\n\n{conversation_history}\n\n---\n\n"
+            f"Контекст из документов:\n\n{context}\n\n---\n\n"
+            f"Текущий вопрос:\n{query}"
+        )
+    return f"Контекст из документов:\n\n{context}\n\n---\n\nВопрос пользователя: {query}"
+
+
+def rag_answer(
+    query: str,
+    context_chunks: list[str],
+    *,
+    conversation_history: str | None = None,
+) -> str:
     """Generate a RAG answer from retrieved chunks. Falls back to extractive if no LLM key."""
     if not context_chunks:
         return "По загруженным документам релевантной информации не найдено."
@@ -94,14 +116,19 @@ def rag_answer(query: str, context_chunks: list[str]) -> str:
 
     context = "\n\n---\n\n".join(context_chunks[: 8])
 
-    system = RAG_SYSTEM_PROMPT
+    system = _rag_system_prompt(query)
 
-    user = f"Контекст из документов:\n\n{context}\n\n---\n\nВопрос пользователя: {query}"
+    user = _rag_user_prompt(query, context, conversation_history=conversation_history)
 
     return llm_chat(system, user, max_tokens=1024)
 
 
-def rag_answer_stream(query: str, context_chunks: list[str]):
+def rag_answer_stream(
+    query: str,
+    context_chunks: list[str],
+    *,
+    conversation_history: str | None = None,
+):
     """Stream RAG answer tokens from the LLM. Empty generator if disabled or no chunks."""
     if not context_chunks:
         return
@@ -109,8 +136,8 @@ def rag_answer_stream(query: str, context_chunks: list[str]):
         return
 
     context = "\n\n---\n\n".join(context_chunks[:8])
-    system = RAG_SYSTEM_PROMPT
-    user = f"Контекст из документов:\n\n{context}\n\n---\n\nВопрос пользователя: {query}"
+    system = _rag_system_prompt(query)
+    user = _rag_user_prompt(query, context, conversation_history=conversation_history)
     yield from llm_chat_stream(system, user, max_tokens=1024)
 
 

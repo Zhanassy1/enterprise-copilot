@@ -280,6 +280,10 @@ export interface ChatMessageOut {
   content: string;
   sources: SearchHit[];
   created_at: string;
+  details?: string | null;
+  next_step?: string | null;
+  clarifying_question?: string | null;
+  decision?: "answer" | "clarify" | "insufficient_context" | null;
 }
 
 export interface ChatReplyOut {

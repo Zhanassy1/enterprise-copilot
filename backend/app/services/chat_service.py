@@ -16,6 +16,10 @@ from app.schemas.chat import (
     ChatSessionOut,
 )
 from app.schemas.documents import SearchHit
+from app.services.conversation_history import (
+    format_prior_messages_for_rag,
+    load_prior_messages_for_rag,
+)
 from app.services.embeddings import embed_texts
 from app.services.nlp import (
     build_answer,
@@ -24,7 +28,10 @@ from app.services.nlp import (
     compose_response_text,
     decide_response_mode,
     filter_ungrounded_sentences,
+    parse_reply_meta,
+    serialize_reply_meta,
 )
+from app.services.rag_retrieval import retrieve_ranked_hits
 from app.services.usage_metering import (
     EVENT_CHAT_MESSAGE,
     EVENT_TOKENS,
@@ -32,7 +39,6 @@ from app.services.usage_metering import (
     estimate_tokens,
     record_event,
 )
-from app.services.vector_search import search_chunks_pgvector
 
 logger = logging.getLogger(__name__)
 
@@ -73,6 +79,7 @@ def _to_message_out(message: ChatMessage) -> ChatMessageOut:
     except Exception as e:
         logger.warning("failed to parse sources_json for message %s: %s", message.id, e)
         sources = []
+    details, next_step, clarifying_question, decision = parse_reply_meta(message.reply_meta_json)
     return ChatMessageOut(
         id=message.id,
         session_id=message.session_id,
@@ -80,6 +87,10 @@ def _to_message_out(message: ChatMessage) -> ChatMessageOut:
         content=message.content,
         sources=sources,
         created_at=message.created_at,
+        details=details,
+        next_step=next_step,
+        clarifying_question=clarifying_question,
+        decision=decision,
     )
 
 
@@ -116,6 +127,8 @@ class ChatService:
         )
         if not session:
             raise HTTPException(status_code=404, detail="Chat session not found")
+        prior_rows = load_prior_messages_for_rag(self.db, session.id)
+        conversation_history = format_prior_messages_for_rag(prior_rows)
         query_tokens = estimate_tokens(message)
         assert_quota(
             self.db,
@@ -126,12 +139,14 @@ class ChatService:
         )
 
         qvec = embed_texts([message])[0]
-        hits = search_chunks_pgvector(
+        hits = retrieve_ranked_hits(
             self.db,
             workspace_id=workspace_id,
-            query_text=message,
+            user_id=user_id,
+            query=message,
             query_embedding=qvec,
             top_k=top_k,
+            compact_snippets=True,
         )
         decision, confidence = decide_response_mode(
             message,
@@ -142,7 +157,7 @@ class ChatService:
         details: str | None = None
         clarifying_question: str | None = None
         if decision == "answer":
-            answer = build_answer(message, hits)
+            answer = build_answer(message, hits, conversation_history=conversation_history)
             details = "Ответ подтвержден найденными фрагментами документов."
         else:
             answer = ""
@@ -168,6 +183,12 @@ class ChatService:
             session_id=session.id,
             role="assistant",
             content=assistant_content,
+            reply_meta_json=serialize_reply_meta(
+                decision=decision,
+                details=details,
+                next_step=next_step,
+                clarifying_question=clarifying_question,
+            ),
             sources_json=json.dumps(hits, ensure_ascii=False, default=str),
         )
         self.db.add(user_msg)
@@ -237,13 +258,18 @@ class ChatService:
                 token_increment=query_tokens,
             )
 
+            prior_rows = load_prior_messages_for_rag(self.db, session.id)
+            conversation_history = format_prior_messages_for_rag(prior_rows)
+
             qvec = embed_texts([message])[0]
-            hits = search_chunks_pgvector(
+            hits = retrieve_ranked_hits(
                 self.db,
                 workspace_id=workspace_id,
-                query_text=message,
+                user_id=user_id,
+                query=message,
                 query_embedding=qvec,
                 top_k=top_k,
+                compact_snippets=True,
             )
             decision, _confidence = decide_response_mode(
                 message,
@@ -267,16 +293,14 @@ class ChatService:
         try:
             if decision == "answer":
                 details = "Ответ подтвержден найденными фрагментами документов."
-                clarifying_question = build_clarifying_question(message)
                 next_step = build_next_step(decision)
                 chunks_text = [str(h.get("text") or "") for h in hits[:6] if h.get("text")]
 
-                for part in _yield_string_chunks("Ответ: "):
-                    yield _sse_event({"type": "token", "content": part})
-
                 if llm_enabled() and chunks_text:
                     try:
-                        for delta in rag_answer_stream(message, chunks_text):
+                        for delta in rag_answer_stream(
+                            message, chunks_text, conversation_history=conversation_history
+                        ):
                             raw_llm_body += delta
                             yield _sse_event({"type": "token", "content": delta})
                     except Exception as e:
@@ -285,17 +309,14 @@ class ChatService:
                     if not answer and raw_llm_body.strip():
                         answer = "Недостаточно данных в предоставленных документах."
                     if not answer:
-                        answer = build_answer(message, hits)
+                        answer = build_answer(message, hits, conversation_history=conversation_history)
                         for part in _yield_string_chunks(answer):
                             yield _sse_event({"type": "token", "content": part})
                 else:
-                    answer = build_answer(message, hits)
+                    answer = build_answer(message, hits, conversation_history=conversation_history)
                     for part in _yield_string_chunks(answer):
                         yield _sse_event({"type": "token", "content": part})
 
-                suffix = f"\n\nДетали: {details}\n\nСледующий шаг: {next_step}"
-                for part in _yield_string_chunks(suffix):
-                    yield _sse_event({"type": "token", "content": part})
                 assistant_content = compose_response_text(
                     decision=decision,
                     answer=answer,
@@ -336,6 +357,12 @@ class ChatService:
                 session_id=session.id,
                 role="assistant",
                 content=assistant_content,
+                reply_meta_json=serialize_reply_meta(
+                    decision=decision,
+                    details=details,
+                    next_step=next_step,
+                    clarifying_question=clarifying_question,
+                ),
                 sources_json=json.dumps(hits, ensure_ascii=False, default=str),
             )
             self.db.add(user_msg)

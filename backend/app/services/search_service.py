@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import re
 import uuid
 
 from app.core.config import settings
@@ -11,44 +10,8 @@ from app.services.nlp import (
     build_clarifying_question,
     build_next_step,
     decide_response_mode,
-    is_penalty_intent,
-    is_price_intent,
 )
-from app.services.reranker import rerank_hits
-from app.services.vector_search import search_chunks_pgvector
-
-
-def _compact_hit_text(text: str, query: str, *, price_intent: bool) -> str:
-    if not text:
-        return text
-    lines = [ln.strip() for ln in text.splitlines() if ln.strip()]
-    if not lines:
-        return text[:800]
-
-    q = (query or "").lower().strip()
-    stems = {tok[:4] for tok in re.findall(r"[0-9A-Za-zА-Яа-яЁё]+", q) if len(tok) >= 3}
-    penalty_intent = is_penalty_intent(query)
-    price_markers = ("цена", "стоим", "тенге", "kzt", "руб", "usd")
-    penalty_markers = ("пен", "неусто", "штраф", "просроч")
-
-    def keep_line(line: str) -> bool:
-        low = line.lower()
-        if q and q in low:
-            return True
-        if stems and any(s in low for s in stems):
-            return True
-        if price_intent and any(m in low for m in price_markers):
-            return True
-        if penalty_intent and any(m in low for m in penalty_markers):
-            return True
-        if price_intent and any(ch.isdigit() for ch in line):
-            return True
-        return False
-
-    matched = [ln for ln in lines if keep_line(ln)]
-    if matched:
-        return "\n".join(matched[:12])[:1200]
-    return "\n".join(lines[:8])[:800]
+from app.services.rag_retrieval import retrieve_ranked_hits
 
 
 class SearchService:
@@ -57,7 +20,6 @@ class SearchService:
 
     def search(self, *, workspace_id: uuid.UUID, user_id: uuid.UUID, query: str, top_k: int) -> SearchOut:
         from app.services.usage_metering import (
-            EVENT_RERANK,
             EVENT_SEARCH_REQUEST,
             EVENT_TOKENS,
             assert_quota,
@@ -73,35 +35,16 @@ class SearchService:
             request_increment=1,
             token_increment=query_tokens,
         )
-        price_intent = is_price_intent(query)
         qvec = embed_texts([query])[0]
-        hits = search_chunks_pgvector(
+        hits = retrieve_ranked_hits(
             self.db,
             workspace_id=workspace_id,
-            query_text=query,
+            user_id=user_id,
+            query=query,
             query_embedding=qvec,
-            top_k=max(top_k, int(settings.reranker_top_n)),
+            top_k=top_k,
+            compact_snippets=True,
         )
-        hits = rerank_hits(query, hits, top_n=int(settings.reranker_top_n))
-        if settings.reranker_enabled:
-            assert_quota(
-                self.db,
-                workspace_id=workspace_id,
-                user_id=user_id,
-                rerank_increment=1,
-            )
-            record_event(
-                self.db,
-                workspace_id=workspace_id,
-                user_id=user_id,
-                event_type=EVENT_RERANK,
-                quantity=1,
-                unit="count",
-                metadata={"top_n": int(settings.reranker_top_n), "candidates": len(hits)},
-            )
-        hits = hits[: int(top_k)]
-        for h in hits:
-            h["text"] = _compact_hit_text(str(h.get("text") or ""), query, price_intent=price_intent)
 
         decision, confidence = decide_response_mode(
             query,

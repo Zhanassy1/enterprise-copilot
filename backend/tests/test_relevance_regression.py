@@ -1,6 +1,7 @@
 import json
 import unittest
 
+from app.core.config import settings
 from app.services.nlp import decide_response_mode
 
 from tests.eval_paths import find_evals_file
@@ -17,8 +18,8 @@ class RelevanceRegressionTests(unittest.TestCase):
                 decision, _confidence = decide_response_mode(
                     case["query"],
                     case["hits"],
-                    answer_threshold=0.62,
-                    clarify_threshold=0.42,
+                    answer_threshold=settings.answer_threshold,
+                    clarify_threshold=settings.clarify_threshold,
                 )
                 self.assertEqual(decision, case["expected_decision"])
 

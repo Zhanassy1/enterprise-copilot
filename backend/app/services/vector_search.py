@@ -13,6 +13,8 @@ from sqlalchemy.orm import Session
 
 from app.core.config import settings
 from app.services.nlp import (
+    PENALTY_LINE_MARKERS,
+    PRICE_LINE_MARKERS,
     boilerplate_penalty,
     expand_query,
     is_penalty_intent,
@@ -181,9 +183,9 @@ def _apply_quality_heuristics(query_text: str, rows: list[dict]) -> list[dict]:
 
         bonus = 0.0
         hard_penalty = 0.0
-        has_price_markers = any(m in low for m in ("цен", "стоим", "тенге", "kzt", "руб"))
+        has_price_markers = any(m in low for m in PRICE_LINE_MARKERS)
         has_digits = any(ch.isdigit() for ch in text_value)
-        has_penalty_markers = any(m in low for m in ("пен", "неусто", "штраф", "просроч"))
+        has_penalty_markers = any(m in low for m in PENALTY_LINE_MARKERS)
         if price_intent and has_price_markers:
             bonus += 0.10
         if price_intent and has_digits:
@@ -288,7 +290,7 @@ def search_chunks_pgvector(
     if price_intent:
         def _price_match(row: dict) -> bool:
             txt = str(row.get("text") or "").lower()
-            return (any(m in txt for m in ("цен", "стоим", "тенге", "kzt", "руб")) and any(ch.isdigit() for ch in txt))
+            return any(m in txt for m in PRICE_LINE_MARKERS) and any(ch.isdigit() for ch in txt)
 
         price_hits = [r for r in reranked if _price_match(r)]
         if price_hits:

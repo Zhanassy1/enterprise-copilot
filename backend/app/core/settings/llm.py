@@ -1,4 +1,8 @@
-from pydantic import BaseModel, Field
+from __future__ import annotations
+
+from typing import Self
+
+from pydantic import BaseModel, Field, model_validator
 
 
 class LLMSettings(BaseModel):
@@ -8,13 +12,19 @@ class LLMSettings(BaseModel):
     # LLM (OpenAI-compatible)
     llm_api_key: str = Field(default="")
     llm_base_url: str = Field(default="https://api.openai.com/v1")
-    llm_model: str = Field(default="gpt-4o-mini")
+    llm_model: str = Field(default="gpt-4o")
     llm_max_context_tokens: int = Field(default=6000)
-    llm_temperature: float = Field(default=0.2)
+    llm_temperature: float = Field(default=0.3, ge=0.0, le=2.0)
+
+    # RAG: prior turns in session (budget for prompt; assistant replies truncated)
+    chat_history_max_messages: int = Field(default=16, ge=2, le=64)
+    chat_history_budget_tokens: int = Field(default=1200, ge=200, le=8000)
+    chat_history_assistant_max_chars: int = Field(default=900, ge=200, le=8000)
+    chat_history_user_max_chars: int = Field(default=1200, ge=200, le=8000)
 
     # Precision-first decision thresholds
-    answer_threshold: float = Field(default=0.62, ge=0.0, le=1.0)
-    clarify_threshold: float = Field(default=0.42, ge=0.0, le=1.0)
+    answer_threshold: float = Field(default=0.55, ge=0.0, le=1.0)
+    clarify_threshold: float = Field(default=0.48, ge=0.0, le=1.0)
     retrieval_min_score: float = Field(default=0.22, ge=0.0, le=1.0)
     retrieval_max_near_duplicate_overlap: float = Field(default=0.90, ge=0.0, le=1.0)
     retrieval_hybrid_enabled: bool = Field(default=True)
@@ -26,3 +36,9 @@ class LLMSettings(BaseModel):
     reranker_enabled: bool = Field(default=True)
     reranker_model_name: str = Field(default="cross-encoder/ms-marco-MiniLM-L-6-v2")
     reranker_top_n: int = Field(default=30, ge=2, le=200)
+
+    @model_validator(mode="after")
+    def clarify_below_answer(self) -> Self:
+        if self.clarify_threshold >= self.answer_threshold:
+            raise ValueError("clarify_threshold must be strictly less than answer_threshold")
+        return self

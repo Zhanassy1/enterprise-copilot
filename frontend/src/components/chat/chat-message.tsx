@@ -43,6 +43,26 @@ export function ChatMessage({ message, streamCursor }: ChatMessageProps) {
             </span>
           ) : null}
         </p>
+        {!isUser &&
+        (message.details ||
+          message.next_step ||
+          message.clarifying_question) ? (
+          <div className="mt-2 space-y-1 border-t border-border/60 pt-2 text-xs text-muted-foreground">
+            {message.details ? (
+              <p className="whitespace-pre-wrap">Детали: {message.details}</p>
+            ) : null}
+            {message.clarifying_question && message.decision !== "answer" ? (
+              <p className="whitespace-pre-wrap">
+                Уточнение: {message.clarifying_question}
+              </p>
+            ) : null}
+            {message.next_step ? (
+              <p className="whitespace-pre-wrap font-medium text-foreground/80">
+                Следующий шаг: {message.next_step}
+              </p>
+            ) : null}
+          </div>
+        ) : null}
         {!isUser && message.sources && (
           <SourcesAccordion sources={message.sources} />
         )}

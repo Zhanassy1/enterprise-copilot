@@ -1,4 +1,6 @@
-from pydantic import BaseModel, Field
+from typing import Self
+
+from pydantic import BaseModel, Field, model_validator
 
 
 class IngestionSettings(BaseModel):
@@ -23,3 +25,21 @@ class IngestionSettings(BaseModel):
         le=3650,
         description="Hard-delete soft-deleted documents older than this (maintenance task).",
     )
+    chunk_size: int = Field(
+        default=800,
+        ge=200,
+        le=8000,
+        description="Target max characters per chunk during document indexing (see chunking.chunk_text).",
+    )
+    chunk_overlap: int = Field(
+        default=200,
+        ge=0,
+        le=2000,
+        description="Character overlap between consecutive chunks.",
+    )
+
+    @model_validator(mode="after")
+    def overlap_lt_chunk_size(self) -> Self:
+        if int(self.chunk_overlap) >= int(self.chunk_size):
+            raise ValueError("chunk_overlap must be less than chunk_size")
+        return self

@@ -1,5 +1,8 @@
 import unittest
 
+from pydantic import ValidationError
+
+from app.core.settings.llm import LLMSettings
 from app.services.nlp import decide_response_mode
 
 
@@ -42,6 +45,39 @@ class PrecisionGateTests(unittest.TestCase):
         )
         self.assertEqual(decision, "insufficient_context")
         self.assertEqual(confidence, 0.0)
+
+    def test_clarify_band_with_default_style_thresholds(self) -> None:
+        hits = [
+            {"text": "Оплата в течение 10 дней после акта по этапам", "score": 0.74},
+            {"text": "Стоимость и спецификация", "score": 0.30},
+        ]
+        decision, confidence = decide_response_mode(
+            "Условия оплаты по этапам",
+            hits,
+            answer_threshold=0.55,
+            clarify_threshold=0.48,
+        )
+        self.assertEqual(decision, "clarify")
+        self.assertGreaterEqual(confidence, 0.48)
+        self.assertLess(confidence, 0.55)
+
+    def test_answer_mode_when_confidence_at_or_above_default_answer_threshold(self) -> None:
+        hits = [
+            {"text": "Оплата в течение 10 дней после акта по этапам", "score": 0.82},
+            {"text": "Стоимость и спецификация", "score": 0.30},
+        ]
+        decision, confidence = decide_response_mode(
+            "Условия оплаты по этапам",
+            hits,
+            answer_threshold=0.55,
+            clarify_threshold=0.48,
+        )
+        self.assertEqual(decision, "answer")
+        self.assertGreaterEqual(confidence, 0.55)
+
+    def test_llm_settings_rejects_clarify_not_strictly_below_answer(self) -> None:
+        with self.assertRaises(ValidationError):
+            LLMSettings(answer_threshold=0.55, clarify_threshold=0.55)
 
 
 if __name__ == "__main__":

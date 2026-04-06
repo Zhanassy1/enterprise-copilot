@@ -25,6 +25,10 @@ class ChatMessageOut(BaseModel):
     content: str
     sources: list[SearchHit] = []
     created_at: datetime
+    details: str | None = None
+    next_step: str | None = None
+    clarifying_question: str | None = None
+    decision: Literal["answer", "clarify", "insufficient_context"] | None = None
 
 
 class ChatMessageIn(BaseModel):

@@ -1,7 +1,8 @@
 from __future__ import annotations
 
+import json
 import re
-from typing import Literal
+from typing import Literal, cast
 
 _STOPWORDS = {
     "и",
@@ -94,14 +95,67 @@ def keyword_overlap(query: str, text: str) -> float:
     return float(matched) / float(len(q))
 
 
+# Substrings indicating a monetary / total line inside document chunks (hybrid ranking, snippets).
+PRICE_LINE_MARKERS: tuple[str, ...] = (
+    "цен",
+    "стоим",
+    "сумм",
+    "итого",
+    "к оплате",
+    "подлежит оплате",
+    "прайс",
+    "тариф",
+    "тенге",
+    "kzt",
+    "руб",
+    "price",
+    "usd",
+)
+
+# Chunk text markers for penalty / sanctions (retrieval, confidence, snippets).
+PENALTY_LINE_MARKERS: tuple[str, ...] = (
+    "пен",
+    "неусто",
+    "штраф",
+    "просроч",
+    "санкц",
+    "удержан",
+)
+
+
 def is_price_intent(query: str) -> bool:
     q = (query or "").lower()
-    return any(x in q for x in ("цен", "стоим", "прайс", "тариф", "тенге", "kzt", "руб", "price"))
+    return any(
+        x in q
+        for x in (
+            "цен",
+            "стоим",
+            "прайс",
+            "тариф",
+            "тенге",
+            "kzt",
+            "руб",
+            "price",
+            "сумм",
+            "итого",
+            "к оплате",
+        )
+    )
 
 
 def is_penalty_intent(query: str) -> bool:
     q = (query or "").lower()
-    return any(x in q for x in ("пен", "неусто", "штраф", "просроч"))
+    return any(
+        x in q
+        for x in (
+            "пен",
+            "неусто",
+            "штраф",
+            "просроч",
+            "санкц",
+            "удержан",
+        )
+    )
 
 
 def expand_query(query: str) -> str:
@@ -111,9 +165,11 @@ def expand_query(query: str) -> str:
     low = q.lower()
     additions: list[str] = []
     if is_price_intent(low):
-        additions.extend(["цена", "стоимость", "тариф", "прайс", "тенге", "kzt"])
+        additions.extend(
+            ["цена", "стоимость", "тариф", "прайс", "тенге", "kzt", "сумма", "итого", "к оплате"]
+        )
     if is_penalty_intent(low):
-        additions.extend(["пеня", "неустойка", "штраф", "просрочка"])
+        additions.extend(["пеня", "неустойка", "штраф", "просрочка", "санкции", "удержание"])
     if not additions:
         return q
     extra = " ".join(dict.fromkeys(additions))
@@ -147,10 +203,12 @@ def extract_relevant_lines(query: str, text: str, *, max_lines: int = 6) -> list
         if q_stems and any(st in low for st in q_stems):
             out.append(ln)
             continue
-        if is_price_intent(query) and (any(x in low for x in ("цен", "стоим", "тенге", "kzt", "руб")) or any(ch.isdigit() for ch in ln)):
+        if is_price_intent(query) and (
+            any(x in low for x in PRICE_LINE_MARKERS) or any(ch.isdigit() for ch in ln)
+        ):
             out.append(ln)
             continue
-        if is_penalty_intent(query) and any(x in low for x in ("пен", "неусто", "штраф", "просроч", "%")):
+        if is_penalty_intent(query) and (any(x in low for x in PENALTY_LINE_MARKERS) or "%" in low):
             out.append(ln)
             continue
     if out:
@@ -158,7 +216,7 @@ def extract_relevant_lines(query: str, text: str, *, max_lines: int = 6) -> list
     return lines[: min(3, max_lines)]
 
 
-def build_answer(query: str, hits: list[dict]) -> str:
+def build_answer(query: str, hits: list[dict], *, conversation_history: str | None = None) -> str:
     if not hits:
         return "По загруженным документам релевантной информации не найдено."
 
@@ -167,7 +225,7 @@ def build_answer(query: str, hits: list[dict]) -> str:
     from app.services.llm import llm_enabled, rag_answer
 
     if llm_enabled():
-        llm_result = rag_answer(query, chunks_text)
+        llm_result = rag_answer(query, chunks_text, conversation_history=conversation_history)
         if llm_result:
             grounded = filter_ungrounded_sentences(llm_result, query, hits)
             if grounded:
@@ -196,6 +254,35 @@ def _clamp01(value: float) -> float:
     return value
 
 
+_LIST_LINE_RE = re.compile(r"^(?:[-•*]|\d{1,3}\.)\s+", re.UNICODE)
+
+
+def _fragment_grounded(fragment: str, query: str, support_pool: str) -> bool:
+    line = fragment.strip()
+    if not line:
+        return False
+    if "недостаточно данных" in line.lower():
+        return True
+    overlap_q = keyword_overlap(query, line)
+    line_tokens = {t for t in tokenize(line) if len(t) >= 3}
+    support_hits = sum(1 for t in line_tokens if t in support_pool)
+    if support_hits >= 2:
+        return True
+    if not line_tokens:
+        return support_hits >= 1
+    # Single token anchored in chunks: require tie to the user question or strong token coverage.
+    overlap_s = keyword_overlap(line, support_pool)
+    frac = support_hits / float(len(line_tokens))
+    return support_hits >= 1 and (overlap_q >= 0.12 or overlap_s >= 0.25 or frac >= 0.34)
+
+
+def _is_list_line(line: str) -> bool:
+    s = line.strip()
+    if not s:
+        return False
+    return bool(_LIST_LINE_RE.match(s))
+
+
 def filter_ungrounded_sentences(answer: str, query: str, hits: list[dict]) -> str:
     text = (answer or "").strip()
     if not text:
@@ -204,23 +291,40 @@ def filter_ungrounded_sentences(answer: str, query: str, hits: list[dict]) -> st
     if not support_pool:
         return ""
 
-    pieces = re.split(r"(?<=[.!?])\s+", text)
     kept: list[str] = []
-    for piece in pieces:
-        line = piece.strip()
-        if not line:
-            continue
-        # Preserve explicit fallback messages.
-        if "недостаточно данных" in line.lower():
-            kept.append(line)
-            continue
-        overlap = keyword_overlap(query, line)
-        line_tokens = {t for t in tokenize(line) if len(t) >= 3}
-        support_hits = sum(1 for t in line_tokens if t in support_pool)
-        if support_hits >= 2 or (support_hits >= 1 and overlap >= 0.20):
-            kept.append(line)
+    para_buf: list[str] = []
+
+    def flush_paragraph() -> None:
+        if not para_buf:
+            return
+        block = "\n".join(para_buf).strip()
+        para_buf.clear()
+        if not block:
+            return
+        pieces = re.split(r"(?<=[.!?])\s+", block)
+        for piece in pieces:
+            line = piece.strip()
+            if not line:
+                continue
+            if _fragment_grounded(line, query, support_pool):
+                kept.append(line)
+
+    for line in text.splitlines():
+        if _is_list_line(line):
+            flush_paragraph()
+            line_st = line.strip()
+            if _fragment_grounded(line_st, query, support_pool):
+                kept.append(line_st)
+        elif not line.strip():
+            flush_paragraph()
+        else:
+            para_buf.append(line)
+    flush_paragraph()
 
     if kept:
+        # Preserve list structure when present.
+        if any(_is_list_line(k) for k in kept):
+            return "\n".join(kept)
         return " ".join(kept)
     return "Недостаточно данных в предоставленных документах."
 
@@ -241,11 +345,11 @@ def compute_confidence(query: str, hits: list[dict]) -> float:
     intent_signal = 0.0
     top_text = str(hits[0].get("text") or "").lower()
     if is_price_intent(query):
-        has_price = any(m in top_text for m in ("цен", "стоим", "тенге", "kzt", "руб"))
+        has_price = any(m in top_text for m in PRICE_LINE_MARKERS)
         has_digits = any(ch.isdigit() for ch in top_text)
         intent_signal = 1.0 if has_price and has_digits else 0.0
     elif is_penalty_intent(query):
-        intent_signal = 1.0 if any(m in top_text for m in ("пен", "неусто", "штраф", "просроч")) else 0.0
+        intent_signal = 1.0 if any(m in top_text for m in PENALTY_LINE_MARKERS) else 0.0
 
     confidence = 0.45 * top_score + 0.20 * margin + 0.25 * overlap + 0.10 * intent_signal
     return _clamp01(confidence)
@@ -291,12 +395,46 @@ def compose_response_text(
     next_step: str,
 ) -> str:
     if decision == "answer":
-        parts = [f"Ответ: {answer}"]
-        if details:
-            parts.append(f"Детали: {details}")
-        parts.append(f"Следующий шаг: {next_step}")
-        return "\n\n".join(parts)
+        return (answer or "").strip()
     if decision == "clarify":
         return f"Нужна конкретизация: {clarifying_question}\n\nСледующий шаг: {next_step}"
     return f"Недостаточно подтвержденных данных в документах.\n\nУточнение: {clarifying_question}\n\nСледующий шаг: {next_step}"
+
+
+def serialize_reply_meta(
+    *,
+    decision: DecisionType,
+    details: str | None,
+    next_step: str,
+    clarifying_question: str | None,
+) -> str | None:
+    """JSON for assistant ChatMessage.reply_meta_json."""
+    body: dict = {"decision": decision, "next_step": next_step}
+    if decision == "answer":
+        body["details"] = details
+    else:
+        body["clarifying_question"] = clarifying_question
+    return json.dumps(body, ensure_ascii=False)
+
+
+def parse_reply_meta(raw: str | None) -> tuple[str | None, str | None, str | None, DecisionType | None]:
+    """Returns (details, next_step, clarifying_question, decision) from stored JSON."""
+    if not (raw or "").strip():
+        return (None, None, None, None)
+    try:
+        obj = json.loads(raw)
+    except json.JSONDecodeError:
+        return (None, None, None, None)
+    if not isinstance(obj, dict):
+        return (None, None, None, None)
+    dec_raw = obj.get("decision")
+    dec: DecisionType | None = (
+        cast(DecisionType, dec_raw) if dec_raw in ("answer", "clarify", "insufficient_context") else None
+    )
+    return (
+        obj.get("details") if isinstance(obj.get("details"), str) else None,
+        obj.get("next_step") if isinstance(obj.get("next_step"), str) else None,
+        obj.get("clarifying_question") if isinstance(obj.get("clarifying_question"), str) else None,
+        dec,
+    )
 
