@@ -15,11 +15,17 @@ from app.core.config import settings
 from app.services.nlp import (
     PENALTY_LINE_MARKERS,
     PRICE_LINE_MARKERS,
+    TERMINATION_LINE_MARKERS,
     boilerplate_penalty,
     expand_query,
+    is_contract_value_query,
     is_penalty_intent,
     is_price_intent,
+    is_termination_intent,
     keyword_overlap,
+    text_has_contract_value_signal,
+    text_has_monetary_amount,
+    text_suggests_security_deposit_without_contract_value,
 )
 
 
@@ -173,6 +179,8 @@ def _rrf_fuse(
 def _apply_quality_heuristics(query_text: str, rows: list[dict]) -> list[dict]:
     price_intent = is_price_intent(query_text)
     penalty_intent = is_penalty_intent(query_text)
+    termination_intent = is_termination_intent(query_text)
+    contract_value_q = is_contract_value_query(query_text)
     tuned: list[dict] = []
     for row in rows:
         text_value = str(row.get("text") or "")
@@ -184,25 +192,40 @@ def _apply_quality_heuristics(query_text: str, rows: list[dict]) -> list[dict]:
         bonus = 0.0
         hard_penalty = 0.0
         has_price_markers = any(m in low for m in PRICE_LINE_MARKERS)
-        has_digits = any(ch.isdigit() for ch in text_value)
+        has_amount = text_has_monetary_amount(text_value)
         has_penalty_markers = any(m in low for m in PENALTY_LINE_MARKERS)
+        has_termination_markers = any(m in low for m in TERMINATION_LINE_MARKERS)
+        if contract_value_q and text_has_contract_value_signal(text_value) and has_amount:
+            bonus += 0.22
+        if contract_value_q and text_suggests_security_deposit_without_contract_value(text_value):
+            hard_penalty += 0.38
         if price_intent and has_price_markers:
             bonus += 0.10
-        if price_intent and has_digits:
+        if price_intent and has_amount:
             bonus += 0.06
         if penalty_intent and has_penalty_markers:
             bonus += 0.12
-        if price_intent and not (has_price_markers and has_digits):
+        if termination_intent and has_termination_markers:
+            bonus += 0.12
+        if price_intent and not (has_price_markers and has_amount):
             hard_penalty += 0.35
         if penalty_intent and not has_penalty_markers:
+            hard_penalty += 0.35
+        if termination_intent and not has_termination_markers:
             hard_penalty += 0.35
         if overlap == 0.0:
             hard_penalty += 0.12
 
-        intent_match = (price_intent and has_price_markers and has_digits) or (penalty_intent and has_penalty_markers)
+        intent_match = (
+            (price_intent and has_price_markers and has_amount)
+            or (penalty_intent and has_penalty_markers)
+            or (termination_intent and has_termination_markers)
+        )
         base = float(row.get("score") or 0.0)
         # Scale RRF base to compatible range with current quality thresholds.
-        final_score = (base * 50.0) + 0.40 * overlap + bonus - boiler - length_penalty - hard_penalty
+        final_score = (
+            (base * 50.0) + 0.40 * overlap + bonus - boiler - length_penalty - hard_penalty
+        )
         row["score"] = final_score
         page_no = row.get("page_number")
         para_idx = row.get("paragraph_index")
@@ -216,10 +239,16 @@ def _apply_quality_heuristics(query_text: str, rows: list[dict]) -> list[dict]:
         row["_length_penalty"] = length_penalty
         row["_hard_penalty"] = hard_penalty
         row["_intent_match"] = 1 if intent_match else 0
+        row["_cv_tier"] = (
+            1
+            if contract_value_q and text_has_contract_value_signal(text_value) and has_amount
+            else 0
+        )
         tuned.append(row)
 
     tuned.sort(
         key=lambda r: (
+            int(r.get("_cv_tier") or 0) if contract_value_q else 0,
             int(r.get("_intent_match") or 0),
             float(r.get("score") or 0.0),
             float(r.get("_overlap") or 0.0),
@@ -242,7 +271,10 @@ def search_chunks_pgvector(
     Returns: [{document_id, chunk_id, chunk_index, text, score}]
     """
     expanded_query = expand_query(query_text)
-    candidate_k = max(int(top_k) * int(settings.retrieval_candidate_multiplier), int(settings.retrieval_candidate_floor))
+    candidate_k = max(
+        int(top_k) * int(settings.retrieval_candidate_multiplier),
+        int(settings.retrieval_candidate_floor),
+    )
     dense = _dense_candidates(
         db,
         workspace_id=workspace_id,
@@ -282,19 +314,30 @@ def search_chunks_pgvector(
     reranked = _apply_quality_heuristics(query_text, fused)
     penalty_intent = is_penalty_intent(query_text)
     price_intent = is_price_intent(query_text)
+    termination_intent = is_termination_intent(query_text)
 
-    if penalty_intent:
+    if penalty_intent or termination_intent:
         intent_hits = [r for r in reranked if int(r.get("_intent_match") or 0) == 1]
         if intent_hits:
             reranked = intent_hits
     if price_intent:
+
         def _price_match(row: dict) -> bool:
             txt = str(row.get("text") or "").lower()
-            return any(m in txt for m in PRICE_LINE_MARKERS) and any(ch.isdigit() for ch in txt)
+            return any(m in txt for m in PRICE_LINE_MARKERS) and text_has_monetary_amount(txt)
 
         price_hits = [r for r in reranked if _price_match(r)]
         if price_hits:
             reranked = price_hits
+        if is_contract_value_query(query_text):
+            cv_hits = [
+                r
+                for r in reranked
+                if text_has_contract_value_signal(str(r.get("text") or ""))
+                and text_has_monetary_amount(str(r.get("text") or ""))
+            ]
+            if cv_hits:
+                reranked = cv_hits
     # Keep only chunks with acceptable score to suppress weak/noisy matches.
     min_score = float(settings.retrieval_min_score)
     reranked = [r for r in reranked if float(r.get("score") or 0.0) >= min_score]
@@ -324,5 +367,5 @@ def search_chunks_pgvector(
         row.pop("_length_penalty", None)
         row.pop("_hard_penalty", None)
         row.pop("_intent_match", None)
+        row.pop("_cv_tier", None)
     return out
-

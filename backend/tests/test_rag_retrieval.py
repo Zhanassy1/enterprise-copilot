@@ -8,7 +8,26 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from app.core.config import settings
+from app.services.nlp import (
+    adjust_hit_scores_for_contract_value_query,
+    reorder_hits_for_contract_value_query,
+)
 from app.services.rag_retrieval import retrieve_ranked_hits
+
+
+def test_contract_value_query_reorder_prefers_price_over_security() -> None:
+    hits = [
+        {
+            "text": "1) Обеспечить исполнение.\n2) внести сумму обеспечения 906 660.00 тенге",
+            "score": 0.9,
+        },
+        {"text": "Цена договора составляет 12 000 000 тенге.", "score": 0.5},
+    ]
+    out = reorder_hits_for_contract_value_query(hits)
+    assert "12 000 000" in out[0]["text"]
+    adjust_hit_scores_for_contract_value_query(out)
+    assert out[0]["score"] > out[1]["score"]
+    assert out[1]["score"] <= 0.32
 
 
 def test_retrieve_ranked_hits_passes_effective_top_k_to_vector_search() -> None:

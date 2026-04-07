@@ -182,23 +182,14 @@ def ingest_document_task(
                 db.add(document)
             db.commit()
             logger.warning(
-                "%s",
-                str(
-                    {
-                        "hypothesisId": "H_ingestion_retry",
-                        "location": "backend/app/tasks/ingestion.py:retry",
-                        "message": "ingestion:retry_scheduled",
-                        "data": {
-                            "task_id": self.request.id,
-                            "document_id": str(job.document_id),
-                            "workspace_id": str(job.workspace_id),
-                            "attempt_number": attempt_number,
-                            "max_attempts": max_attempts,
-                            "countdown_seconds": delay,
-                            "error": error_text,
-                        },
-                    }
-                ),
+                "ingestion retry scheduled document_id=%s workspace_id=%s attempt=%s/%s countdown=%ss task_id=%s error=%s",
+                job.document_id,
+                job.workspace_id,
+                attempt_number,
+                max_attempts,
+                delay,
+                self.request.id,
+                error_text,
             )
             ingestion_retries_total += 1
             raise self.retry(exc=exc, countdown=delay)  # noqa: B904
@@ -225,22 +216,13 @@ def ingest_document_task(
         )
         db.commit()
         logger.warning(
-            "%s",
-            str(
-                {
-                    "hypothesisId": "H_ingestion_dead",
-                    "location": "backend/app/tasks/ingestion.py:dead_letter",
-                    "message": "ingestion:dead_letter",
-                    "data": {
-                        "task_id": self.request.id,
-                        "document_id": str(job.document_id),
-                        "workspace_id": str(job.workspace_id),
-                        "attempt_number": attempt_number,
-                        "max_attempts": max_attempts,
-                        "error": error_text,
-                    },
-                }
-            ),
+            "ingestion failed (terminal) document_id=%s workspace_id=%s attempt=%s/%s task_id=%s error=%s",
+            job.document_id,
+            job.workspace_id,
+            attempt_number,
+            max_attempts,
+            self.request.id,
+            error_text,
         )
         return {"status": "failed", "error": error_text}
     finally:

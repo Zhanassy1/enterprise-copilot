@@ -75,6 +75,38 @@ class PrecisionGateTests(unittest.TestCase):
         self.assertEqual(decision, "answer")
         self.assertGreaterEqual(confidence, 0.55)
 
+    def test_answer_mode_price_intent_when_amount_in_second_hit_not_first(self) -> None:
+        """Reranker noise in rank-1 must not drop into clarify if a later hit has price + amount."""
+        hits = [
+            {"text": "тенге тенге", "score": 1.0},
+            {"text": "Цена договора составляет 906 660.00 тенге.", "score": 0.99},
+        ]
+        decision, confidence = decide_response_mode(
+            "Какая стоимость договора?",
+            hits,
+            answer_threshold=0.55,
+            clarify_threshold=0.48,
+        )
+        self.assertEqual(decision, "answer")
+        self.assertGreaterEqual(confidence, 0.55)
+
+    def test_answer_mode_termination_intent_when_marker_in_second_hit(self) -> None:
+        hits = [
+            {"text": "Общие условия поставки товара.", "score": 1.0},
+            {
+                "text": "Договор может быть расторгнут по соглашению сторон либо в судебном порядке.",
+                "score": 0.99,
+            },
+        ]
+        decision, confidence = decide_response_mode(
+            "Условия расторжения договора",
+            hits,
+            answer_threshold=0.55,
+            clarify_threshold=0.48,
+        )
+        self.assertEqual(decision, "answer")
+        self.assertGreaterEqual(confidence, 0.55)
+
     def test_llm_settings_rejects_clarify_not_strictly_below_answer(self) -> None:
         with self.assertRaises(ValidationError):
             LLMSettings(answer_threshold=0.55, clarify_threshold=0.55)

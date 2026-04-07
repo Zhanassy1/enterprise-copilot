@@ -3,8 +3,13 @@ from __future__ import annotations
 import logging
 
 from app.core.config import settings
-from app.services.nlp import is_price_intent
-from app.services.prompt_templates import RAG_PRICE_FOCUS_SUFFIX, RAG_SYSTEM_PROMPT, SUMMARY_SYSTEM_PROMPT
+from app.services.nlp import is_contract_value_query, is_price_intent
+from app.services.prompt_templates import (
+    RAG_CONTRACT_VALUE_SUFFIX,
+    RAG_PRICE_FOCUS_SUFFIX,
+    RAG_SYSTEM_PROMPT,
+    SUMMARY_SYSTEM_PROMPT,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -87,7 +92,10 @@ def llm_chat(
 
 def _rag_system_prompt(query: str) -> str:
     if is_price_intent(query):
-        return f"{RAG_SYSTEM_PROMPT} {RAG_PRICE_FOCUS_SUFFIX}"
+        parts = [RAG_SYSTEM_PROMPT, RAG_PRICE_FOCUS_SUFFIX]
+        if is_contract_value_query(query):
+            parts.append(RAG_CONTRACT_VALUE_SUFFIX)
+        return " ".join(parts)
     return RAG_SYSTEM_PROMPT
 
 

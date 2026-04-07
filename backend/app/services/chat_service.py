@@ -26,6 +26,7 @@ from app.services.nlp import (
     build_clarifying_question,
     build_next_step,
     compose_response_text,
+    compress_price_answer,
     decide_response_mode,
     filter_ungrounded_sentences,
     parse_reply_meta,
@@ -306,6 +307,8 @@ class ChatService:
                     except Exception as e:
                         logger.warning("rag stream interrupted: %s", e)
                     answer = filter_ungrounded_sentences(raw_llm_body.strip(), message, hits) if raw_llm_body.strip() else ""
+                    if answer:
+                        answer = compress_price_answer(message, answer, hits)
                     if not answer and raw_llm_body.strip():
                         answer = "Недостаточно данных в предоставленных документах."
                     if not answer:
