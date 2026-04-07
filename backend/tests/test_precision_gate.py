@@ -90,6 +90,39 @@ class PrecisionGateTests(unittest.TestCase):
         self.assertEqual(decision, "answer")
         self.assertGreaterEqual(confidence, 0.55)
 
+    def test_answer_mode_inflected_contract_price_in_second_hit(self) -> None:
+        """Morphological «цена договора» (not substring «цена договор») still triggers evidence + confidence."""
+        hits = [
+            {"text": "тенге договору", "score": 1.0},
+            {
+                "text": "Стоимость договора определена как 15 000 000 тенге (пятнадцать миллионов).",
+                "score": 0.4,
+            },
+        ]
+        decision, _conf = decide_response_mode(
+            "стоимость договора",
+            hits,
+            answer_threshold=0.55,
+            clarify_threshold=0.48,
+        )
+        self.assertEqual(decision, "answer")
+
+    def test_no_force_answer_when_only_security_deposit_line(self) -> None:
+        hits = [
+            {
+                "text": "внести сумму обеспечения исполнения Договора на равную 906 660.00 тенге.",
+                "score": 0.85,
+            },
+        ]
+        decision, confidence = decide_response_mode(
+            "стоимость договора",
+            hits,
+            answer_threshold=0.55,
+            clarify_threshold=0.48,
+        )
+        self.assertNotEqual(decision, "answer")
+        self.assertLess(confidence, 0.55)
+
     def test_answer_mode_termination_intent_when_marker_in_second_hit(self) -> None:
         hits = [
             {"text": "Общие условия поставки товара.", "score": 1.0},

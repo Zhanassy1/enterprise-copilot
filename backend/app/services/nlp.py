@@ -166,6 +166,8 @@ TERMINATION_LINE_MARKERS: tuple[str, ...] = (
 )
 
 # Chunk text: price/total tied to the contract (retrieval boost, grounding, answer squeeze).
+# Literal substrings (lemma forms); inflected RU phrases like «цена договора» are matched via
+# ``_CONTRACT_VALUE_MORPH_RE`` below — bare «цена договор» does not occur in real text.
 CONTRACT_VALUE_TEXT_MARKERS: tuple[str, ...] = (
     "стоимость договор",
     "ценой договор",
@@ -183,6 +185,44 @@ CONTRACT_VALUE_TEXT_MARKERS: tuple[str, ...] = (
     "договорная цена",
     "договорная сумма",
     "предмет договор",
+    # Common document wordings (including inflected «договора»).
+    "цена договора",
+    "цены договора",
+    "стоимость договора",
+    "стоимости договора",
+    "сумма договора",
+    "суммы договора",
+    "суммой договора",
+    "сумме договора",
+    "ценой договора",
+    "стоимостью договора",
+    "предметом договора",
+    "предмета договора",
+    "предмет договора",
+    "предметам договора",
+    "предметами договора",
+    "цена контракта",
+    "стоимость контракта",
+    "сумма контракта",
+)
+
+# «Цена/стоимость/сумма … договор*» / контракт* — avoids «сумму обеспечения … договора» (not сумма+договор adjacent).
+_CONTRACT_VALUE_MORPH_RE = re.compile(
+    r"(?:"
+    r"цена|цену|цены|ценой|"
+    r"стоимость|стоимости|стоимостью|"
+    r"сумма|суммы|сумме|суммой|сумму"
+    r")\s+договор[а-яё]{0,10}\b",
+    re.IGNORECASE | re.UNICODE,
+)
+_CONTRACT_VALUE_CONT_RE = re.compile(
+    r"(?:цена|цену|стоимость|сумма|сумму|суммы)\s+контракт[а-яё]{0,10}\b",
+    re.IGNORECASE | re.UNICODE,
+)
+# Price / total phrasing near «по договору» (same line).
+_CONTRACT_VALUE_PO_DOG_RE = re.compile(
+    r"(?:цен|стоимост|сумм|оплат|итог)[а-яё]{0,12}\s+по\s+договор[а-яё]{0,10}\b",
+    re.IGNORECASE | re.UNICODE,
 )
 
 # Chunk text: security / collateral (deprioritize for «стоимость договора» when no contract-value cue).
@@ -251,9 +291,35 @@ def is_contract_value_query(query: str) -> bool:
     return any(x in q for x in ("стоим", "цен", "сумм", "итого", "оплат", "размер"))
 
 
+def is_strict_contract_value_query(query: str) -> bool:
+    """Explicit «total/price of the contract» phrasing (not e.g. generic «оплата по договору»)."""
+    q = (query or "").lower()
+    return any(
+        x in q
+        for x in (
+            "стоимость договора",
+            "цена договора",
+            "сумма договора",
+            "сумма по договору",
+            "цена по договору",
+            "стоимость по договору",
+            "стоимость контракта",
+            "цена контракта",
+        )
+    )
+
+
 def text_has_contract_value_signal(text: str) -> bool:
     low = (text or "").lower()
-    return any(m in low for m in CONTRACT_VALUE_TEXT_MARKERS)
+    if any(m in low for m in CONTRACT_VALUE_TEXT_MARKERS):
+        return True
+    if _CONTRACT_VALUE_MORPH_RE.search(low):
+        return True
+    if _CONTRACT_VALUE_CONT_RE.search(low):
+        return True
+    if _CONTRACT_VALUE_PO_DOG_RE.search(low):
+        return True
+    return False
 
 
 def text_suggests_security_deposit_without_contract_value(text: str) -> bool:
@@ -465,6 +531,34 @@ def _best_contract_value_line_from_hits(hits: list[dict]) -> str:
     return ""
 
 
+def _contract_value_answer_sentence(line: str) -> str:
+    """Single grounded sentence for UI; amount/currency copied from the source line."""
+    m = _AMOUNT_RE.search(line or "")
+    if not m:
+        return (line or "").strip()
+    return f"Стоимость договора составляет {m.group(0).strip()}."
+
+
+def _should_force_answer_from_evidence(query: str, hits: list[dict]) -> bool:
+    """If retrieved chunks already support the question, answer instead of clarify/insufficient."""
+    if not hits:
+        return False
+    window = hits[:8]
+    if is_contract_value_query(query) and _best_contract_value_line_from_hits(hits):
+        return True
+    if is_penalty_intent(query):
+        if any(
+            any(m in str(h.get("text") or "").lower() for m in PENALTY_LINE_MARKERS) for h in window
+        ):
+            return True
+    if is_termination_intent(query):
+        if any(
+            any(m in str(h.get("text") or "").lower() for m in TERMINATION_LINE_MARKERS) for h in window
+        ):
+            return True
+    return False
+
+
 def compress_price_answer(query: str, answer: str, hits: list[dict]) -> str:
     """One short sentence with amount when the model pasted numbered obligations."""
     if not is_price_intent(query):
@@ -478,10 +572,10 @@ def compress_price_answer(query: str, answer: str, hits: list[dict]) -> str:
     if is_contract_value_query(query):
         best = _best_contract_value_line_from_hits(hits)
         if best and (list_like or long_body):
-            return best
+            return _contract_value_answer_sentence(best)
         first_block = t.split("\n")[0].strip()
         if best and first_block and not _AMOUNT_RE.search(first_block):
-            return best
+            return _contract_value_answer_sentence(best)
 
     if list_like or long_body:
         for para in re.split(r"\n+", t):
@@ -496,6 +590,12 @@ def compress_price_answer(query: str, answer: str, hits: list[dict]) -> str:
             s = raw.strip()
             if s and _AMOUNT_RE.search(s):
                 return s
+    if is_contract_value_query(query):
+        best = _best_contract_value_line_from_hits(hits)
+        if best and t.strip() == best.strip():
+            return _contract_value_answer_sentence(best)
+        if best and _AMOUNT_RE.search(t) and best in t.replace("\n", " "):
+            return _contract_value_answer_sentence(best)
     return t
 
 
@@ -676,7 +776,21 @@ def compute_confidence(query: str, hits: list[dict]) -> float:
     intent_signal = _intent_signal_from_hits(query, hits)
 
     confidence = 0.45 * top_score + 0.20 * margin + 0.25 * overlap + 0.10 * intent_signal
-    return _clamp01(confidence)
+    confidence = _clamp01(confidence)
+
+    # Strict «стоимость/цена договора» + чанки без явной договорной цены: keyword overlap on «договор»
+    # inflates score — penalize unless a top hit ties amount to contract-price wording.
+    if is_strict_contract_value_query(query) and hits:
+        k = min(8, len(hits))
+        has_contract_price_hit = any(
+            text_has_contract_value_signal(str(h.get("text") or ""))
+            and text_has_monetary_amount(str(h.get("text") or ""))
+            for h in hits[:k]
+        )
+        if not has_contract_price_hit:
+            confidence = _clamp01(confidence - 0.22)
+
+    return confidence
 
 
 def decide_response_mode(
@@ -688,6 +802,8 @@ def decide_response_mode(
 ) -> tuple[DecisionType, float]:
     confidence = compute_confidence(query, hits)
     if confidence >= answer_threshold:
+        return "answer", confidence
+    if _should_force_answer_from_evidence(query, hits):
         return "answer", confidence
     if confidence >= clarify_threshold:
         return "clarify", confidence

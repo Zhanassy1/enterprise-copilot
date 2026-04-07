@@ -5,6 +5,8 @@ from app.services.nlp import (
     expand_query,
     is_contract_value_query,
     is_price_intent,
+    is_strict_contract_value_query,
+    text_has_contract_value_signal,
     text_has_monetary_amount,
 )
 
@@ -28,6 +30,25 @@ class PriceIntentTests(unittest.TestCase):
         self.assertTrue(is_contract_value_query("цена контракта"))
         self.assertFalse(is_contract_value_query("сколько стоит лицензия"))
         self.assertFalse(is_contract_value_query("Срок поставки по договору"))
+
+    def test_strict_contract_value_query_narrower_than_broad(self) -> None:
+        self.assertTrue(is_strict_contract_value_query("стоимость договора"))
+        self.assertTrue(is_strict_contract_value_query("сумма по договору?"))
+        self.assertFalse(is_strict_contract_value_query("Условия оплаты по договору"))
+
+    def test_contract_value_signal_russian_morphology(self) -> None:
+        self.assertTrue(text_has_contract_value_signal("Цена договора составляет 12 000 000 тенге."))
+        self.assertTrue(text_has_contract_value_signal("Стоимости договора определена в приложении."))
+        self.assertTrue(text_has_contract_value_signal("Сумму по договору — 500 000 KZT."))
+        self.assertTrue(text_has_contract_value_signal("Общая сумма по договору 1 000 000 тенге."))
+        self.assertTrue(text_has_contract_value_signal("Условия по предметам договора и цена работ."))
+
+    def test_contract_value_signal_false_for_security_sum_line(self) -> None:
+        self.assertFalse(
+            text_has_contract_value_signal(
+                "внести сумму обеспечения исполнения Договора на равную 906 660.00 тенге"
+            )
+        )
 
     def test_expand_query_adds_price_keywords_once(self) -> None:
         q = "Какая сумма по договору?"

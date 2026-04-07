@@ -52,6 +52,7 @@ class GroundingFilterTests(unittest.TestCase):
         )
         out = compress_price_answer("стоимость договора", noisy, hits)
         self.assertIn("12 132 132", out)
+        self.assertIn("Стоимость договора составляет", out)
         self.assertNotIn("1)", out)
 
 
