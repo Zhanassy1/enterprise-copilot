@@ -6,6 +6,8 @@ from pydantic import BaseModel, Field, field_validator
 
 from app.constants.ingestion import INGESTION_JOB_STATUSES
 
+AnswerStyle = Literal["concise", "narrative"]
+
 
 class DocumentOut(BaseModel):
     id: uuid.UUID
@@ -104,6 +106,10 @@ class DocumentSummaryOut(BaseModel):
 class SearchIn(BaseModel):
     query: str = Field(min_length=1, max_length=2000)
     top_k: int = Field(default=5, ge=1, le=20)
+    answer_style: AnswerStyle | None = Field(
+        default=None,
+        description="concise | narrative; по умолчанию из настроек сервера",
+    )
 
     @field_validator("query", mode="after")
     @classmethod
@@ -134,5 +140,6 @@ class SearchOut(BaseModel):
     clarifying_question: str | None = None
     next_step: str | None = None
     evidence_collapsed_by_default: bool = True
+    answer_style: AnswerStyle = "concise"
     hits: list[SearchHit]
 

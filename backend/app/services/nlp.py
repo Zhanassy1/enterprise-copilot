@@ -5,6 +5,8 @@ import json
 import re
 from typing import Literal, cast
 
+from app.core.settings.llm import AnswerStyle
+
 _STOPWORDS = {
     "и",
     "в",
@@ -64,6 +66,12 @@ _RU_SUFFIXES = (
 )
 
 DecisionType = Literal["answer", "clarify", "insufficient_context"]
+
+# Shown when «сумма/цена договора» was asked but no chunk line ties contract-price wording to an amount.
+CONTRACT_VALUE_UNAVAILABLE_RU = (
+    "Во фрагментах нет однозначной строки с суммой (ценой) договора вместе с суммой. "
+    "Откройте полный документ или приложение с разделом о цене."
+)
 
 # How many top hits may support intent_signal in compute_confidence (reranker may reorder noise first).
 CONFIDENCE_INTENT_TOP_K = 5
@@ -322,10 +330,25 @@ def text_has_contract_value_signal(text: str) -> bool:
     return False
 
 
+def text_is_primarily_security_deposit(text: str) -> bool:
+    """True if every line that cites a money amount is about security/collateral, not contract price."""
+    lines = [ln.strip() for ln in (text or "").splitlines() if ln.strip()]
+    amount_lines = [ln for ln in lines if _line_has_amount(ln)]
+    if not amount_lines:
+        return False
+    for ln in amount_lines:
+        low = ln.lower()
+        if not any(m in low for m in SECURITY_CASH_MARKERS):
+            return False
+    return True
+
+
 def text_suggests_security_deposit_without_contract_value(text: str) -> bool:
     low = (text or "").lower()
     if not any(m in low for m in SECURITY_CASH_MARKERS):
         return False
+    if text_is_primarily_security_deposit(text):
+        return True
     return not text_has_contract_value_signal(text)
 
 
@@ -338,10 +361,10 @@ def reorder_hits_for_contract_value_query(hits: list[dict]) -> list[dict]:
     deprioritized: list[dict] = []
     for h in hits:
         t = str(h.get("text") or "")
-        if text_has_contract_value_signal(t) and text_has_monetary_amount(t):
-            preferred.append(h)
-        elif text_suggests_security_deposit_without_contract_value(t):
+        if text_suggests_security_deposit_without_contract_value(t):
             deprioritized.append(h)
+        elif text_has_contract_value_signal(t) and text_has_monetary_amount(t):
+            preferred.append(h)
         else:
             neutral.append(h)
     return preferred + neutral + deprioritized
@@ -352,10 +375,10 @@ def adjust_hit_scores_for_contract_value_query(hits: list[dict]) -> None:
     for h in hits:
         t = str(h.get("text") or "")
         s = float(h.get("score") or 0.0)
-        if text_has_contract_value_signal(t) and text_has_monetary_amount(t):
+        if text_suggests_security_deposit_without_contract_value(t):
+            s = min(s, 0.20)
+        elif text_has_contract_value_signal(t) and text_has_monetary_amount(t):
             s = min(1.0, s + 0.42)
-        elif text_suggests_security_deposit_without_contract_value(t):
-            s = min(s, 0.32)
         h["score"] = max(0.0, min(1.0, s))
 
 
@@ -391,6 +414,39 @@ def is_termination_intent(query: str) -> bool:
     )
 
 
+def is_advisory_intent(query: str) -> bool:
+    """Риски, норма условий, сравнение — отдельный режим промпта (не подменяет строгий RAG по фактам)."""
+    q = (query or "").lower()
+    return any(
+        x in q
+        for x in (
+            "риск",
+            "опасн",
+            "подводн",
+            "нормальн",
+            "норма ",
+            "норму ",
+            "переплат",
+            "перегруз",
+            "выгодн",
+            "невыгодн",
+            "сравни",
+            "сравнить",
+            "лучше ли",
+            "хуже ли",
+            "стоит ли подпис",
+            "на рынке",
+            "рыночн",
+            "типичн",
+            "юридически безопас",
+            "что скажешь",
+            "как думаешь",
+            "оцени",
+            "подводные камни",
+        )
+    )
+
+
 def expand_query(query: str) -> str:
     q = (query or "").strip()
     if not q:
@@ -411,6 +467,8 @@ def expand_query(query: str) -> str:
         additions.extend(
             ["расторжение", "прекращение", "расторгнуть", "уведомление", "односторонний отказ"]
         )
+    if is_advisory_intent(low):
+        additions.extend(["риск", "ответственность", "штраф", "неустойка", "срок", "условия"])
     if not additions:
         return q
     extra = " ".join(dict.fromkeys(additions))
@@ -450,6 +508,16 @@ def extract_relevant_lines(query: str, text: str, *, max_lines: int = 6) -> list
     lines = [ln.strip() for ln in (text or "").splitlines() if ln.strip()]
     if not lines:
         return []
+    if is_contract_value_query(query):
+        out_cv: list[str] = []
+        for ln in lines:
+            s = ln.strip()
+            if text_suggests_security_deposit_without_contract_value(s):
+                continue
+            if text_has_contract_value_signal(s) and _line_has_amount(s):
+                out_cv.append(ln)
+        return out_cv[:max_lines]
+
     q_stems = set(tokenize(query))
     out: list[str] = []
     for ln in lines:
@@ -477,21 +545,31 @@ def extract_relevant_lines(query: str, text: str, *, max_lines: int = 6) -> list
     return lines[: min(3, max_lines)]
 
 
-def build_answer(query: str, hits: list[dict], *, conversation_history: str | None = None) -> str:
-    if not hits:
-        return "По загруженным документам релевантной информации не найдено."
+def resolve_answer_style(requested: AnswerStyle | None, default: AnswerStyle) -> AnswerStyle:
+    return requested if requested is not None else default
 
-    chunks_text = [str(h.get("text") or "") for h in hits[:6] if h.get("text")]
 
-    from app.services.llm import llm_enabled, rag_answer
+def postprocess_llm_answer(
+    query: str,
+    raw: str,
+    hits: list[dict],
+    *,
+    answer_style: AnswerStyle,
+) -> str:
+    adv = is_advisory_intent(query)
+    text = filter_ungrounded_sentences(raw, query, hits, advisory=adv)
+    if text:
+        return compress_price_answer(
+            query,
+            text,
+            hits,
+            answer_style=answer_style,
+            advisory=adv,
+        )
+    return ""
 
-    if llm_enabled():
-        llm_result = rag_answer(query, chunks_text, conversation_history=conversation_history)
-        if llm_result:
-            grounded = filter_ungrounded_sentences(llm_result, query, hits)
-            if grounded:
-                return compress_price_answer(query, grounded, hits)
 
+def _answer_extractive(query: str, hits: list[dict], *, answer_style: AnswerStyle) -> str:
     parts: list[str] = []
     for h in hits[:3]:
         for ln in extract_relevant_lines(query, str(h.get("text") or ""), max_lines=3):
@@ -503,11 +581,50 @@ def build_answer(query: str, hits: list[dict], *, conversation_history: str | No
             break
 
     if not parts:
+        if is_contract_value_query(query):
+            return CONTRACT_VALUE_UNAVAILABLE_RU
         return "По загруженным документам релевантной информации не найдено."
     joined = "\n".join(parts[:5])
     if is_price_intent(query):
-        return compress_price_answer(query, joined, hits)
+        return compress_price_answer(
+            query,
+            joined,
+            hits,
+            answer_style=answer_style,
+            advisory=is_advisory_intent(query),
+        )
     return joined
+
+
+def build_answer(
+    query: str,
+    hits: list[dict],
+    *,
+    conversation_history: str | None = None,
+    answer_style: AnswerStyle = "concise",
+    extractive_only: bool = False,
+) -> str:
+    if not hits:
+        return "По загруженным документам релевантной информации не найдено."
+
+    chunks_text = [str(h.get("text") or "") for h in hits[:6] if h.get("text")]
+
+    from app.services.llm import llm_enabled, rag_answer
+
+    if llm_enabled() and not extractive_only:
+        llm_result = rag_answer(
+            query,
+            chunks_text,
+            conversation_history=conversation_history,
+            answer_style=answer_style,
+            advisory=is_advisory_intent(query),
+        )
+        if llm_result:
+            grounded = postprocess_llm_answer(query, llm_result, hits, answer_style=answer_style)
+            if grounded:
+                return grounded
+
+    return _answer_extractive(query, hits, answer_style=answer_style)
 
 
 def _clamp01(value: float) -> float:
@@ -526,6 +643,8 @@ def _best_contract_value_line_from_hits(hits: list[dict]) -> str:
     for h in hits[:8]:
         for raw in str(h.get("text") or "").splitlines():
             s = raw.strip()
+            if text_suggests_security_deposit_without_contract_value(s):
+                continue
             if text_has_contract_value_signal(s) and _line_has_amount(s):
                 return s
     return ""
@@ -559,18 +678,51 @@ def _should_force_answer_from_evidence(query: str, hits: list[dict]) -> bool:
     return False
 
 
-def compress_price_answer(query: str, answer: str, hits: list[dict]) -> str:
-    """One short sentence with amount when the model pasted numbered obligations."""
+def compress_price_answer(
+    query: str,
+    answer: str,
+    hits: list[dict],
+    *,
+    answer_style: AnswerStyle = "concise",
+    advisory: bool = False,
+) -> str:
+    """Concise mode: one short sentence with amount when the model pasted numbered obligations.
+    Narrative mode: keep a short coherent paragraph when it is still grounded."""
+    if advisory:
+        t_adv = (answer or "").strip()
+        if not t_adv:
+            return t_adv
+        if is_contract_value_query(query) and is_price_intent(query) and not _best_contract_value_line_from_hits(hits):
+            return CONTRACT_VALUE_UNAVAILABLE_RU
+        return t_adv
+
     if not is_price_intent(query):
         return (answer or "").strip()
     t = (answer or "").strip()
     if not t:
         return t
+
+    best = _best_contract_value_line_from_hits(hits) if is_contract_value_query(query) else ""
+    if is_contract_value_query(query) and not best:
+        return CONTRACT_VALUE_UNAVAILABLE_RU
+
     list_like = len(_MULTI_NUMBERED_LIST_RE.findall(t)) >= 2
     long_body = len(t) > 280
+    pool_text = "\n".join(str(h.get("text") or "") for h in hits[:8])
+    collapsed_pool = _collapse_intradigit_spaces(pool_text.lower())
+
+    if answer_style == "narrative":
+        if is_contract_value_query(query) and best:
+            if not list_like and len(t) <= 1200 and _AMOUNT_RE.search(t):
+                collapsed_t = _collapse_intradigit_spaces(t.lower())
+                if best.strip().lower() in collapsed_t or any(
+                    len(seq) >= 4 and seq in collapsed_pool for seq in re.findall(r"\d{3,}", collapsed_t)
+                ):
+                    return t
+        elif not is_contract_value_query(query) and not list_like and len(t) <= 1200:
+            return t
 
     if is_contract_value_query(query):
-        best = _best_contract_value_line_from_hits(hits)
         if best and (list_like or long_body):
             return _contract_value_answer_sentence(best)
         first_block = t.split("\n")[0].strip()
@@ -590,11 +742,10 @@ def compress_price_answer(query: str, answer: str, hits: list[dict]) -> str:
             s = raw.strip()
             if s and _AMOUNT_RE.search(s):
                 return s
-    if is_contract_value_query(query):
-        best = _best_contract_value_line_from_hits(hits)
-        if best and t.strip() == best.strip():
+    if is_contract_value_query(query) and best:
+        if t.strip() == best.strip():
             return _contract_value_answer_sentence(best)
-        if best and _AMOUNT_RE.search(t) and best in t.replace("\n", " "):
+        if _AMOUNT_RE.search(t) and best in t.replace("\n", " "):
             return _contract_value_answer_sentence(best)
     return t
 
@@ -665,7 +816,38 @@ def _is_list_line(line: str) -> bool:
     return bool(_LIST_LINE_RE.match(s))
 
 
-def filter_ungrounded_sentences(answer: str, query: str, hits: list[dict]) -> str:
+_ADVISORY_META_MARKERS: tuple[str, ...] = (
+    "не является юридической",
+    "не юридическая консультация",
+    "информационный характер",
+    "информационных целях",
+    "не заменяет профессиональную",
+    "обратитесь к юрист",
+)
+
+
+def _is_advisory_meta_line(line: str) -> bool:
+    low = line.lower()
+    return any(m in low for m in _ADVISORY_META_MARKERS)
+
+
+def _advisory_section_or_hypothesis(line: str, support_pool: str) -> bool:
+    s = line.strip().lower()
+    if s.startswith(("по документам", "возможные точки внимания", "возможные риски")):
+        return True
+    low = s
+    if not any(x in low for x in ("риск", "вниман", "если ", "может ", "срок", "штраф", "неустой")):
+        return False
+    return keyword_overlap(line, support_pool) >= 0.06
+
+
+def filter_ungrounded_sentences(
+    answer: str,
+    query: str,
+    hits: list[dict],
+    *,
+    advisory: bool = False,
+) -> str:
     text = (answer or "").strip()
     if not text:
         return ""
@@ -688,7 +870,14 @@ def filter_ungrounded_sentences(answer: str, query: str, hits: list[dict]) -> st
             line = piece.strip()
             if not line:
                 continue
-            if _fragment_grounded(line, query, support_pool):
+            if advisory:
+                if (
+                    _is_advisory_meta_line(line)
+                    or _advisory_section_or_hypothesis(line, support_pool)
+                    or _fragment_grounded(line, query, support_pool)
+                ):
+                    kept.append(line)
+            elif _fragment_grounded(line, query, support_pool):
                 kept.append(line)
 
     for line in text.splitlines():
@@ -699,6 +888,11 @@ def filter_ungrounded_sentences(answer: str, query: str, hits: list[dict]) -> st
                 ok = _price_intent_list_line_grounded(line_st, query, support_pool)
             else:
                 ok = _fragment_grounded(line_st, query, support_pool)
+            if advisory and (
+                _is_advisory_meta_line(line_st)
+                or _advisory_section_or_hypothesis(line_st, support_pool)
+            ):
+                ok = True
             if ok:
                 kept.append(line_st)
         elif not line.strip():
@@ -849,9 +1043,12 @@ def serialize_reply_meta(
     details: str | None,
     next_step: str,
     clarifying_question: str | None,
+    answer_style: AnswerStyle | None = None,
 ) -> str | None:
     """JSON for assistant ChatMessage.reply_meta_json."""
     body: dict = {"decision": decision, "next_step": next_step}
+    if answer_style is not None:
+        body["answer_style"] = answer_style
     if decision == "answer":
         body["details"] = details
     else:
@@ -861,25 +1058,28 @@ def serialize_reply_meta(
 
 def parse_reply_meta(
     raw: str | None,
-) -> tuple[str | None, str | None, str | None, DecisionType | None]:
-    """Returns (details, next_step, clarifying_question, decision) from stored JSON."""
+) -> tuple[str | None, str | None, str | None, DecisionType | None, AnswerStyle | None]:
+    """Returns (details, next_step, clarifying_question, decision, answer_style) from stored JSON."""
     if not (raw or "").strip():
-        return (None, None, None, None)
+        return (None, None, None, None, None)
     try:
         obj = json.loads(raw)
     except json.JSONDecodeError:
-        return (None, None, None, None)
+        return (None, None, None, None, None)
     if not isinstance(obj, dict):
-        return (None, None, None, None)
+        return (None, None, None, None, None)
     dec_raw = obj.get("decision")
     dec: DecisionType | None = (
         cast(DecisionType, dec_raw)
         if dec_raw in ("answer", "clarify", "insufficient_context")
         else None
     )
+    st_raw = obj.get("answer_style")
+    style: AnswerStyle | None = st_raw if st_raw in ("concise", "narrative") else None
     return (
         obj.get("details") if isinstance(obj.get("details"), str) else None,
         obj.get("next_step") if isinstance(obj.get("next_step"), str) else None,
         obj.get("clarifying_question") if isinstance(obj.get("clarifying_question"), str) else None,
         dec,
+        style,
     )

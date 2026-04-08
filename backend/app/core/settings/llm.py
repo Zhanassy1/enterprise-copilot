@@ -1,8 +1,10 @@
 from __future__ import annotations
 
-from typing import Self
+from typing import Literal, Self
 
 from pydantic import BaseModel, Field, model_validator
+
+AnswerStyle = Literal["concise", "narrative"]
 
 
 class LLMSettings(BaseModel):
@@ -36,6 +38,9 @@ class LLMSettings(BaseModel):
     reranker_enabled: bool = Field(default=True)
     reranker_model_name: str = Field(default="cross-encoder/ms-marco-MiniLM-L-6-v2")
     reranker_top_n: int = Field(default=30, ge=2, le=200)
+
+    # RAG: concise = short grounded line for prices; narrative = 2–4 sentences with brief context
+    default_answer_style: AnswerStyle = Field(default="concise")
 
     @model_validator(mode="after")
     def clarify_below_answer(self) -> Self:

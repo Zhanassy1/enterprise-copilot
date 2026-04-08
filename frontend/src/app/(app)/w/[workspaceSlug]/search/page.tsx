@@ -96,7 +96,14 @@ export default function SearchPage() {
                 По вашему запросу ничего не найдено
               </p>
             ) : (
-              <Accordion type="single" collapsible className="rounded-2xl border px-4">
+              <Accordion
+                type="single"
+                collapsible
+                className="rounded-2xl border px-4"
+                defaultValue={
+                  result.evidence_collapsed_by_default ? undefined : "search-sources"
+                }
+              >
                 <AccordionItem value="search-sources" className="border-none">
                   <AccordionTrigger className="py-3 text-sm hover:no-underline">
                     Источники ({result.hits.length})

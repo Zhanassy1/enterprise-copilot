@@ -8,6 +8,8 @@ from app.services.nlp import (
     is_strict_contract_value_query,
     text_has_contract_value_signal,
     text_has_monetary_amount,
+    text_is_primarily_security_deposit,
+    text_suggests_security_deposit_without_contract_value,
 )
 
 
@@ -49,6 +51,29 @@ class PriceIntentTests(unittest.TestCase):
                 "внести сумму обеспечения исполнения Договора на равную 906 660.00 тенге"
             )
         )
+
+    def test_text_is_primarily_security_deposit_all_amount_lines_security(self) -> None:
+        chunk = (
+            "3. СТОИМОСТЬ ДОГОВОРА\n"
+            "Сумма обеспечения исполнения: 906 660.00 тенге."
+        )
+        self.assertTrue(text_is_primarily_security_deposit(chunk))
+
+    def test_text_is_primarily_security_deposit_false_when_contract_price_line(self) -> None:
+        chunk = (
+            "Цена договора 12 000 000 тенге.\n"
+            "Сумма обеспечения: 906 660 тенге."
+        )
+        self.assertFalse(text_is_primarily_security_deposit(chunk))
+
+    def test_text_suggests_security_even_if_header_contract_value(self) -> None:
+        chunk = (
+            "3. СТОИМОСТЬ ДОГОВОРА\n"
+            "1) Обеспечить исполнение.\n"
+            "2) Сумма обеспечения исполнения договора: 906 660.00 тенге."
+        )
+        self.assertTrue(text_has_contract_value_signal(chunk))
+        self.assertTrue(text_suggests_security_deposit_without_contract_value(chunk))
 
     def test_expand_query_adds_price_keywords_once(self) -> None:
         q = "Какая сумма по договору?"

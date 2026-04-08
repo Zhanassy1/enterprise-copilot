@@ -25,6 +25,7 @@ from app.services.nlp import (
     keyword_overlap,
     text_has_contract_value_signal,
     text_has_monetary_amount,
+    text_is_primarily_security_deposit,
     text_suggests_security_deposit_without_contract_value,
 )
 
@@ -198,7 +199,7 @@ def _apply_quality_heuristics(query_text: str, rows: list[dict]) -> list[dict]:
         if contract_value_q and text_has_contract_value_signal(text_value) and has_amount:
             bonus += 0.22
         if contract_value_q and text_suggests_security_deposit_without_contract_value(text_value):
-            hard_penalty += 0.38
+            hard_penalty += 0.55
         if price_intent and has_price_markers:
             bonus += 0.10
         if price_intent and has_amount:
@@ -241,7 +242,10 @@ def _apply_quality_heuristics(query_text: str, rows: list[dict]) -> list[dict]:
         row["_intent_match"] = 1 if intent_match else 0
         row["_cv_tier"] = (
             1
-            if contract_value_q and text_has_contract_value_signal(text_value) and has_amount
+            if contract_value_q
+            and text_has_contract_value_signal(text_value)
+            and has_amount
+            and not text_is_primarily_security_deposit(text_value)
             else 0
         )
         tuned.append(row)

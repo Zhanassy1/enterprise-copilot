@@ -4,21 +4,23 @@ import { useState } from "react";
 import { Search, Loader2 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
+import type { AnswerStyle } from "@/lib/api-client";
 
 interface SearchBarProps {
-  onSearch: (query: string, topK: number) => void;
+  onSearch: (query: string, topK: number, answerStyle: AnswerStyle) => void;
   loading: boolean;
 }
 
 export function SearchBar({ onSearch, loading }: SearchBarProps) {
   const [query, setQuery] = useState("");
   const [topK, setTopK] = useState(5);
+  const [answerStyle, setAnswerStyle] = useState<AnswerStyle>("concise");
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     const trimmed = query.trim();
     if (!trimmed) return;
-    onSearch(trimmed, topK);
+    onSearch(trimmed, topK, answerStyle);
   };
 
   return (
@@ -40,20 +42,32 @@ export function SearchBar({ onSearch, loading }: SearchBarProps) {
           {loading ? <Loader2 className="animate-spin" /> : "Найти"}
         </Button>
       </div>
-      <div className="flex items-center gap-2 text-sm text-muted-foreground">
-        <label htmlFor="topk">Результатов:</label>
-        <select
-          id="topk"
-          value={topK}
-          onChange={(e) => setTopK(Number(e.target.value))}
-          className="rounded-lg border border-input bg-background px-2 py-1 text-sm"
-        >
-          {[3, 5, 10, 15, 20].map((n) => (
-            <option key={n} value={n}>
-              {n}
-            </option>
-          ))}
-        </select>
+      <div className="flex flex-wrap items-center gap-4 text-sm text-muted-foreground">
+        <div className="flex items-center gap-2">
+          <label htmlFor="topk">Результатов:</label>
+          <select
+            id="topk"
+            value={topK}
+            onChange={(e) => setTopK(Number(e.target.value))}
+            className="rounded-lg border border-input bg-background px-2 py-1 text-sm"
+          >
+            {[3, 5, 10, 15, 20].map((n) => (
+              <option key={n} value={n}>
+                {n}
+              </option>
+            ))}
+          </select>
+        </div>
+        <label className="flex cursor-pointer items-center gap-2">
+          <input
+            type="checkbox"
+            checked={answerStyle === "narrative"}
+            onChange={(e) =>
+              setAnswerStyle(e.target.checked ? "narrative" : "concise")
+            }
+          />
+          Связный ответ (как в диалоге)
+        </label>
       </div>
     </form>
   );

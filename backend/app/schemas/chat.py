@@ -4,7 +4,7 @@ from typing import Literal
 
 from pydantic import BaseModel, Field, field_validator
 
-from app.schemas.documents import SearchHit
+from app.schemas.documents import AnswerStyle, SearchHit
 
 
 class ChatSessionOut(BaseModel):
@@ -29,11 +29,16 @@ class ChatMessageOut(BaseModel):
     next_step: str | None = None
     clarifying_question: str | None = None
     decision: Literal["answer", "clarify", "insufficient_context"] | None = None
+    answer_style: AnswerStyle | None = None
 
 
 class ChatMessageIn(BaseModel):
     message: str = Field(min_length=1, max_length=4000)
     top_k: int = Field(default=5, ge=1, le=20)
+    answer_style: AnswerStyle | None = Field(
+        default=None,
+        description="concise: короткая выдержка; narrative: связный ответ по фрагментам",
+    )
 
     @field_validator("message", mode="after")
     @classmethod
@@ -54,3 +59,4 @@ class ChatReplyOut(BaseModel):
     clarifying_question: str | None = None
     next_step: str | None = None
     evidence_collapsed_by_default: bool = True
+    answer_style: AnswerStyle = "concise"

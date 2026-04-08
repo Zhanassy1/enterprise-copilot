@@ -3,10 +3,13 @@ from __future__ import annotations
 import logging
 
 from app.core.config import settings
-from app.services.nlp import is_contract_value_query, is_price_intent
+from app.core.settings.llm import AnswerStyle
+from app.services.nlp import is_advisory_intent, is_contract_value_query, is_price_intent
 from app.services.prompt_templates import (
+    RAG_ADVISORY_SUFFIX,
     RAG_CONTRACT_VALUE_SUFFIX,
     RAG_PRICE_FOCUS_SUFFIX,
+    RAG_PRICE_NARRATIVE_SUFFIX,
     RAG_SYSTEM_PROMPT,
     SUMMARY_SYSTEM_PROMPT,
 )
@@ -90,9 +93,20 @@ def llm_chat(
         return ""
 
 
-def _rag_system_prompt(query: str) -> str:
+def _rag_system_prompt(
+    query: str,
+    *,
+    answer_style: AnswerStyle = "concise",
+    advisory: bool = False,
+) -> str:
+    if advisory:
+        return f"{RAG_SYSTEM_PROMPT} {RAG_ADVISORY_SUFFIX}"
     if is_price_intent(query):
-        parts = [RAG_SYSTEM_PROMPT, RAG_PRICE_FOCUS_SUFFIX]
+        parts = [RAG_SYSTEM_PROMPT]
+        if answer_style == "narrative":
+            parts.append(RAG_PRICE_NARRATIVE_SUFFIX)
+        else:
+            parts.append(RAG_PRICE_FOCUS_SUFFIX)
         if is_contract_value_query(query):
             parts.append(RAG_CONTRACT_VALUE_SUFFIX)
         return " ".join(parts)
@@ -114,6 +128,8 @@ def rag_answer(
     context_chunks: list[str],
     *,
     conversation_history: str | None = None,
+    answer_style: AnswerStyle = "concise",
+    advisory: bool | None = None,
 ) -> str:
     """Generate a RAG answer from retrieved chunks. Falls back to extractive if no LLM key."""
     if not context_chunks:
@@ -123,12 +139,11 @@ def rag_answer(
         return ""
 
     context = "\n\n---\n\n".join(context_chunks[: 8])
-
-    system = _rag_system_prompt(query)
-
+    adv = is_advisory_intent(query) if advisory is None else advisory
+    system = _rag_system_prompt(query, answer_style=answer_style, advisory=adv)
     user = _rag_user_prompt(query, context, conversation_history=conversation_history)
-
-    return llm_chat(system, user, max_tokens=1024)
+    max_tok = 1536 if adv else 1024
+    return llm_chat(system, user, max_tokens=max_tok)
 
 
 def rag_answer_stream(
@@ -136,6 +151,8 @@ def rag_answer_stream(
     context_chunks: list[str],
     *,
     conversation_history: str | None = None,
+    answer_style: AnswerStyle = "concise",
+    advisory: bool | None = None,
 ):
     """Stream RAG answer tokens from the LLM. Empty generator if disabled or no chunks."""
     if not context_chunks:
@@ -144,9 +161,11 @@ def rag_answer_stream(
         return
 
     context = "\n\n---\n\n".join(context_chunks[:8])
-    system = _rag_system_prompt(query)
+    adv = is_advisory_intent(query) if advisory is None else advisory
+    system = _rag_system_prompt(query, answer_style=answer_style, advisory=adv)
     user = _rag_user_prompt(query, context, conversation_history=conversation_history)
-    yield from llm_chat_stream(system, user, max_tokens=1024)
+    max_tok = 1536 if adv else 1024
+    yield from llm_chat_stream(system, user, max_tokens=max_tok)
 
 
 def llm_summarize(text: str) -> str:

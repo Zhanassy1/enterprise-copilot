@@ -15,7 +15,7 @@ from app.schemas.chat import (
     ChatReplyOut,
     ChatSessionOut,
 )
-from app.schemas.documents import SearchHit
+from app.schemas.documents import AnswerStyle, SearchHit
 from app.services.conversation_history import (
     format_prior_messages_for_rag,
     load_prior_messages_for_rag,
@@ -26,10 +26,10 @@ from app.services.nlp import (
     build_clarifying_question,
     build_next_step,
     compose_response_text,
-    compress_price_answer,
     decide_response_mode,
-    filter_ungrounded_sentences,
     parse_reply_meta,
+    postprocess_llm_answer,
+    resolve_answer_style,
     serialize_reply_meta,
 )
 from app.services.rag_retrieval import retrieve_ranked_hits
@@ -80,7 +80,7 @@ def _to_message_out(message: ChatMessage) -> ChatMessageOut:
     except Exception as e:
         logger.warning("failed to parse sources_json for message %s: %s", message.id, e)
         sources = []
-    details, next_step, clarifying_question, decision = parse_reply_meta(message.reply_meta_json)
+    details, next_step, clarifying_question, decision, answer_style = parse_reply_meta(message.reply_meta_json)
     return ChatMessageOut(
         id=message.id,
         session_id=message.session_id,
@@ -92,6 +92,7 @@ def _to_message_out(message: ChatMessage) -> ChatMessageOut:
         next_step=next_step,
         clarifying_question=clarifying_question,
         decision=decision,
+        answer_style=answer_style,
     )
 
 
@@ -122,7 +123,15 @@ class ChatService:
         rows = self.db.scalars(select(ChatMessage).where(ChatMessage.session_id == session.id).order_by(ChatMessage.created_at.asc())).all()
         return [_to_message_out(x) for x in rows]
 
-    def send_message(self, workspace_id: uuid.UUID, user_id: uuid.UUID, session_id: uuid.UUID, message: str, top_k: int) -> ChatReplyOut:
+    def send_message(
+        self,
+        workspace_id: uuid.UUID,
+        user_id: uuid.UUID,
+        session_id: uuid.UUID,
+        message: str,
+        top_k: int,
+        answer_style: AnswerStyle | None = None,
+    ) -> ChatReplyOut:
         session = self.db.scalar(
             select(ChatSession).where(ChatSession.id == session_id, ChatSession.workspace_id == workspace_id)
         )
@@ -155,10 +164,16 @@ class ChatService:
             answer_threshold=settings.answer_threshold,
             clarify_threshold=settings.clarify_threshold,
         )
+        resolved_style = resolve_answer_style(answer_style, settings.default_answer_style)
         details: str | None = None
         clarifying_question: str | None = None
         if decision == "answer":
-            answer = build_answer(message, hits, conversation_history=conversation_history)
+            answer = build_answer(
+                message,
+                hits,
+                conversation_history=conversation_history,
+                answer_style=resolved_style,
+            )
             details = "Ответ подтвержден найденными фрагментами документов."
         else:
             answer = ""
@@ -189,6 +204,7 @@ class ChatService:
                 details=details,
                 next_step=next_step,
                 clarifying_question=clarifying_question,
+                answer_style=resolved_style,
             ),
             sources_json=json.dumps(hits, ensure_ascii=False, default=str),
         )
@@ -203,7 +219,11 @@ class ChatService:
             event_type=EVENT_CHAT_MESSAGE,
             quantity=1,
             unit="count",
-            metadata={"session_id": str(session.id), "top_k": int(top_k)},
+            metadata={
+                "session_id": str(session.id),
+                "top_k": int(top_k),
+                "answer_style": resolved_style,
+            },
         )
         record_event(
             self.db,
@@ -228,7 +248,8 @@ class ChatService:
             details=details,
             clarifying_question=clarifying_question,
             next_step=next_step,
-            evidence_collapsed_by_default=True,
+            evidence_collapsed_by_default=(resolved_style == "narrative"),
+            answer_style=resolved_style,
         )
 
     def iter_chat_sse(
@@ -238,6 +259,7 @@ class ChatService:
         session_id: uuid.UUID,
         message: str,
         top_k: int,
+        answer_style: AnswerStyle | None = None,
     ):
         """Yield Server-Sent Event lines (``data: …\\n\\n``) for chat reply streaming."""
         from app.services.llm import llm_enabled, rag_answer_stream
@@ -287,6 +309,7 @@ class ChatService:
             yield _sse_event({"type": "error", "content": str(e) or "chat stream failed"})
             return
 
+        resolved_style = resolve_answer_style(answer_style, settings.default_answer_style)
         details: str | None = None
         clarifying_question: str | None = None
         raw_llm_body = ""
@@ -300,23 +323,42 @@ class ChatService:
                 if llm_enabled() and chunks_text:
                     try:
                         for delta in rag_answer_stream(
-                            message, chunks_text, conversation_history=conversation_history
+                            message,
+                            chunks_text,
+                            conversation_history=conversation_history,
+                            answer_style=resolved_style,
                         ):
                             raw_llm_body += delta
                             yield _sse_event({"type": "token", "content": delta})
                     except Exception as e:
                         logger.warning("rag stream interrupted: %s", e)
-                    answer = filter_ungrounded_sentences(raw_llm_body.strip(), message, hits) if raw_llm_body.strip() else ""
-                    if answer:
-                        answer = compress_price_answer(message, answer, hits)
+                    answer = ""
+                    if raw_llm_body.strip():
+                        answer = postprocess_llm_answer(
+                            message,
+                            raw_llm_body.strip(),
+                            hits,
+                            answer_style=resolved_style,
+                        )
                     if not answer and raw_llm_body.strip():
                         answer = "Недостаточно данных в предоставленных документах."
                     if not answer:
-                        answer = build_answer(message, hits, conversation_history=conversation_history)
+                        answer = build_answer(
+                            message,
+                            hits,
+                            conversation_history=conversation_history,
+                            answer_style=resolved_style,
+                            extractive_only=True,
+                        )
                         for part in _yield_string_chunks(answer):
                             yield _sse_event({"type": "token", "content": part})
                 else:
-                    answer = build_answer(message, hits, conversation_history=conversation_history)
+                    answer = build_answer(
+                        message,
+                        hits,
+                        conversation_history=conversation_history,
+                        answer_style=resolved_style,
+                    )
                     for part in _yield_string_chunks(answer):
                         yield _sse_event({"type": "token", "content": part})
 
@@ -365,6 +407,7 @@ class ChatService:
                     details=details,
                     next_step=next_step,
                     clarifying_question=clarifying_question,
+                    answer_style=resolved_style,
                 ),
                 sources_json=json.dumps(hits, ensure_ascii=False, default=str),
             )
@@ -379,7 +422,12 @@ class ChatService:
                 event_type=EVENT_CHAT_MESSAGE,
                 quantity=1,
                 unit="count",
-                metadata={"session_id": str(session.id), "top_k": int(top_k), "stream": True},
+                metadata={
+                    "session_id": str(session.id),
+                    "top_k": int(top_k),
+                    "stream": True,
+                    "answer_style": resolved_style,
+                },
             )
             record_event(
                 self.db,

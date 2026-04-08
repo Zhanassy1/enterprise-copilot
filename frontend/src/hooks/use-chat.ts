@@ -5,6 +5,7 @@ import { toast } from "sonner";
 import {
   api,
   toErrorMessage,
+  type AnswerStyle,
   type ChatSessionOut,
 } from "@/lib/api-client";
 import { useWorkspace } from "@/components/workspace/workspace-provider";
@@ -68,9 +69,9 @@ export function useChat() {
   }, []);
 
   const sendMessage = useCallback(
-    async (message: string, topK = 5) => {
+    async (message: string, topK = 5, answerStyle?: AnswerStyle | null) => {
       if (!activeSessionId) return null;
-      await sendStreamingMessage(message, topK);
+      await sendStreamingMessage(message, topK, answerStyle);
       try {
         const next = await api.listChatSessions();
         setSessions(next);

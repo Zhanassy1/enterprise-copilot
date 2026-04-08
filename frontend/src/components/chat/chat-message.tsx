@@ -63,9 +63,12 @@ export function ChatMessage({ message, streamCursor }: ChatMessageProps) {
             ) : null}
           </div>
         ) : null}
-        {!isUser && message.sources && (
-          <SourcesAccordion sources={message.sources} />
-        )}
+        {!isUser && message.sources && message.sources.length > 0 ? (
+          <SourcesAccordion
+            sources={message.sources}
+            startCollapsed={message.answer_style === "narrative"}
+          />
+        ) : null}
       </div>
     </div>
   );

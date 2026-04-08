@@ -23,10 +23,30 @@ from app.services.nlp import (
     reorder_hits_for_contract_value_query,
     text_has_contract_value_signal,
     text_has_monetary_amount,
+    text_suggests_security_deposit_without_contract_value,
 )
 from app.services.reranker import rerank_hits
 from app.services.usage_metering import EVENT_RERANK, assert_quota, record_event
 from app.services.vector_search import search_chunks_pgvector
+
+
+def _trim_leading_mid_word_line(line: str) -> str:
+    """If a line starts with a short lowercase fragment (chunk boundary), drop the first token."""
+    s = line.strip()
+    if not s or not s[0].islower():
+        return line
+    parts = s.split(None, 1)
+    if len(parts) == 2 and parts[0].isalpha() and len(parts[0]) <= 6:
+        return parts[1]
+    return line
+
+
+def _trim_compact_snippet_mid_word_prefix(text: str) -> str:
+    if not (text or "").strip():
+        return text
+    lines = text.split("\n")
+    lines[0] = _trim_leading_mid_word_line(lines[0])
+    return "\n".join(lines)
 
 
 def compact_hit_text(text: str, query: str, *, price_intent: bool) -> str:
@@ -35,7 +55,7 @@ def compact_hit_text(text: str, query: str, *, price_intent: bool) -> str:
         return text
     lines = [ln.strip() for ln in text.splitlines() if ln.strip()]
     if not lines:
-        return text[:800]
+        return _trim_compact_snippet_mid_word_prefix(text[:800])
 
     q = (query or "").lower().strip()
     stems = {tok[:4] for tok in re.findall(r"[0-9A-Za-zА-Яа-яЁё]+", q) if len(tok) >= 3}
@@ -64,16 +84,29 @@ def compact_hit_text(text: str, query: str, *, price_intent: bool) -> str:
     matched = [ln for ln in lines if keep_line(ln)]
     if matched:
         if price_intent and is_contract_value_query(query):
-            pri = [
+            cv_lines = [
                 ln
                 for ln in matched
+                if not text_suggests_security_deposit_without_contract_value(ln)
+            ]
+            if not cv_lines:
+                cv_lines = [
+                    ln
+                    for ln in lines
+                    if ln.strip() and not text_suggests_security_deposit_without_contract_value(ln)
+                ]
+            if not cv_lines:
+                cv_lines = matched
+            pri = [
+                ln
+                for ln in cv_lines
                 if text_has_contract_value_signal(ln) and text_has_monetary_amount(ln)
             ]
-            rest = [ln for ln in matched if ln not in pri]
+            rest = [ln for ln in cv_lines if ln not in pri]
             ordered = pri + rest
-            return "\n".join(ordered[:12])[:1200]
-        return "\n".join(matched[:12])[:1200]
-    return "\n".join(lines[:8])[:800]
+            return _trim_compact_snippet_mid_word_prefix("\n".join(ordered[:12])[:1200])
+        return _trim_compact_snippet_mid_word_prefix("\n".join(matched[:12])[:1200])
+    return _trim_compact_snippet_mid_word_prefix("\n".join(lines[:8])[:800])
 
 
 def retrieve_ranked_hits(

@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import type { AnswerStyle } from "@/lib/api-client";
 import { useChat } from "@/hooks/use-chat";
 import { ProductErrorBanner } from "@/components/shared/product-error-banner";
 import { ChatSessionList } from "@/components/chat/chat-session-list";
@@ -34,6 +35,7 @@ export default function ChatPage() {
   } = useChat();
 
   const [panelOpen, setPanelOpen] = useState(false);
+  const [answerStyle, setAnswerStyle] = useState<AnswerStyle>("concise");
 
   const handleCreate = async () => {
     await createSession();
@@ -111,6 +113,20 @@ export default function ChatPage() {
           />
         </div>
         <div className="flex-1 overflow-hidden">
+          {activeSessionId && canChatWrite ? (
+            <div className="flex items-center gap-2 border-b px-4 py-2 text-xs text-muted-foreground">
+              <label className="flex cursor-pointer items-center gap-2">
+                <input
+                  type="checkbox"
+                  checked={answerStyle === "narrative"}
+                  onChange={(e) =>
+                    setAnswerStyle(e.target.checked ? "narrative" : "concise")
+                  }
+                />
+                Связный ответ по документам
+              </label>
+            </div>
+          ) : null}
           {!loadingSessions && sessions.length === 0 && canChatWrite ? (
             <div className="flex flex-col items-center justify-center gap-3 border-b bg-muted/20 px-4 py-10 text-center">
               <p className="max-w-sm text-sm text-muted-foreground">
@@ -127,7 +143,7 @@ export default function ChatPage() {
             sending={sending}
             isStreaming={isStreaming}
             hasSession={!!activeSessionId}
-            onSend={(msg) => void sendMessage(msg)}
+            onSend={(msg) => void sendMessage(msg, 5, answerStyle)}
             canSend={canChatWrite}
           />
         </div>

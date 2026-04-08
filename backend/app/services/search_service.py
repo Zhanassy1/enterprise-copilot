@@ -3,13 +3,14 @@ from __future__ import annotations
 import uuid
 
 from app.core.config import settings
-from app.schemas.documents import SearchOut
+from app.schemas.documents import AnswerStyle, SearchOut
 from app.services.embeddings import embed_texts
 from app.services.nlp import (
     build_answer,
     build_clarifying_question,
     build_next_step,
     decide_response_mode,
+    resolve_answer_style,
 )
 from app.services.rag_retrieval import retrieve_ranked_hits
 
@@ -18,7 +19,15 @@ class SearchService:
     def __init__(self, db) -> None:
         self.db = db
 
-    def search(self, *, workspace_id: uuid.UUID, user_id: uuid.UUID, query: str, top_k: int) -> SearchOut:
+    def search(
+        self,
+        *,
+        workspace_id: uuid.UUID,
+        user_id: uuid.UUID,
+        query: str,
+        top_k: int,
+        answer_style: AnswerStyle | None = None,
+    ) -> SearchOut:
         from app.services.usage_metering import (
             EVENT_SEARCH_REQUEST,
             EVENT_TOKENS,
@@ -52,10 +61,11 @@ class SearchService:
             answer_threshold=settings.answer_threshold,
             clarify_threshold=settings.clarify_threshold,
         )
+        resolved_style = resolve_answer_style(answer_style, settings.default_answer_style)
         details: str | None = None
         clarifying_question: str | None = None
         if decision == "answer":
-            answer = build_answer(query, hits)
+            answer = build_answer(query, hits, answer_style=resolved_style)
             details = "Ответ сформирован строго по найденным фрагментам документов."
         else:
             answer = ""
@@ -94,6 +104,7 @@ class SearchService:
             confidence=confidence,
             clarifying_question=clarifying_question,
             next_step=next_step,
-            evidence_collapsed_by_default=True,
+            evidence_collapsed_by_default=(resolved_style == "narrative"),
+            answer_style=resolved_style,
             hits=hits,
         )

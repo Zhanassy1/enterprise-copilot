@@ -52,11 +52,25 @@ class ComposeResponseTests(unittest.TestCase):
             clarifying_question=None,
         )
         self.assertIsNotNone(raw)
-        d, n, cq, dec = parse_reply_meta(raw)
+        d, n, cq, dec, st = parse_reply_meta(raw)
         self.assertEqual(d, "d")
         self.assertEqual(n, "n")
         self.assertIsNone(cq)
         self.assertEqual(dec, "answer")
+        self.assertIsNone(st)
+
+    def test_serialize_includes_answer_style(self) -> None:
+        raw = serialize_reply_meta(
+            decision="answer",
+            details="d",
+            next_step="n",
+            clarifying_question=None,
+            answer_style="narrative",
+        )
+        self.assertIsNotNone(raw)
+        _d, _n, _cq, dec, st = parse_reply_meta(raw)
+        self.assertEqual(dec, "answer")
+        self.assertEqual(st, "narrative")
 
 
 class ListGroundingTests(unittest.TestCase):

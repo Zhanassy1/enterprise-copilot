@@ -12,4 +12,10 @@ def search(payload: SearchIn, db: DbDep, user: CurrentUser, ws: WorkspaceReadAcc
     if not payload.query.strip():
         raise HTTPException(status_code=400, detail="Empty query")
     service = SearchService(db)
-    return service.search(workspace_id=ws.workspace.id, user_id=user.id, query=payload.query, top_k=payload.top_k)
+    return service.search(
+        workspace_id=ws.workspace.id,
+        user_id=user.id,
+        query=payload.query,
+        top_k=payload.top_k,
+        answer_style=payload.answer_style,
+    )

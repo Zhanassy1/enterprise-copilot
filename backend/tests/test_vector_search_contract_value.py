@@ -25,6 +25,27 @@ class VectorSearchContractValueTests(unittest.TestCase):
         self.assertEqual(out[0]["chunk_id"], "price")
         self.assertEqual(out[1]["chunk_id"], "sec")
 
+    def test_header_contract_value_with_only_security_amounts_ranks_price_first(self) -> None:
+        rows = [
+            {
+                "chunk_id": "sec",
+                "text": (
+                    "3. СТОИМОСТЬ ДОГОВОРА\n"
+                    "1) Обеспечить исполнение обязательств.\n"
+                    "2) Сумма обеспечения исполнения договора: 906 660.00 тенге."
+                ),
+                "score": 0.5,
+            },
+            {
+                "chunk_id": "price",
+                "text": "Цена договора составляет 12 000 000 тенге (двенадцать миллионов).",
+                "score": 0.5,
+            },
+        ]
+        out = _apply_quality_heuristics("стоимость договора", rows)
+        self.assertEqual(out[0]["chunk_id"], "price")
+        self.assertEqual(out[1]["chunk_id"], "sec")
+
 
 if __name__ == "__main__":
     unittest.main()

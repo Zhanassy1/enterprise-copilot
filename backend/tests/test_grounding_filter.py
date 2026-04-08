@@ -1,6 +1,6 @@
 import unittest
 
-from app.services.nlp import compress_price_answer, filter_ungrounded_sentences
+from app.services.nlp import CONTRACT_VALUE_UNAVAILABLE_RU, compress_price_answer, filter_ungrounded_sentences
 
 
 class GroundingFilterTests(unittest.TestCase):
@@ -54,6 +54,20 @@ class GroundingFilterTests(unittest.TestCase):
         self.assertIn("12 132 132", out)
         self.assertIn("Стоимость договора составляет", out)
         self.assertNotIn("1)", out)
+
+    def test_compress_contract_value_without_evidence_line_returns_explicit_message(self) -> None:
+        hits = [
+            {
+                "text": "1) Обеспечить исполнение.\n2) в течение 10 дней внести сумму 500 000 тенге.",
+                "score": 0.9,
+            },
+        ]
+        out = compress_price_answer(
+            "сумма договора",
+            "1) Обеспечить исполнение.\n2) внести сумму 500 000 тенге.",
+            hits,
+        )
+        self.assertEqual(out, CONTRACT_VALUE_UNAVAILABLE_RU)
 
 
 if __name__ == "__main__":

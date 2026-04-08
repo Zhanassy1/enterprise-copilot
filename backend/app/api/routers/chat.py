@@ -32,7 +32,14 @@ def list_messages(session_id: uuid.UUID, db: DbDep, _user: CurrentUser, ws: Work
 
 @router.post("/sessions/{session_id}/messages", response_model=ChatReplyOut)
 def send_message(session_id: uuid.UUID, payload: ChatMessageIn, db: DbDep, user: CurrentUser, ws: BillingWorkspaceWriteAccess) -> ChatReplyOut:
-    return ChatService(db).send_message(ws.workspace.id, user.id, session_id, payload.message, payload.top_k)
+    return ChatService(db).send_message(
+        ws.workspace.id,
+        user.id,
+        session_id,
+        payload.message,
+        payload.top_k,
+        payload.answer_style,
+    )
 
 
 @router.post("/sessions/{session_id}/messages/stream")
@@ -43,7 +50,14 @@ def send_message_stream(
     user: CurrentUser,
     ws: BillingWorkspaceWriteAccess,
 ) -> StreamingResponse:
-    gen = ChatService(db).iter_chat_sse(ws.workspace.id, user.id, session_id, payload.message, payload.top_k)
+    gen = ChatService(db).iter_chat_sse(
+        ws.workspace.id,
+        user.id,
+        session_id,
+        payload.message,
+        payload.top_k,
+        payload.answer_style,
+    )
     return StreamingResponse(
         gen,
         media_type="text/event-stream",

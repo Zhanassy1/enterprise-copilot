@@ -255,6 +255,8 @@ export interface SearchHit {
   score: number;
 }
 
+export type AnswerStyle = "concise" | "narrative";
+
 export interface SearchOut {
   answer?: string | null;
   details?: string | null;
@@ -263,6 +265,7 @@ export interface SearchOut {
   clarifying_question?: string | null;
   next_step?: string | null;
   evidence_collapsed_by_default?: boolean;
+  answer_style?: AnswerStyle;
   hits: SearchHit[];
 }
 
@@ -284,6 +287,7 @@ export interface ChatMessageOut {
   next_step?: string | null;
   clarifying_question?: string | null;
   decision?: "answer" | "clarify" | "insufficient_context" | null;
+  answer_style?: AnswerStyle | null;
 }
 
 export interface ChatReplyOut {
@@ -296,6 +300,7 @@ export interface ChatReplyOut {
   clarifying_question?: string | null;
   next_step?: string | null;
   evidence_collapsed_by_default?: boolean;
+  answer_style?: AnswerStyle;
 }
 
 /* ---------- API methods ---------- */
@@ -485,10 +490,14 @@ export const api = {
   getDocumentIngestion: (id: string) =>
     request<IngestionJobOut | null>(`/documents/${id}/ingestion`),
 
-  search: (query: string, topK = 5) =>
+  search: (query: string, topK = 5, answerStyle?: AnswerStyle | null) =>
     request<SearchOut>("/search", {
       method: "POST",
-      body: JSON.stringify({ query, top_k: topK }),
+      body: JSON.stringify({
+        query,
+        top_k: topK,
+        ...(answerStyle ? { answer_style: answerStyle } : {}),
+      }),
     }),
 
   listChatSessions: () => request<ChatSessionOut[]>("/chat/sessions"),

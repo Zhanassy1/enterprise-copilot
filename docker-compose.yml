@@ -129,9 +129,11 @@ services:
       # Если :3000 занят (часто локальный `npm run dev`): HOST_FRONTEND_PORT=3001 docker compose up
       - "${HOST_FRONTEND_PORT:-3000}:3000"
     # Dev: как у api — исходники с хоста, иначе новые маршруты (например /pricing) пропадут до полного rebuild образа.
+    # `.next` — отдельный volume: иначе bind-mount с хоста (в т.ч. OneDrive) даёт битый/неполный кэш → ENOENT в server/pages.
     volumes:
       - ./frontend:/app
       - /app/node_modules
+      - frontend_next:/app/.next
     depends_on:
       api:
         condition: service_healthy
@@ -140,3 +142,4 @@ volumes:
   pgdata:
   pgdata_test:
   uploads:
+  frontend_next:

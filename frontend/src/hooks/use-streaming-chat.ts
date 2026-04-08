@@ -6,6 +6,7 @@ import {
   api,
   ApiError,
   toErrorMessage,
+  type AnswerStyle,
   type ChatMessageOut,
   type SearchHit,
 } from "@/lib/api-client";
@@ -57,7 +58,7 @@ export function useStreamingChat(
   }, [loadMessages]);
 
   const sendMessage = useCallback(
-    async (message: string, topK = 5) => {
+    async (message: string, topK = 5, answerStyle?: AnswerStyle | null) => {
       if (!sessionId || !workspaceId) return;
       const trimmed = message.trim();
       if (!trimmed) return;
@@ -101,7 +102,11 @@ export function useStreamingChat(
           {
             method: "POST",
             headers,
-            body: JSON.stringify({ message: trimmed, top_k: topK }),
+            body: JSON.stringify({
+              message: trimmed,
+              top_k: topK,
+              ...(answerStyle ? { answer_style: answerStyle } : {}),
+            }),
           }
         );
 

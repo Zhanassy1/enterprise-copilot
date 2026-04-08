@@ -12,13 +12,23 @@ import type { SearchHit } from "@/lib/api-client";
 
 interface SourcesAccordionProps {
   sources: SearchHit[];
+  /** narrative answers: keep citations collapsed until the user expands */
+  startCollapsed?: boolean;
 }
 
-export function SourcesAccordion({ sources }: SourcesAccordionProps) {
+export function SourcesAccordion({
+  sources,
+  startCollapsed = false,
+}: SourcesAccordionProps) {
   if (sources.length === 0) return null;
 
   return (
-    <Accordion type="single" collapsible className="mt-2">
+    <Accordion
+      type="single"
+      collapsible
+      className="mt-2"
+      defaultValue={startCollapsed ? undefined : "sources"}
+    >
       <AccordionItem value="sources" className="border-none">
         <AccordionTrigger className="py-1 text-xs text-muted-foreground hover:no-underline">
           Источники ({sources.length})

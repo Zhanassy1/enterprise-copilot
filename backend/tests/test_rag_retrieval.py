@@ -12,7 +12,14 @@ from app.services.nlp import (
     adjust_hit_scores_for_contract_value_query,
     reorder_hits_for_contract_value_query,
 )
-from app.services.rag_retrieval import retrieve_ranked_hits
+from app.services.rag_retrieval import compact_hit_text, retrieve_ranked_hits
+
+
+def test_compact_hit_text_strips_leading_mid_word_fragment() -> None:
+    text = "нная счет-фактура на сумму 500 000 тенге по договору"
+    out = compact_hit_text(text, "сумма договора", price_intent=True)
+    assert not out.lstrip().lower().startswith("нная")
+    assert "счет" in out.lower() or "500" in out
 
 
 def test_contract_value_query_reorder_prefers_price_over_security() -> None:
@@ -27,7 +34,7 @@ def test_contract_value_query_reorder_prefers_price_over_security() -> None:
     assert "12 000 000" in out[0]["text"]
     adjust_hit_scores_for_contract_value_query(out)
     assert out[0]["score"] > out[1]["score"]
-    assert out[1]["score"] <= 0.32
+    assert out[1]["score"] <= 0.20
 
 
 def test_retrieve_ranked_hits_passes_effective_top_k_to_vector_search() -> None:
