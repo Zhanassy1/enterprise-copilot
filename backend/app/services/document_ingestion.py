@@ -317,6 +317,7 @@ class DocumentIngestionService:
         doc: Document,
         stored: StoredFile,
     ) -> None:
+        """Insert usage rows; caller (``upload_document``) commits the session."""
         record_event(
             self.db,
             workspace_id=workspace.id,
@@ -335,9 +336,9 @@ class DocumentIngestionService:
             unit="bytes",
             metadata={"document_id": str(doc.id)},
         )
-        self.db.commit()
 
     def upload_document(self, user_id: uuid.UUID, workspace: Workspace, file: UploadFile) -> DocumentIngestOut:
+        """Async path commits doc/job before Celery enqueue; usage rows commit once at the end of this method."""
         validate_upload(file)
         stored = self._save_and_scan(file)
         should_cleanup_storage = True
@@ -357,6 +358,7 @@ class DocumentIngestionService:
             should_cleanup_storage = False
             chunks_created = self._enqueue_ingestion_job(workspace, stored, doc)
             self._record_upload_events(user_id, workspace, doc, stored)
+            self.db.commit()
             return DocumentIngestOut(
                 document=DocumentOut.from_document(doc),
                 chunks_created=chunks_created,

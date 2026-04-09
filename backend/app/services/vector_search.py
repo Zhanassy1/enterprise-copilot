@@ -12,6 +12,7 @@ from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
+from app.services.embeddings import get_embedding_dim
 from app.services.nlp import (
     PENALTY_LINE_MARKERS,
     PRICE_LINE_MARKERS,
@@ -37,8 +38,13 @@ def _dense_candidates(
     query_embedding: list[float],
     candidate_k: int,
 ) -> list[dict]:
+    dim = get_embedding_dim()
+    if len(query_embedding) != dim:
+        raise ValueError(
+            f"Query embedding dimension mismatch: expected {dim}, got {len(query_embedding)}"
+        )
     sql = text(
-        """
+        f"""
         SELECT
           d.id AS document_id,
           d.filename AS source_filename,
@@ -47,7 +53,7 @@ def _dense_candidates(
           c.page_number AS page_number,
           c.paragraph_index AS paragraph_index,
           c.text AS text,
-          (1 - (c.embedding_vector <=> (:qvec)::vector(384))) AS dense_score
+          (1 - (c.embedding_vector <=> (:qvec)::vector({dim}))) AS dense_score
         FROM document_chunks c
         JOIN documents d ON d.id = c.document_id
         WHERE

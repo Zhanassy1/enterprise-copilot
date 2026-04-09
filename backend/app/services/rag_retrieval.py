@@ -120,8 +120,10 @@ def retrieve_ranked_hits(
     compact_snippets: bool = True,
 ) -> list[dict]:
     """
-    Retrieve hybrid candidates, rerank with the same settings as /search, enforce rerank quota when enabled,
-    then return the top ``top_k`` hits (after optional snippet compaction).
+    Retrieve hybrid candidates, rerank with the same settings as /search, then return the top ``top_k`` hits
+    (after optional snippet compaction). When reranking is enabled, ``assert_quota`` for rerank runs before
+    ``rerank_hits``; ``EVENT_RERANK`` is recorded only after a successful rerank. Skips rerank (and rerank
+    quota) when ``top_k == 0`` or when there is at most one candidate.
     """
     price_intent = is_price_intent(query)
     effective_k = max(int(top_k), int(settings.reranker_top_n))
@@ -132,14 +134,15 @@ def retrieve_ranked_hits(
         query_embedding=query_embedding,
         top_k=effective_k,
     )
-    hits = rerank_hits(query, hits, top_n=int(settings.reranker_top_n))
-    if settings.reranker_enabled:
+    will_rerank = settings.reranker_enabled and int(top_k) > 0 and len(hits) > 1
+    if will_rerank:
         assert_quota(
             db,
             workspace_id=workspace_id,
             user_id=user_id,
             rerank_increment=1,
         )
+        hits = rerank_hits(query, hits, top_n=int(settings.reranker_top_n))
         record_event(
             db,
             workspace_id=workspace_id,
@@ -149,6 +152,8 @@ def retrieve_ranked_hits(
             unit="count",
             metadata={"top_n": int(settings.reranker_top_n), "candidates": len(hits)},
         )
+    elif not settings.reranker_enabled:
+        hits = rerank_hits(query, hits, top_n=int(settings.reranker_top_n))
     hits = hits[: int(top_k)]
     if compact_snippets:
         for h in hits:

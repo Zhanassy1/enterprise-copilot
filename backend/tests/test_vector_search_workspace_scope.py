@@ -2,6 +2,7 @@
 
 import unittest
 import uuid
+from unittest.mock import patch
 
 from app.services.vector_search import _dense_candidates, _keyword_candidates
 
@@ -22,15 +23,18 @@ class VectorSearchWorkspaceScopeTests(unittest.TestCase):
 
         db = _Exec()
         wid = uuid.uuid4()
-        _dense_candidates(
-            db,  # type: ignore[arg-type]
-            workspace_id=wid,
-            query_embedding=[0.1] * 384,
-            candidate_k=10,
-        )
+        dim = 256
+        with patch("app.services.vector_search.get_embedding_dim", return_value=dim):
+            _dense_candidates(
+                db,  # type: ignore[arg-type]
+                workspace_id=wid,
+                query_embedding=[0.1] * dim,
+                candidate_k=10,
+            )
         sql_text = str(captured["sql"])
         self.assertIn("workspace_id", sql_text.lower())
         self.assertEqual(captured["params"].get("workspace_id"), str(wid))
+        self.assertIn(f"vector({dim})", sql_text)
 
     def test_keyword_sql_binds_workspace_id(self) -> None:
         captured: dict = {}

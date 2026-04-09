@@ -107,6 +107,48 @@ class AsyncIngestionPipelineSmokeTests(unittest.TestCase):
         finally:
             settings.ingestion_async_enabled = original_async
 
+    def test_upload_increments_billing_usage_after_success(self) -> None:
+        """Second commit persists usage rows; billing/usage aggregates reflect document_upload + upload_bytes."""
+        email = f"it_usage_{uuid.uuid4().hex[:10]}@example.com"
+        password = "StrongPass123!"
+        file_body = b"Usage smoke line\n"
+        original_async = settings.ingestion_async_enabled
+        settings.ingestion_async_enabled = True
+        try:
+            register_res = self.client.post(
+                "/api/v1/auth/register",
+                json={"email": email, "password": password, "full_name": "Usage Smoke User"},
+            )
+            self.assertEqual(register_res.status_code, 200, register_res.text)
+            login_res = self.client.post(
+                "/api/v1/auth/login",
+                json={"email": email, "password": password},
+            )
+            self.assertEqual(login_res.status_code, 200, login_res.text)
+            token = login_res.json()["access_token"]
+            headers = self._headers_with_workspace(token)
+
+            before = self.client.get("/api/v1/billing/usage", headers=headers)
+            self.assertEqual(before.status_code, 200, before.text)
+            bj = before.json()
+
+            upload_res = self.client.post(
+                "/api/v1/documents/upload",
+                headers=headers,
+                files={"file": ("usage-smoke.txt", file_body, "text/plain")},
+            )
+            self.assertEqual(upload_res.status_code, 200, upload_res.text)
+
+            after = self.client.get("/api/v1/billing/usage", headers=headers)
+            self.assertEqual(after.status_code, 200, after.text)
+            aj = after.json()
+
+            self.assertGreaterEqual(aj["usage_bytes_month"], bj["usage_bytes_month"] + len(file_body))
+            self.assertGreaterEqual(aj["usage_requests_month"], bj["usage_requests_month"] + 1)
+            self.assertGreaterEqual(aj["document_count"], bj["document_count"] + 1)
+        finally:
+            settings.ingestion_async_enabled = original_async
+
 
 if __name__ == "__main__":
     unittest.main()

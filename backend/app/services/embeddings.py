@@ -7,8 +7,6 @@ from app.core.config import settings
 
 logger = logging.getLogger(__name__)
 
-VECTOR_DIM = 384
-
 
 @lru_cache(maxsize=1)
 def _get_model():
@@ -18,6 +16,18 @@ def _get_model():
     logger.info("Loading embedding model: %s", model_name)
     model = SentenceTransformer(model_name)
     return model
+
+
+def get_embedding_dim() -> int:
+    """Dimension of vectors produced by the configured SentenceTransformer (must match DB column)."""
+    return int(_get_model().get_sentence_embedding_dimension())
+
+
+def assert_embedding_vector_dim(vec: list[float], *, expected_dim: int) -> None:
+    if len(vec) != expected_dim:
+        raise ValueError(
+            f"Embedding dimension mismatch: expected {expected_dim}, got {len(vec)}"
+        )
 
 
 def embed_texts(texts: list[str]) -> list[list[float]]:

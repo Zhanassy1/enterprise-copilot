@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session
 from app.core.config import settings
 from app.models.document import Document, DocumentChunk
 from app.services.chunking import chunk_text
-from app.services.embeddings import embed_texts
+from app.services.embeddings import assert_embedding_vector_dim, embed_texts, get_embedding_dim
 from app.services.storage.base import StorageService
 from app.services.text_extraction import extract_text_metadata_from_file
 from app.services.usage_metering import max_pdf_pages_for_workspace
@@ -58,6 +58,37 @@ def _page_by_pos(spans: list[tuple[int, int, int]], pos: int) -> int | None:
     return None
 
 
+def _bulk_update_chunk_embeddings(
+    db: Session,
+    *,
+    chunk_ids: list[str],
+    vectors: list[list[float]],
+    embedding_dim: int,
+) -> None:
+    if not chunk_ids:
+        return
+    if len(chunk_ids) != len(vectors):
+        raise ValueError("chunk_ids and vectors length mismatch")
+    vec_literals: list[str] = []
+    for vec in vectors:
+        assert_embedding_vector_dim(vec, expected_dim=embedding_dim)
+        vec_literals.append("[" + ",".join(f"{float(x):.8f}" for x in vec) + "]")
+    db.execute(
+        text(
+            f"""
+            UPDATE document_chunks c
+            SET embedding_vector = (u.vec)::vector({embedding_dim})
+            FROM unnest(
+                CAST(:ids AS uuid[]),
+                CAST(:vecs AS text[])
+            ) AS u(id, vec)
+            WHERE c.id = u.id
+            """
+        ),
+        {"ids": chunk_ids, "vecs": vec_literals},
+    )
+
+
 class DocumentIndexingService:
     def __init__(self, db: Session, storage: StorageService) -> None:
         self.db = db
@@ -71,7 +102,9 @@ class DocumentIndexingService:
 
         try:
             with self.storage.local_path(document.storage_key) as local_file:
-                extracted_doc = extract_text_metadata_from_file(local_file, content_type=document.content_type)
+                extracted_doc = extract_text_metadata_from_file(
+                    local_file, content_type=document.content_type
+                )
             extracted = extracted_doc.text
             if not extracted:
                 raise ValueError("Failed to extract text (empty)")
@@ -85,10 +118,13 @@ class DocumentIndexingService:
             page_limit = max_pdf_pages_for_workspace(self.db, document.workspace_id)
             if page_limit is not None and int(extracted_doc.page_count or 0) > int(page_limit):
                 raise ValueError(f"Document exceeds plan page limit ({page_limit} pages max)")
-            chunks = chunk_text(extracted, chunk_size=int(settings.chunk_size), overlap=int(settings.chunk_overlap))
+            chunks = chunk_text(
+                extracted, chunk_size=int(settings.chunk_size), overlap=int(settings.chunk_overlap)
+            )
             offsets = _chunk_offsets(extracted, chunks)
             spans = _page_spans(extracted)
             vectors = embed_texts(chunks)
+            embedding_dim = get_embedding_dim()
 
             chunk_indices = list(range(len(chunks)))
             page_numbers = []
@@ -98,9 +134,10 @@ class DocumentIndexingService:
                 page_numbers.append(_page_by_pos(spans, start))
                 paragraph_indices.append(_paragraph_index_by_pos(extracted, start))
 
-            inserted_rows = self.db.execute(
-                text(
-                    """
+            inserted_rows = (
+                self.db.execute(
+                    text(
+                        """
                     INSERT INTO document_chunks (
                         id, document_id, chunk_index, page_number, paragraph_index, text, embedding_vector
                     )
@@ -120,45 +157,39 @@ class DocumentIndexingService:
                     ) AS t(chunk_index, page_number, paragraph_index, text)
                     RETURNING id, chunk_index
                     """
-                ),
-                {
-                    "document_id": str(document.id),
-                    "chunk_indices": chunk_indices,
-                    "page_numbers": page_numbers,
-                    "paragraph_indices": paragraph_indices,
-                    "texts": chunks,
-                },
-            ).mappings().all()
+                    ),
+                    {
+                        "document_id": str(document.id),
+                        "chunk_indices": chunk_indices,
+                        "page_numbers": page_numbers,
+                        "paragraph_indices": paragraph_indices,
+                        "texts": chunks,
+                    },
+                )
+                .mappings()
+                .all()
+            )
 
-            id_by_chunk_index = {
-                int(row["chunk_index"]): str(row["id"]) for row in inserted_rows
-            }
-            if len(id_by_chunk_index) != len(chunks) or set(id_by_chunk_index) != set(chunk_indices):
+            id_by_chunk_index = {int(row["chunk_index"]): str(row["id"]) for row in inserted_rows}
+            if len(id_by_chunk_index) != len(chunks) or set(id_by_chunk_index) != set(
+                chunk_indices
+            ):
                 raise ValueError("Inserted chunk IDs mismatch")
 
             ids_to_update: list[str] = []
-            vec_literals: list[str] = []
+            vectors_to_write: list[list[float]] = []
             for i, vec in enumerate(vectors):
                 if i >= len(chunks):
                     break
                 ids_to_update.append(id_by_chunk_index[i])
-                vec_literals.append("[" + ",".join(f"{float(x):.8f}" for x in vec) + "]")
+                vectors_to_write.append(vec)
 
-            if ids_to_update:
-                self.db.execute(
-                    text(
-                        """
-                        UPDATE document_chunks c
-                        SET embedding_vector = (u.vec)::vector(384)
-                        FROM unnest(
-                            CAST(:ids AS uuid[]),
-                            CAST(:vecs AS text[])
-                        ) AS u(id, vec)
-                        WHERE c.id = u.id
-                        """
-                    ),
-                    {"ids": ids_to_update, "vecs": vec_literals},
-                )
+            _bulk_update_chunk_embeddings(
+                self.db,
+                chunk_ids=ids_to_update,
+                vectors=vectors_to_write,
+                embedding_dim=embedding_dim,
+            )
 
             document.status = "ready"
             document.indexed_at = datetime.now(UTC)
@@ -177,17 +208,21 @@ class DocumentIndexingService:
 
 def reindex_null_embeddings_for_workspace(db: Session, *, workspace_id: uuid.UUID) -> int:
     """Fill embedding_vector for chunks in workspace where it is NULL (legacy rows)."""
-    rows = db.execute(
-        text(
-            """
+    rows = (
+        db.execute(
+            text(
+                """
             SELECT c.id AS id, c.text AS text
             FROM document_chunks c
             JOIN documents d ON d.id = c.document_id
             WHERE d.workspace_id = CAST(:workspace_id AS uuid) AND c.embedding_vector IS NULL
             """
-        ),
-        {"workspace_id": str(workspace_id)},
-    ).mappings().all()
+            ),
+            {"workspace_id": str(workspace_id)},
+        )
+        .mappings()
+        .all()
+    )
     if not rows:
         return 0
     texts = [str(r["text"]) for r in rows]
@@ -195,14 +230,12 @@ def reindex_null_embeddings_for_workspace(db: Session, *, workspace_id: uuid.UUI
     vectors = embed_texts(texts)
     if len(vectors) != len(ids):
         raise ValueError("Embedding count mismatch")
-    for cid, vec in zip(ids, vectors, strict=True):
-        vec_lit = "[" + ",".join(f"{float(x):.8f}" for x in vec) + "]"
-        db.execute(
-            text(
-                "UPDATE document_chunks SET embedding_vector = (:v)::vector(384) "
-                "WHERE id = CAST(:id AS uuid)"
-            ),
-            {"v": vec_lit, "id": cid},
-        )
+    embedding_dim = get_embedding_dim()
+    _bulk_update_chunk_embeddings(
+        db,
+        chunk_ids=ids,
+        vectors=vectors,
+        embedding_dim=embedding_dim,
+    )
     db.commit()
     return len(ids)

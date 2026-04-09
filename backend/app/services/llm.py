@@ -18,6 +18,13 @@ logger = logging.getLogger(__name__)
 
 _client = None
 
+# Returned by llm_chat when the API key is missing or the upstream call fails (no document context).
+LLM_SERVICE_UNAVAILABLE_RU = (
+    "Генерация ответа языковой моделью сейчас недоступна (нет ключа API или ошибка сервиса)."
+)
+
+_FALLBACK_CHUNK_SIZE = 24
+
 
 def _get_client():
     global _client
@@ -27,6 +34,7 @@ def _get_client():
         _client = OpenAI(
             api_key=settings.llm_api_key or "not-set",
             base_url=settings.llm_base_url,
+            timeout=settings.llm_request_timeout_seconds,
         )
     return _client
 
@@ -35,27 +43,48 @@ def llm_enabled() -> bool:
     return bool(settings.llm_api_key)
 
 
+def _yield_text_chunks(text: str, *, size: int = _FALLBACK_CHUNK_SIZE):
+    t = text or ""
+    if not t:
+        return
+    for i in range(0, len(t), size):
+        yield t[i : i + size]
+
+
+def _extractive_fallback_answer(
+    query: str,
+    context_chunks: list[str],
+    *,
+    answer_style: AnswerStyle = "concise",
+) -> str:
+    from app.services.nlp import _answer_extractive
+
+    hits = [{"text": c} for c in context_chunks if c]
+    return _answer_extractive(query, hits, answer_style=answer_style)
+
+
 def llm_chat_stream(
     system_prompt: str,
     user_prompt: str,
     *,
     max_tokens: int = 1024,
 ):
-    """Yield text deltas from OpenAI chat completions (streaming). No yields if LLM disabled."""
+    """Yield text deltas from OpenAI chat completions (streaming)."""
     if not llm_enabled():
         return
     client = _get_client()
+    stream = client.chat.completions.create(
+        model=settings.llm_model,
+        messages=[
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_prompt},
+        ],
+        temperature=settings.llm_temperature,
+        max_tokens=max_tokens,
+        stream=True,
+        timeout=settings.llm_request_timeout_seconds,
+    )
     try:
-        stream = client.chat.completions.create(
-            model=settings.llm_model,
-            messages=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_prompt},
-            ],
-            temperature=settings.llm_temperature,
-            max_tokens=max_tokens,
-            stream=True,
-        )
         for chunk in stream:
             if not chunk.choices:
                 continue
@@ -64,7 +93,7 @@ def llm_chat_stream(
                 yield delta.content
     except Exception as e:
         logger.error("LLM stream failed: %s", e)
-        return
+        raise
 
 
 def llm_chat(
@@ -74,7 +103,7 @@ def llm_chat(
     max_tokens: int = 1024,
 ) -> str:
     if not llm_enabled():
-        return ""
+        return LLM_SERVICE_UNAVAILABLE_RU
 
     client = _get_client()
     try:
@@ -86,11 +115,12 @@ def llm_chat(
             ],
             temperature=settings.llm_temperature,
             max_tokens=max_tokens,
+            timeout=settings.llm_request_timeout_seconds,
         )
         return (resp.choices[0].message.content or "").strip()
     except Exception as e:
         logger.error("LLM call failed: %s", e)
-        return ""
+        return LLM_SERVICE_UNAVAILABLE_RU
 
 
 def _rag_system_prompt(
@@ -131,19 +161,23 @@ def rag_answer(
     answer_style: AnswerStyle = "concise",
     advisory: bool | None = None,
 ) -> str:
-    """Generate a RAG answer from retrieved chunks. Falls back to extractive if no LLM key."""
+    """Generate a RAG answer from retrieved chunks. Falls back to extractive if LLM is off or fails."""
     if not context_chunks:
         return "По загруженным документам релевантной информации не найдено."
 
-    if not llm_enabled():
-        return ""
-
-    context = "\n\n---\n\n".join(context_chunks[: 8])
     adv = is_advisory_intent(query) if advisory is None else advisory
+    context = "\n\n---\n\n".join(context_chunks[:8])
+
+    if not llm_enabled():
+        return _extractive_fallback_answer(query, context_chunks, answer_style=answer_style)
+
     system = _rag_system_prompt(query, answer_style=answer_style, advisory=adv)
     user = _rag_user_prompt(query, context, conversation_history=conversation_history)
     max_tok = 1536 if adv else 1024
-    return llm_chat(system, user, max_tokens=max_tok)
+    out = llm_chat(system, user, max_tokens=max_tok)
+    if not out or out == LLM_SERVICE_UNAVAILABLE_RU:
+        return _extractive_fallback_answer(query, context_chunks, answer_style=answer_style)
+    return out
 
 
 def rag_answer_stream(
@@ -154,29 +188,43 @@ def rag_answer_stream(
     answer_style: AnswerStyle = "concise",
     advisory: bool | None = None,
 ):
-    """Stream RAG answer tokens from the LLM. Empty generator if disabled or no chunks."""
+    """Stream RAG tokens from the LLM, or chunked extractive text if LLM is off or errors."""
     if not context_chunks:
         return
-    if not llm_enabled():
-        return
 
-    context = "\n\n---\n\n".join(context_chunks[:8])
     adv = is_advisory_intent(query) if advisory is None else advisory
+    context = "\n\n---\n\n".join(context_chunks[:8])
     system = _rag_system_prompt(query, answer_style=answer_style, advisory=adv)
     user = _rag_user_prompt(query, context, conversation_history=conversation_history)
     max_tok = 1536 if adv else 1024
-    yield from llm_chat_stream(system, user, max_tokens=max_tok)
+
+    def _yield_extractive_stream() -> None:
+        text = _extractive_fallback_answer(query, context_chunks, answer_style=answer_style)
+        yield from _yield_text_chunks(text)
+
+    if not llm_enabled():
+        yield from _yield_extractive_stream()
+        return
+
+    try:
+        yield from llm_chat_stream(system, user, max_tokens=max_tok)
+    except Exception:
+        logger.warning("rag_answer_stream: falling back to extractive after LLM stream failure")
+        yield from _yield_extractive_stream()
 
 
 def llm_summarize(text: str) -> str:
-    """Generate an LLM-based summary. Returns empty string if LLM is not configured."""
+    """Generate an LLM-based summary. Returns empty string if LLM is not configured or call failed."""
     if not llm_enabled():
         return ""
 
-    truncated = text[:settings.llm_max_context_tokens * 3]
+    truncated = text[: settings.llm_max_context_tokens * 3]
 
     system = SUMMARY_SYSTEM_PROMPT
 
     user = f"Документ:\n\n{truncated}"
 
-    return llm_chat(system, user, max_tokens=1024)
+    out = llm_chat(system, user, max_tokens=1024)
+    if out == LLM_SERVICE_UNAVAILABLE_RU:
+        return ""
+    return out

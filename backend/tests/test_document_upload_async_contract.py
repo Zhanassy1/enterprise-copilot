@@ -9,7 +9,7 @@ from unittest.mock import patch
 
 from fastapi import HTTPException, UploadFile
 
-from app.models.document import IngestionJob
+from app.models.document import Document, IngestionJob
 from app.services import document_ingestion as document_ingestion_module
 from app.services.document_ingestion import DocumentIngestionService
 
@@ -61,6 +61,23 @@ class _FakeDb:
         if getattr(obj, "created_at", None) is None:
             obj.created_at = datetime.now(UTC)
 
+    def get(self, entity, id_):
+        for obj in self._objects:
+            if isinstance(obj, entity) and getattr(obj, "id", None) == id_:
+                return obj
+        return None
+
+
+class _SequenceTrackingDb(_FakeDb):
+    """Tracks commit vs record_event ordering for async upload contract."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.sequence: list[str] = []
+
+    def commit(self) -> None:
+        self.sequence.append("commit")
+
 
 class DocumentUploadAsyncContractTests(unittest.TestCase):
     def test_async_upload_enqueues_task_and_returns_queued_document(self) -> None:
@@ -81,6 +98,57 @@ class DocumentUploadAsyncContractTests(unittest.TestCase):
         self.assertEqual(result.chunks_created, 0)
         self.assertTrue(publish_mock.called)
         self.assertTrue(any(isinstance(obj, IngestionJob) for obj in db._objects))
+
+    def test_async_upload_pre_enqueue_commit_then_usage_events_then_final_commit(self) -> None:
+        db = _SequenceTrackingDb()
+
+        def record_side_effect(*_a, **_k):
+            db.sequence.append("record")
+
+        workspace = SimpleNamespace(id=uuid.uuid4())
+        user_id = uuid.uuid4()
+        file = UploadFile(filename="contract.txt", file=io.BytesIO(b"contract body"), headers={"content-type": "text/plain"})
+
+        with (
+            patch.dict(os.environ, {"INGESTION_ASYNC_ENABLED": "1"}, clear=False),
+            patch("app.services.document_ingestion.settings.ingestion_async_enabled", True),
+            patch("app.services.document_ingestion.ingest_document_task.apply_async"),
+            patch("app.services.document_ingestion.record_event", side_effect=record_side_effect),
+        ):
+            DocumentIngestionService(db, _FakeStorage()).upload_document(user_id=user_id, workspace=workspace, file=file)
+
+        self.assertEqual(db.sequence, ["commit", "record", "record", "commit"])
+
+    def test_enqueue_failure_marks_doc_and_job_failed_no_usage_events(self) -> None:
+        db = _FakeDb()
+        record_calls: list[tuple[str, str]] = []
+
+        def capture_record(_db, *, workspace_id, user_id, event_type, quantity, unit="count", metadata=None):
+            record_calls.append((event_type, unit))
+            return None
+
+        workspace = SimpleNamespace(id=uuid.uuid4())
+        user_id = uuid.uuid4()
+        file = UploadFile(filename="contract.txt", file=io.BytesIO(b"contract body"), headers={"content-type": "text/plain"})
+
+        with (
+            patch.dict(os.environ, {"INGESTION_ASYNC_ENABLED": "1"}, clear=False),
+            patch("app.services.document_ingestion.settings.ingestion_async_enabled", True),
+            patch("app.services.document_ingestion.assert_quota"),
+            patch("app.services.document_ingestion.scan_uploaded_file_safe"),
+            patch("app.services.document_ingestion.ingest_document_task.apply_async", side_effect=RuntimeError("broker down")),
+            patch("app.services.document_ingestion.record_event", side_effect=capture_record),
+        ):
+            with self.assertRaises(HTTPException) as ctx:
+                DocumentIngestionService(db, _FakeStorage()).upload_document(user_id=user_id, workspace=workspace, file=file)
+
+        self.assertEqual(ctx.exception.status_code, 503)
+        self.assertEqual(record_calls, [])
+        doc = next(o for o in db._objects if isinstance(o, Document))
+        job = next(o for o in db._objects if isinstance(o, IngestionJob))
+        self.assertEqual(doc.status, "failed")
+        self.assertEqual(job.status, "failed")
+        self.assertIn("enqueue", (doc.error_message or "").lower())
 
     def test_production_never_runs_sync_indexing_on_upload(self) -> None:
         """Defense in depth: `document_ingestion.py` rejects in-process indexing when ENVIRONMENT=production."""

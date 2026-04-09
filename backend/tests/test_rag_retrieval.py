@@ -6,6 +6,7 @@ import uuid
 from unittest.mock import MagicMock, patch
 
 import pytest
+from fastapi import HTTPException
 
 from app.core.config import settings
 from app.services.nlp import (
@@ -76,17 +77,24 @@ def test_retrieve_ranked_hits_asserts_rerank_quota_when_enabled() -> None:
     uid = uuid.uuid4()
     db = MagicMock()
     calls: list[dict] = []
+    order: list[str] = []
 
     def capture_quota(db_arg, **kwargs):
+        order.append("assert_quota")
         if kwargs.get("rerank_increment"):
             calls.append(kwargs)
 
+    def capture_rerank(q, h, top_n):
+        order.append("rerank_hits")
+        return h
+
+    two_hits = [
+        {"chunk_id": "c1", "text": "a", "score": 0.5},
+        {"chunk_id": "c2", "text": "b", "score": 0.4},
+    ]
     with (
-        patch(
-            "app.services.rag_retrieval.search_chunks_pgvector",
-            return_value=[{"chunk_id": "c1", "text": "x", "score": 0.5}],
-        ),
-        patch("app.services.rag_retrieval.rerank_hits", side_effect=lambda q, h, top_n: h),
+        patch("app.services.rag_retrieval.search_chunks_pgvector", return_value=two_hits),
+        patch("app.services.rag_retrieval.rerank_hits", side_effect=capture_rerank),
         patch("app.services.rag_retrieval.assert_quota", side_effect=capture_quota),
         patch("app.services.rag_retrieval.record_event"),
         patch.object(settings, "reranker_enabled", True),
@@ -102,6 +110,77 @@ def test_retrieve_ranked_hits_asserts_rerank_quota_when_enabled() -> None:
         )
 
     assert any(c.get("rerank_increment") == 1 for c in calls)
+    assert order == ["assert_quota", "rerank_hits"]
+
+
+def test_retrieve_ranked_hits_quota_exceeded_skips_rerank_and_no_rerank_event() -> None:
+    ws = uuid.uuid4()
+    uid = uuid.uuid4()
+    db = MagicMock()
+    two_hits = [
+        {"chunk_id": "c1", "text": "a", "score": 0.5},
+        {"chunk_id": "c2", "text": "b", "score": 0.4},
+    ]
+    rerank_mock = MagicMock()
+    rec = MagicMock()
+
+    def deny_quota(*_a, **_k):
+        raise HTTPException(status_code=429, detail="Workspace monthly rerank quota exceeded")
+
+    with (
+        patch("app.services.rag_retrieval.search_chunks_pgvector", return_value=two_hits),
+        patch("app.services.rag_retrieval.rerank_hits", rerank_mock),
+        patch("app.services.rag_retrieval.assert_quota", side_effect=deny_quota),
+        patch("app.services.rag_retrieval.record_event", rec),
+        patch.object(settings, "reranker_enabled", True),
+    ):
+        with pytest.raises(HTTPException) as ei:
+            retrieve_ranked_hits(
+                db,
+                workspace_id=ws,
+                user_id=uid,
+                query="q",
+                query_embedding=[0.0] * 384,
+                top_k=3,
+                compact_snippets=False,
+            )
+    assert ei.value.status_code == 429
+    assert not rerank_mock.called
+    rec.assert_not_called()
+
+
+def test_retrieve_ranked_hits_short_circuit_single_hit_skips_rerank() -> None:
+    ws = uuid.uuid4()
+    uid = uuid.uuid4()
+    db = MagicMock()
+    rerank_mock = MagicMock()
+    quota_rr: list[int] = []
+
+    def capture_quota(db_arg, **kwargs):
+        quota_rr.append(int(kwargs.get("rerank_increment") or 0))
+
+    with (
+        patch(
+            "app.services.rag_retrieval.search_chunks_pgvector",
+            return_value=[{"chunk_id": "c1", "text": "x", "score": 0.5}],
+        ),
+        patch("app.services.rag_retrieval.rerank_hits", rerank_mock),
+        patch("app.services.rag_retrieval.assert_quota", side_effect=capture_quota),
+        patch("app.services.rag_retrieval.record_event"),
+        patch.object(settings, "reranker_enabled", True),
+    ):
+        retrieve_ranked_hits(
+            db,
+            workspace_id=ws,
+            user_id=uid,
+            query="q",
+            query_embedding=[0.0] * 384,
+            top_k=3,
+            compact_snippets=False,
+        )
+
+    assert not rerank_mock.called
+    assert max(quota_rr, default=0) == 0
 
 
 def test_retrieve_ranked_hits_skips_rerank_quota_when_disabled() -> None:

@@ -17,6 +17,7 @@ class LLMSettings(BaseModel):
     llm_model: str = Field(default="gpt-4o")
     llm_max_context_tokens: int = Field(default=6000)
     llm_temperature: float = Field(default=0.3, ge=0.0, le=2.0)
+    llm_request_timeout_seconds: float = Field(default=120.0, ge=5.0, le=600.0)
 
     # RAG: prior turns in session (budget for prompt; assistant replies truncated)
     chat_history_max_messages: int = Field(default=16, ge=2, le=64)
