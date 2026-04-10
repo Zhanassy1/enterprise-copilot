@@ -1,12 +1,19 @@
 import uuid
 from datetime import datetime
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
+
+from app.core.email_normalization import normalize_email
 
 
 class InvitationCreateIn(BaseModel):
     email: str = Field(min_length=3, max_length=320)
     role: str = Field(min_length=3, max_length=32, description="admin | member | viewer")
+
+    @field_validator("email")
+    @classmethod
+    def email_canonical_invite_create(cls, v: str) -> str:
+        return normalize_email(v)
 
 
 class InvitationOut(BaseModel):

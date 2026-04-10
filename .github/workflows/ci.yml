@@ -139,6 +139,7 @@ jobs:
         run: alembic upgrade head
 
       # Full suite with RUN_INTEGRATION_TESTS=1 so cross-workspace + API flow run (not skipped).
+      # Also runs retrieval offline eval regression gate (test_retrieval_eval_integration) against pgvector.
       - name: Run integration tests (pytest + unittest compatibility)
         run: python -m pytest tests/ -v
 

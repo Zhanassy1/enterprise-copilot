@@ -2,6 +2,8 @@ import uuid
 
 from pydantic import BaseModel, EmailStr, field_validator
 
+from app.core.email_normalization import normalize_email
+
 
 class Token(BaseModel):
     access_token: str
@@ -14,6 +16,11 @@ class RegisterIn(BaseModel):
     password: str
     full_name: str | None = None
     invite_token: str | None = None
+
+    @field_validator("email")
+    @classmethod
+    def email_canonical(cls, v: str) -> str:
+        return normalize_email(v)
 
     @field_validator("invite_token")
     @classmethod
@@ -30,6 +37,11 @@ class LoginIn(BaseModel):
     email: EmailStr
     password: str
     invite_token: str | None = None
+
+    @field_validator("email")
+    @classmethod
+    def email_canonical_login(cls, v: str) -> str:
+        return normalize_email(v)
 
     @field_validator("invite_token")
     @classmethod
@@ -64,6 +76,11 @@ class LogoutIn(BaseModel):
 
 class RequestPasswordResetIn(BaseModel):
     email: EmailStr
+
+    @field_validator("email")
+    @classmethod
+    def email_canonical_reset_request(cls, v: str) -> str:
+        return normalize_email(v)
 
 
 class PasswordResetIn(BaseModel):

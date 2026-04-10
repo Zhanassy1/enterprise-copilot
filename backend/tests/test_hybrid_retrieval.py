@@ -2,7 +2,7 @@ import unittest
 
 from app.core.config import settings
 from app.services.reranker import rerank_hits
-from app.services.vector_search import _rrf_fuse
+from app.services.retrieval.generic_hybrid import rrf_fuse
 
 
 class HybridRetrievalTests(unittest.TestCase):
@@ -17,7 +17,7 @@ class HybridRetrievalTests(unittest.TestCase):
             {"chunk_id": "c2", "document_id": "d1", "chunk_index": 1, "text": "beta", "keyword_score": 0.9},
             {"chunk_id": "c3", "document_id": "d2", "chunk_index": 0, "text": "gamma", "keyword_score": 0.8},
         ]
-        fused = _rrf_fuse(dense, keyword, rrf_k=60, dense_weight=1.0, keyword_weight=1.0)
+        fused = rrf_fuse(dense, keyword, rrf_k=60, dense_weight=1.0, keyword_weight=1.0)
         top_ids = [row["chunk_id"] for row in fused[:3]]
         self.assertIn("c2", top_ids)
         self.assertIn("c3", top_ids)

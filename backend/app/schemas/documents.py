@@ -32,10 +32,19 @@ class DocumentOut(BaseModel):
     language: str | None = None
     parser_version: str | None = None
     indexed_at: datetime | None = None
+    pdf_kind: str | None = None
+    ocr_applied: bool | None = None
+    extraction_coverage: float | None = Field(
+        default=None,
+        description="Share of pages with non-trivial text after extraction (0–1), from extraction_meta.",
+    )
     created_at: datetime
 
     @classmethod
     def from_document(cls, doc, *, ingestion_job_status: str | None = None) -> "DocumentOut":
+        meta = getattr(doc, "extraction_meta", None) or {}
+        cov = meta.get("extraction_coverage")
+        cov_f = float(cov) if isinstance(cov, (int, float)) else None
         return cls(
             id=doc.id,
             uploaded_by=getattr(doc, "owner_id", None),
@@ -50,6 +59,9 @@ class DocumentOut(BaseModel):
             language=doc.language,
             parser_version=doc.parser_version,
             indexed_at=doc.indexed_at,
+            pdf_kind=getattr(doc, "pdf_kind", None),
+            ocr_applied=getattr(doc, "ocr_applied", None),
+            extraction_coverage=cov_f,
             created_at=doc.created_at,
         )
 

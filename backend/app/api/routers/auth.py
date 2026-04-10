@@ -12,7 +12,7 @@ from app.core.security import (
     generate_opaque_token,
     hash_opaque_token,
     hash_password,
-    verify_password,
+    verify_password_with_rehash,
 )
 from app.core.trusted_proxy import get_effective_client_ip
 from app.models.security import EmailVerificationToken, PasswordResetToken, RefreshToken
@@ -32,11 +32,7 @@ from app.schemas.auth import (
 from app.schemas.common_api import EmptyJSONBody
 from app.services.audit import write_audit_log
 from app.services.email_service import send_password_reset_email, send_verification_email
-from app.services.invitation_service import (
-    accept_invitation,
-    normalize_email,
-    validate_invite_token,
-)
+from app.services.invitation_service import accept_invitation, validate_invite_token
 from app.services.workspace_service import create_personal_workspace
 
 router = APIRouter(prefix="/auth", tags=["auth"])
@@ -65,7 +61,7 @@ def register(payload: RegisterIn, db: DbDep) -> UserOut | Token:
             raise HTTPException(status_code=400, detail=code) from e
         if preview.user_exists:
             raise HTTPException(status_code=400, detail="user_exists")
-        if normalize_email(str(payload.email)) != preview.email:
+        if payload.email != preview.email:
             raise HTTPException(status_code=400, detail="email_mismatch_invite")
         if len(payload.password) < 8:
             raise HTTPException(status_code=400, detail="password required (min 8 characters)")
@@ -156,7 +152,12 @@ def auth_me(request: Request, user: CurrentUser) -> MeOut:
 @router.post("/login", response_model=Token)
 def login(payload: LoginIn, db: DbDep, request: Request) -> Token:
     user = db.scalar(select(User).where(User.email == payload.email))
-    if not user or not verify_password(payload.password, user.password_hash):
+    new_hash: str | None = None
+    if user:
+        ok, new_hash = verify_password_with_rehash(payload.password, user.password_hash)
+        if not ok:
+            user = None
+    if not user:
         ip = get_effective_client_ip(
             request,
             use_forwarded_headers=settings.use_forwarded_headers,
@@ -173,6 +174,9 @@ def login(payload: LoginIn, db: DbDep, request: Request) -> Token:
         )
         db.commit()
         raise HTTPException(status_code=401, detail="Invalid email or password")
+    if new_hash is not None:
+        user.password_hash = new_hash
+        db.add(user)
     if payload.invite_token:
         try:
             accept_invitation(db, token_plain=payload.invite_token, existing_user=user)

@@ -6,6 +6,8 @@ from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 from app.services.document_indexing import DocumentIndexingService
+from app.services.pdf_ingestion import PdfIndexingExtractResult
+from app.services.text_extraction import ExtractedDocument
 
 
 class DocumentIndexingPageCapTests(unittest.TestCase):
@@ -20,6 +22,7 @@ class DocumentIndexingPageCapTests(unittest.TestCase):
             workspace_id=uuid.uuid4(),
             storage_key="k",
             content_type="application/pdf",
+            filename="x.pdf",
             status="queued",
             extracted_text=None,
             page_count=None,
@@ -28,10 +31,16 @@ class DocumentIndexingPageCapTests(unittest.TestCase):
             indexed_at=None,
             parser_version=None,
         )
-        extracted = SimpleNamespace(text="a\fb", page_count=999, language="en")
+        pdf_stub = PdfIndexingExtractResult(
+            extracted=ExtractedDocument(text="a\fb", page_count=999, language="en"),
+            pdf_kind="text_native",
+            ocr_applied=False,
+            parser_version="v2",
+            extraction_meta={},
+        )
 
         with (
-            patch("app.services.document_indexing.extract_text_metadata_from_file", return_value=extracted),
+            patch("app.services.document_indexing.extract_pdf_for_indexing", return_value=pdf_stub),
             patch("app.services.document_indexing.max_pdf_pages_for_workspace", return_value=10),
             patch(
                 "app.services.document_indexing.chunk_text",

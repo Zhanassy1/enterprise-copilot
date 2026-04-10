@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import unittest
 
-from app.services.vector_search import _apply_quality_heuristics
+from app.services.retrieval.domain_rules import apply_quality_heuristics
 
 
 class VectorSearchContractValueTests(unittest.TestCase):
@@ -21,7 +21,7 @@ class VectorSearchContractValueTests(unittest.TestCase):
                 "score": 0.5,
             },
         ]
-        out = _apply_quality_heuristics("стоимость договора", rows)
+        out = apply_quality_heuristics("стоимость договора", rows)
         self.assertEqual(out[0]["chunk_id"], "price")
         self.assertEqual(out[1]["chunk_id"], "sec")
 
@@ -42,7 +42,7 @@ class VectorSearchContractValueTests(unittest.TestCase):
                 "score": 0.5,
             },
         ]
-        out = _apply_quality_heuristics("стоимость договора", rows)
+        out = apply_quality_heuristics("стоимость договора", rows)
         self.assertEqual(out[0]["chunk_id"], "price")
         self.assertEqual(out[1]["chunk_id"], "sec")
 

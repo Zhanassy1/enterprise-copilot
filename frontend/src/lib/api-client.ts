@@ -172,6 +172,14 @@ export interface DocumentOut {
   /** Latest ingestion job status when available (queued | processing | …). */
   ingestion_job_status?: string | null;
   error_message?: string | null;
+  page_count?: number | null;
+  language?: string | null;
+  parser_version?: string | null;
+  indexed_at?: string | null;
+  pdf_kind?: string | null;
+  ocr_applied?: boolean | null;
+  /** 0–1 share of pages with non-trivial text after extraction (from extraction_meta). */
+  extraction_coverage?: number | null;
   created_at: string;
 }
 

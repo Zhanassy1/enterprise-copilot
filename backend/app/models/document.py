@@ -1,8 +1,8 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import DateTime, ForeignKey, String, Text, func
-from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy import Boolean, DateTime, ForeignKey, String, Text, func
+from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
@@ -30,6 +30,10 @@ class Document(Base):
     language: Mapped[str | None] = mapped_column(String(16), nullable=True)
     parser_version: Mapped[str | None] = mapped_column(String(32), nullable=True)
     indexed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    pdf_kind: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    ocr_applied: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    extraction_meta: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
 
     extracted_text: Mapped[str | None] = mapped_column(Text, nullable=True)
 

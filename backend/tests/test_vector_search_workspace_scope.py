@@ -4,7 +4,7 @@ import unittest
 import uuid
 from unittest.mock import patch
 
-from app.services.vector_search import _dense_candidates, _keyword_candidates
+from app.services.retrieval.generic_hybrid import dense_candidates, keyword_candidates
 
 
 class VectorSearchWorkspaceScopeTests(unittest.TestCase):
@@ -24,8 +24,8 @@ class VectorSearchWorkspaceScopeTests(unittest.TestCase):
         db = _Exec()
         wid = uuid.uuid4()
         dim = 256
-        with patch("app.services.vector_search.get_embedding_dim", return_value=dim):
-            _dense_candidates(
+        with patch("app.services.retrieval.generic_hybrid.get_embedding_dim", return_value=dim):
+            dense_candidates(
                 db,  # type: ignore[arg-type]
                 workspace_id=wid,
                 query_embedding=[0.1] * dim,
@@ -51,7 +51,7 @@ class VectorSearchWorkspaceScopeTests(unittest.TestCase):
 
         db = _Exec()
         wid = uuid.uuid4()
-        _keyword_candidates(
+        keyword_candidates(
             db,  # type: ignore[arg-type]
             workspace_id=wid,
             query_text="test",

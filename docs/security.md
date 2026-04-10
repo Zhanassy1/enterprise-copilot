@@ -8,6 +8,15 @@
 - Store `DATABASE_URL`, `REDIS_URL`, S3 keys, and `LLM_API_KEY` in a secrets manager or sealed env on the host — not in git.
 - Rotate credentials on compromise; password reset revokes all refresh tokens for that user.
 
+## JWT access tokens
+
+- HS256 access tokens include `sub` (user id), `iat`, `exp`, `jti`, `iss`, and `aud`. Validation uses `JWT_ISSUER` / `JWT_AUDIENCE` (defaults: `enterprise-copilot`, `api`). Changing issuer or audience invalidates previously issued access tokens until clients re-authenticate.
+- Password hashes use Argon2id for new credentials; legacy PBKDF2 hashes still verify and are upgraded on successful login (`verify_and_update`).
+
+## Email identity
+
+- Registration, login, password reset, and invitations normalize email with **trim + lower ASCII** at the API boundary so lookups match stored values. A one-time migration may run `lower(trim(email))` on existing rows; resolve duplicate canonical addresses before applying.
+
 ## Transport and reverse proxy
 
 - Terminate TLS at your reverse proxy (nginx, Traefik, cloud LB). The API process typically listens on HTTP behind the proxy.
@@ -26,6 +35,10 @@
 ## Rate limits
 
 - Global per-IP and per-user limits apply in middleware; auth and upload endpoints have stricter buckets; **search/chat (RAG)** use `RATE_LIMIT_RAG_PER_USER_PER_MINUTE` (scaled by plan like other buckets). Tune in `Settings` (`rate_limit_*`).
+
+## Document uploads
+
+- Upload size is capped while streaming to storage (before antivirus scan). Deduplication is by SHA-256 per workspace for active pipeline rows (`queued` through `ready`); a failed document can be uploaded again. A partial unique index on `(workspace_id, sha256)` enforces this at the database level.
 
 ## Headers
 

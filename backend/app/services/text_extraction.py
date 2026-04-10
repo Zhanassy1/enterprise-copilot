@@ -12,7 +12,7 @@ class ExtractedDocument:
     language: str | None
 
 
-def _detect_language(text: str) -> str | None:
+def detect_language(text: str) -> str | None:
     cleaned = (text or "").strip()
     if not cleaned:
         return None
@@ -37,7 +37,7 @@ def extract_text_metadata_from_file(path: str, *, content_type: str | None = Non
         for page in reader.pages:
             texts.append(page.extract_text() or "")
         merged = "\n\f\n".join(texts).strip()
-        return ExtractedDocument(text=merged, page_count=len(reader.pages), language=_detect_language(merged))
+        return ExtractedDocument(text=merged, page_count=len(reader.pages), language=detect_language(merged))
 
     if (
         content_type
@@ -48,11 +48,11 @@ def extract_text_metadata_from_file(path: str, *, content_type: str | None = Non
         or suffix == ".docx"
     ):
         text = (docx2txt.process(str(p)) or "").strip()
-        return ExtractedDocument(text=text, page_count=None, language=_detect_language(text))
+        return ExtractedDocument(text=text, page_count=None, language=detect_language(text))
 
     # fallback: treat as UTF-8 text
     text = p.read_text(encoding="utf-8", errors="ignore").strip()
-    return ExtractedDocument(text=text, page_count=None, language=_detect_language(text))
+    return ExtractedDocument(text=text, page_count=None, language=detect_language(text))
 
 
 def extract_text_from_file(path: str, *, content_type: str | None = None) -> str:

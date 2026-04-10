@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import BinaryIO
 
 from app.core.config import settings
+from app.core.upload_limits import MAX_UPLOAD_BYTES, UploadTooLargeError
 from app.services.storage.base import StorageService, StoredFile
 
 
@@ -22,14 +23,20 @@ class LocalStorageService(StorageService):
 
         hasher = hashlib.sha256()
         total = 0
-        with target.open("wb") as out:
-            while True:
-                chunk = source.read(1024 * 1024)
-                if not chunk:
-                    break
-                total += len(chunk)
-                hasher.update(chunk)
-                out.write(chunk)
+        try:
+            with target.open("wb") as out:
+                while True:
+                    chunk = source.read(1024 * 1024)
+                    if not chunk:
+                        break
+                    total += len(chunk)
+                    if total > MAX_UPLOAD_BYTES:
+                        raise UploadTooLargeError()
+                    hasher.update(chunk)
+                    out.write(chunk)
+        except UploadTooLargeError:
+            target.unlink(missing_ok=True)
+            raise
 
         return StoredFile(
             storage_key=str(target).replace("\\", "/"),

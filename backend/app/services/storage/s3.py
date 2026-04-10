@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import BinaryIO
 
 from app.core.config import settings
+from app.core.upload_limits import MAX_UPLOAD_BYTES, UploadTooLargeError
 from app.services.storage.base import StorageService, StoredFile
 
 
@@ -35,20 +36,28 @@ class S3StorageService(StorageService):
 
         hasher = hashlib.sha256()
         total = 0
-        with tempfile.NamedTemporaryFile(delete=False) as tmp:
-            tmp_path = tmp.name
-            while True:
-                chunk = source.read(1024 * 1024)
-                if not chunk:
-                    break
-                total += len(chunk)
-                hasher.update(chunk)
-                tmp.write(chunk)
-
+        tmp_path: str | None = None
         try:
+            with tempfile.NamedTemporaryFile(delete=False) as tmp:
+                tmp_path = tmp.name
+                while True:
+                    chunk = source.read(1024 * 1024)
+                    if not chunk:
+                        break
+                    total += len(chunk)
+                    if total > MAX_UPLOAD_BYTES:
+                        raise UploadTooLargeError()
+                    hasher.update(chunk)
+                    tmp.write(chunk)
+
             self._client.upload_file(tmp_path, self._bucket, key)
+        except UploadTooLargeError:
+            if tmp_path:
+                Path(tmp_path).unlink(missing_ok=True)
+            raise
         finally:
-            Path(tmp_path).unlink(missing_ok=True)
+            if tmp_path:
+                Path(tmp_path).unlink(missing_ok=True)
 
         return StoredFile(storage_key=f"s3://{self._bucket}/{key}", size_bytes=total, sha256=hasher.hexdigest())
 

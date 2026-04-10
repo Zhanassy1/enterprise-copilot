@@ -11,6 +11,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
 
 from app.core.config import settings
+from app.core.email_normalization import normalize_email
 from app.core.security import generate_opaque_token, hash_opaque_token, hash_password
 from app.models.user import User
 from app.models.workspace import WorkspaceInvitation, WorkspaceMember
@@ -19,10 +20,6 @@ from app.services.workspace_service import create_personal_workspace, ensure_def
 
 INVITEABLE_ROLES = frozenset({"admin", "member", "viewer"})
 _EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
-
-
-def normalize_email(email: str) -> str:
-    return (email or "").strip().lower()
 
 
 def _invite_expiry() -> datetime:

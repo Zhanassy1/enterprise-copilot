@@ -3,6 +3,7 @@ from __future__ import annotations
 import re
 import uuid
 from datetime import UTC, datetime
+from pathlib import Path
 
 from sqlalchemy import delete, text
 from sqlalchemy.orm import Session
@@ -11,6 +12,7 @@ from app.core.config import settings
 from app.models.document import Document, DocumentChunk
 from app.services.chunking import chunk_text
 from app.services.embeddings import assert_embedding_vector_dim, embed_texts, get_embedding_dim
+from app.services.pdf_ingestion import extract_pdf_for_indexing
 from app.services.storage.base import StorageService
 from app.services.text_extraction import extract_text_metadata_from_file
 from app.services.usage_metering import max_pdf_pages_for_workspace
@@ -102,9 +104,28 @@ class DocumentIndexingService:
 
         try:
             with self.storage.local_path(document.storage_key) as local_file:
-                extracted_doc = extract_text_metadata_from_file(
-                    local_file, content_type=document.content_type
-                )
+                ct = (document.content_type or "").lower().strip()
+                try:
+                    suffix = Path(document.filename or "").suffix.lower()
+                except Exception:
+                    suffix = ""
+                if ct == "application/pdf" or suffix == ".pdf":
+                    pdf_out = extract_pdf_for_indexing(
+                        local_file, storage_key=document.storage_key
+                    )
+                    extracted_doc = pdf_out.extracted
+                    document.pdf_kind = pdf_out.pdf_kind
+                    document.ocr_applied = pdf_out.ocr_applied
+                    document.extraction_meta = pdf_out.extraction_meta
+                    parser_ver = pdf_out.parser_version
+                else:
+                    document.pdf_kind = None
+                    document.ocr_applied = False
+                    document.extraction_meta = None
+                    extracted_doc = extract_text_metadata_from_file(
+                        local_file, content_type=document.content_type
+                    )
+                    parser_ver = "v1"
             extracted = extracted_doc.text
             if not extracted:
                 raise ValueError("Failed to extract text (empty)")
@@ -194,7 +215,7 @@ class DocumentIndexingService:
             document.status = "ready"
             document.indexed_at = datetime.now(UTC)
             document.error_message = None
-            document.parser_version = "v1"
+            document.parser_version = parser_ver
             self.db.add(document)
             self.db.flush()
             return len(chunks)

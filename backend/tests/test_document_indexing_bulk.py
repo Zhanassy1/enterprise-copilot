@@ -7,6 +7,18 @@ from app.services.document_indexing import (
     DocumentIndexingService,
     reindex_null_embeddings_for_workspace,
 )
+from app.services.pdf_ingestion import PdfIndexingExtractResult
+from app.services.text_extraction import ExtractedDocument
+
+
+def _pdf_index_stub(*, text: str, page_count: int = 1, language: str = "en") -> PdfIndexingExtractResult:
+    return PdfIndexingExtractResult(
+        extracted=ExtractedDocument(text=text, page_count=page_count, language=language),
+        pdf_kind="text_native",
+        ocr_applied=False,
+        parser_version="v2",
+        extraction_meta={"extraction_coverage": 1.0},
+    )
 
 
 class _FakeExecuteResult:
@@ -89,10 +101,10 @@ class DocumentIndexingBulkTests(unittest.TestCase):
         inserted_rows = [{"id": uuid.uuid4(), "chunk_index": i} for i in range(chunk_count)]
         db = _FakeDb(inserted_rows=inserted_rows)
         doc = self._doc()
-        extracted = SimpleNamespace(text="alpha\n\nbeta\n\ngamma", page_count=1, language="en")
+        pdf_stub = _pdf_index_stub(text="alpha\n\nbeta\n\ngamma", page_count=1, language="en")
 
         with (
-            patch("app.services.document_indexing.extract_text_metadata_from_file", return_value=extracted),
+            patch("app.services.document_indexing.extract_pdf_for_indexing", return_value=pdf_stub),
             patch("app.services.document_indexing.max_pdf_pages_for_workspace", return_value=None),
             patch("app.services.document_indexing.chunk_text", return_value=["alpha", "beta", "gamma"]),
             patch("app.services.document_indexing.get_embedding_dim", return_value=dim),
@@ -118,10 +130,10 @@ class DocumentIndexingBulkTests(unittest.TestCase):
         inserted_rows = [{"id": uuid.uuid4(), "chunk_index": i} for i in range(3)]
         db = _FakeDb(inserted_rows=inserted_rows)
         doc = self._doc()
-        extracted = SimpleNamespace(text="alpha\n\nbeta\n\ngamma", page_count=1, language="en")
+        pdf_stub = _pdf_index_stub(text="alpha\n\nbeta\n\ngamma", page_count=1, language="en")
 
         with (
-            patch("app.services.document_indexing.extract_text_metadata_from_file", return_value=extracted),
+            patch("app.services.document_indexing.extract_pdf_for_indexing", return_value=pdf_stub),
             patch("app.services.document_indexing.max_pdf_pages_for_workspace", return_value=None),
             patch("app.services.document_indexing.chunk_text", return_value=["alpha", "beta", "gamma"]),
             patch("app.services.document_indexing.get_embedding_dim", return_value=dim),
@@ -141,10 +153,10 @@ class DocumentIndexingBulkTests(unittest.TestCase):
         inserted_rows = [{"id": uuid.uuid4(), "chunk_index": i} for i in range(3)]
         db = _FakeDb(inserted_rows=inserted_rows)
         doc = self._doc()
-        extracted = SimpleNamespace(text="a\n\nb\n\nc", page_count=1, language="en")
+        pdf_stub = _pdf_index_stub(text="a\n\nb\n\nc", page_count=1, language="en")
 
         with (
-            patch("app.services.document_indexing.extract_text_metadata_from_file", return_value=extracted),
+            patch("app.services.document_indexing.extract_pdf_for_indexing", return_value=pdf_stub),
             patch("app.services.document_indexing.max_pdf_pages_for_workspace", return_value=None),
             patch("app.services.document_indexing.chunk_text", return_value=["a", "b", "c"]),
             patch("app.services.document_indexing.get_embedding_dim", return_value=dim),
@@ -168,10 +180,10 @@ class DocumentIndexingBulkTests(unittest.TestCase):
         inserted_rows = [{"id": uuid.uuid4(), "chunk_index": 0}]
         db = _FakeDb(inserted_rows=inserted_rows)
         doc = self._doc()
-        extracted = SimpleNamespace(text="only", page_count=1, language="en")
+        pdf_stub = _pdf_index_stub(text="only", page_count=1, language="en")
 
         with (
-            patch("app.services.document_indexing.extract_text_metadata_from_file", return_value=extracted),
+            patch("app.services.document_indexing.extract_pdf_for_indexing", return_value=pdf_stub),
             patch("app.services.document_indexing.max_pdf_pages_for_workspace", return_value=None),
             patch("app.services.document_indexing.chunk_text", return_value=["only"]),
             patch("app.services.document_indexing.get_embedding_dim", return_value=dim),
@@ -189,10 +201,10 @@ class DocumentIndexingBulkTests(unittest.TestCase):
         dim = 384
         db = _FakeDb(inserted_rows=[{"id": uuid.uuid4(), "chunk_index": 0}])
         doc = self._doc()
-        extracted = SimpleNamespace(text="a\n\nb", page_count=1, language="en")
+        pdf_stub = _pdf_index_stub(text="a\n\nb", page_count=1, language="en")
 
         with (
-            patch("app.services.document_indexing.extract_text_metadata_from_file", return_value=extracted),
+            patch("app.services.document_indexing.extract_pdf_for_indexing", return_value=pdf_stub),
             patch("app.services.document_indexing.max_pdf_pages_for_workspace", return_value=None),
             patch("app.services.document_indexing.chunk_text", return_value=["a", "b"]),
             patch("app.services.document_indexing.get_embedding_dim", return_value=dim),

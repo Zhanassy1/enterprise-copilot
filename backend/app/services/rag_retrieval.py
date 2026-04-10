@@ -1,6 +1,8 @@
 """
 Shared RAG retrieval: pgvector hybrid search, cross-encoder rerank, quotas, optional snippet compaction.
 Used by search and chat so both follow the same ranking pipeline.
+
+Stages: vector search (generic + domain rules) → cross-encoder rerank → snippet compaction → contract-value post-rules.
 """
 
 from __future__ import annotations
@@ -109,31 +111,37 @@ def compact_hit_text(text: str, query: str, *, price_intent: bool) -> str:
     return _trim_compact_snippet_mid_word_prefix("\n".join(lines[:8])[:800])
 
 
-def retrieve_ranked_hits(
+def retrieve_vector_search_hits(
+    db: Session,
+    *,
+    workspace_id: uuid.UUID,
+    query: str,
+    query_embedding: list[float],
+    top_k: int,
+) -> list[dict]:
+    """Stage 1: hybrid pgvector retrieval + domain rules (no rerank, no snippet compaction)."""
+    return search_chunks_pgvector(
+        db,
+        workspace_id=workspace_id,
+        query_text=query,
+        query_embedding=query_embedding,
+        top_k=top_k,
+    )
+
+
+def run_cross_encoder_rerank(
     db: Session,
     *,
     workspace_id: uuid.UUID,
     user_id: uuid.UUID,
     query: str,
-    query_embedding: list[float],
+    hits: list[dict],
     top_k: int,
-    compact_snippets: bool = True,
 ) -> list[dict]:
     """
-    Retrieve hybrid candidates, rerank with the same settings as /search, then return the top ``top_k`` hits
-    (after optional snippet compaction). When reranking is enabled, ``assert_quota`` for rerank runs before
-    ``rerank_hits``; ``EVENT_RERANK`` is recorded only after a successful rerank. Skips rerank (and rerank
-    quota) when ``top_k == 0`` or when there is at most one candidate.
+    Stage 2: optional cross-encoder rerank with quota + audit event.
+    When reranking is disabled, still calls ``rerank_hits`` which returns hits unchanged.
     """
-    price_intent = is_price_intent(query)
-    effective_k = max(int(top_k), int(settings.reranker_top_n))
-    hits = search_chunks_pgvector(
-        db,
-        workspace_id=workspace_id,
-        query_text=query,
-        query_embedding=query_embedding,
-        top_k=effective_k,
-    )
     will_rerank = settings.reranker_enabled and int(top_k) > 0 and len(hits) > 1
     if will_rerank:
         assert_quota(
@@ -154,11 +162,60 @@ def retrieve_ranked_hits(
         )
     elif not settings.reranker_enabled:
         hits = rerank_hits(query, hits, top_n=int(settings.reranker_top_n))
+    return hits
+
+
+def apply_snippet_compaction(hits: list[dict], query: str, *, price_intent: bool) -> None:
+    """Stage 3: mutate hit text in place for UI/prompt compactness."""
+    for h in hits:
+        h["text"] = compact_hit_text(str(h.get("text") or ""), query, price_intent=price_intent)
+
+
+def apply_contract_value_post_rank_rules_for_query(query: str, hits: list[dict]) -> list[dict]:
+    """Reorder and adjust scores for contract-value queries."""
+    if not is_contract_value_query(query):
+        return hits
+    hits = reorder_hits_for_contract_value_query(hits)
+    adjust_hit_scores_for_contract_value_query(hits)
+    return hits
+
+
+def retrieve_ranked_hits(
+    db: Session,
+    *,
+    workspace_id: uuid.UUID,
+    user_id: uuid.UUID,
+    query: str,
+    query_embedding: list[float],
+    top_k: int,
+    compact_snippets: bool = True,
+) -> list[dict]:
+    """
+    Full pipeline: vector search → rerank → optional snippet compaction → contract-value rules.
+
+    When reranking is enabled, ``assert_quota`` for rerank runs before ``rerank_hits``;
+    ``EVENT_RERANK`` is recorded only after a successful rerank. Skips rerank (and rerank
+    quota) when ``top_k == 0`` or when there is at most one candidate.
+    """
+    price_intent = is_price_intent(query)
+    effective_k = max(int(top_k), int(settings.reranker_top_n))
+    hits = retrieve_vector_search_hits(
+        db,
+        workspace_id=workspace_id,
+        query=query,
+        query_embedding=query_embedding,
+        top_k=effective_k,
+    )
+    hits = run_cross_encoder_rerank(
+        db,
+        workspace_id=workspace_id,
+        user_id=user_id,
+        query=query,
+        hits=hits,
+        top_k=int(top_k),
+    )
     hits = hits[: int(top_k)]
     if compact_snippets:
-        for h in hits:
-            h["text"] = compact_hit_text(str(h.get("text") or ""), query, price_intent=price_intent)
-    if is_contract_value_query(query):
-        hits = reorder_hits_for_contract_value_query(hits)
-        adjust_hit_scores_for_contract_value_query(hits)
+        apply_snippet_compaction(hits, query, price_intent=price_intent)
+    hits = apply_contract_value_post_rank_rules_for_query(query, hits)
     return hits

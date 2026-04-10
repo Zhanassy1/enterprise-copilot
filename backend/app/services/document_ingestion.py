@@ -9,9 +9,12 @@ from pathlib import Path
 
 from fastapi import HTTPException, UploadFile
 from sqlalchemy import func, select, text
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from app.constants.ingestion import DOCUMENT_DEDUP_ACTIVE_STATUSES
 from app.core.config import settings
+from app.core.upload_limits import UploadTooLargeError
 from app.models.document import Document, IngestionJob
 from app.models.workspace import Workspace
 from app.schemas.documents import DocumentIngestOut, DocumentOut
@@ -56,7 +59,6 @@ def _effective_ingestion_pipeline_flags() -> tuple[bool, bool]:
             allow_sync = v_allow
     return async_on, allow_sync
 
-MAX_UPLOAD_BYTES = 25 * 1024 * 1024
 ALLOWED_SUFFIXES = {".pdf", ".docx", ".txt"}
 ALLOWED_CONTENT_TYPES = {
     "application/pdf",
@@ -68,6 +70,19 @@ ALLOWED_CONTENT_TYPES = {
 
 def _workspace_upload_advisory_lock_key(workspace_id: uuid.UUID) -> int:
     return int(workspace_id.int % (1 << 63))
+
+
+def _is_documents_workspace_sha256_unique_violation(exc: IntegrityError) -> bool:
+    if "uq_documents_workspace_sha256_active" in str(exc):
+        return True
+    orig = getattr(exc, "orig", None)
+    if orig is None:
+        return False
+    if getattr(orig, "pgcode", None) != "23505":
+        return False
+    diag = getattr(orig, "diag", None)
+    name = getattr(diag, "constraint_name", None) if diag else None
+    return name == "uq_documents_workspace_sha256_active"
 
 
 def validate_upload(file: UploadFile) -> None:
@@ -176,10 +191,10 @@ class DocumentIngestionService:
         )
 
     def _save_and_scan(self, file: UploadFile) -> StoredFile:
-        stored = self.storage.save_upload(file.file, file.filename or "upload.bin")
-        if stored.size_bytes > MAX_UPLOAD_BYTES:
-            self.storage.delete(stored.storage_key)
-            raise HTTPException(status_code=413, detail="File too large (max 25MB)")
+        try:
+            stored = self.storage.save_upload(file.file, file.filename or "upload.bin")
+        except UploadTooLargeError:
+            raise HTTPException(status_code=413, detail="File too large (max 25MB)") from None
         with self.storage.local_path(stored.storage_key) as local_file:
             scan_uploaded_file_safe(local_file)
         return stored
@@ -190,7 +205,7 @@ class DocumentIngestionService:
                 Document.workspace_id == workspace.id,
                 Document.sha256 == stored.sha256,
                 Document.deleted_at.is_(None),
-                Document.status == "ready",
+                Document.status.in_(DOCUMENT_DEDUP_ACTIVE_STATUSES),
             )
         )
 
@@ -343,20 +358,30 @@ class DocumentIngestionService:
         stored = self._save_and_scan(file)
         should_cleanup_storage = True
         try:
-            dup = self._find_duplicate(workspace, stored)
-            if dup:
-                return DocumentIngestOut(document=DocumentOut.from_document(dup), chunks_created=0)
-            # Per-workspace transaction lock: without it, two concurrent uploads can both pass
-            # assert_quota() (same usage snapshot) and both insert rows (TOCTOU vs document cap and usage events).
+            # Per-workspace transaction lock: dedup + quota + inserts must see a consistent snapshot
+            # (avoids TOCTOU vs caps and duplicate rows). I/O stays above: validate + save/scan are not serialized.
             self.db.execute(
                 text("SELECT pg_advisory_xact_lock(:key)"),
                 {"key": _workspace_upload_advisory_lock_key(workspace.id)},
             )
+            dup = self._find_duplicate(workspace, stored)
+            if dup:
+                return DocumentIngestOut(document=DocumentOut.from_document(dup), chunks_created=0)
             self._check_quota(user_id, workspace, stored)
-            doc = self._create_document_record(user_id, workspace, file, stored)
-            # Ownership is transferred to persisted document record.
-            should_cleanup_storage = False
-            chunks_created = self._enqueue_ingestion_job(workspace, stored, doc)
+            try:
+                doc = self._create_document_record(user_id, workspace, file, stored)
+                # Ownership is transferred to persisted document record.
+                should_cleanup_storage = False
+                chunks_created = self._enqueue_ingestion_job(workspace, stored, doc)
+            except IntegrityError as exc:
+                if not _is_documents_workspace_sha256_unique_violation(exc):
+                    raise
+                self.db.rollback()
+                should_cleanup_storage = True
+                dup2 = self._find_duplicate(workspace, stored)
+                if dup2:
+                    return DocumentIngestOut(document=DocumentOut.from_document(dup2), chunks_created=0)
+                raise
             self._record_upload_events(user_id, workspace, doc, stored)
             self.db.commit()
             return DocumentIngestOut(

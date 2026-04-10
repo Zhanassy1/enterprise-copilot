@@ -27,6 +27,29 @@ def test_auth_register_happy_path(client: TestClient) -> None:
     assert "id" in body
 
 
+def test_auth_register_login_email_case_insensitive(client: TestClient) -> None:
+    local = uuid.uuid4().hex[:12]
+    canonical = f"case_{local}@example.com"
+    mixed = f"CASE_{local}@EXAMPLE.COM"
+    password = "AuthCaseTest1!"
+    reg = client.post(
+        "/api/v1/auth/register",
+        json={"email": mixed, "password": password, "full_name": "Case Test"},
+    )
+    assert reg.status_code == 200, reg.text
+    assert reg.json()["email"] == canonical
+    ok = client.post(
+        "/api/v1/auth/login",
+        json={"email": canonical, "password": password},
+    )
+    assert ok.status_code == 200, ok.text
+    alt = client.post(
+        "/api/v1/auth/login",
+        json={"email": mixed, "password": password},
+    )
+    assert alt.status_code == 200, alt.text
+
+
 def test_auth_logout_all_unauthorized(client: TestClient) -> None:
     r = client.post("/api/v1/auth/logout-all")
     assert r.status_code == 401

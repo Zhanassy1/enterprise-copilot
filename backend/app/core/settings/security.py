@@ -6,6 +6,8 @@ from pydantic import BaseModel, Field
 class SecuritySettings(BaseModel):
     secret_key: str = Field(default="dev-secret-change-me")
     secret_key_min_length: int = Field(default=32, ge=16, le=256)
+    jwt_issuer: str = Field(default="enterprise-copilot")
+    jwt_audience: str = Field(default="api")
     # hardened = recommended production path (TLS DB, S3, trusted proxy policy). minimal = self-hosted reference (explicit opt-outs).
     production_profile: Literal["hardened", "minimal"] = Field(default="hardened")
     # When True and ENVIRONMENT=production, DATABASE_URL must indicate TLS (e.g. sslmode=require).

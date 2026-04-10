@@ -4,6 +4,8 @@ from typing import Literal, Self
 
 from pydantic import BaseModel, Field, model_validator
 
+from app.core.settings.retrieval_rules import RetrievalRuleWeights
+
 AnswerStyle = Literal["concise", "narrative"]
 
 
@@ -39,6 +41,9 @@ class LLMSettings(BaseModel):
     reranker_enabled: bool = Field(default=True)
     reranker_model_name: str = Field(default="cross-encoder/ms-marco-MiniLM-L-6-v2")
     reranker_top_n: int = Field(default=30, ge=2, le=200)
+
+    # Post-RRF domain heuristics (contract/price/penalty/termination); see ``domain_rules`` module.
+    retrieval_domain_rules: RetrievalRuleWeights = Field(default_factory=RetrievalRuleWeights)
 
     # RAG: concise = short grounded line for prices; narrative = 2–4 sentences with brief context
     default_answer_style: AnswerStyle = Field(default="concise")

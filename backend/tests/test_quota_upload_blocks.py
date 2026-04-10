@@ -67,6 +67,12 @@ class QuotaUploadBlocksTests(unittest.TestCase):
 
         mock_db.execute.side_effect = execute_side_effect
 
+        def scalar_side_effect(*_a, **_k):
+            order.append("scalar_dup")
+            return None
+
+        mock_db.scalar.side_effect = scalar_side_effect
+
         def quota_side_effect(*_a, **_k):
             order.append("assert_quota")
             return None
@@ -79,7 +85,7 @@ class QuotaUploadBlocksTests(unittest.TestCase):
         ):
             svc = DocumentIngestionService(mock_db, storage)
             svc.upload_document(user_id=user_id, workspace=workspace, file=file)
-        self.assertEqual(order, ["execute", "assert_quota"])
+        self.assertEqual(order, ["execute", "scalar_dup", "assert_quota"])
 
 
 if __name__ == "__main__":
