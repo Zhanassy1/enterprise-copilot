@@ -37,6 +37,12 @@ class IngestionSettings(BaseModel):
         le=2000,
         description="Character overlap between consecutive chunks.",
     )
+    embedding_batch_size: int = Field(
+        default=32,
+        ge=1,
+        le=512,
+        description="Max texts per embedding encode + DB update batch during indexing (memory and retry granularity).",
+    )
 
     # PDF: native text vs scanned / OCR (AWS Textract)
     pdf_ocr_enabled: bool = Field(default=False, description="Run cloud OCR when native PDF text is weak or empty.")

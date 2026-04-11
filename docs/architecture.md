@@ -8,7 +8,7 @@
 
 1. Пользователь загружает файл через API (`POST /documents/upload`).
 2. API сохраняет объект в storage, пишет строки `documents` и `ingestion_jobs`, **коммитит** транзакцию, ставит задачу Celery `ingest_document_task` (не индексирует в HTTP).
-3. **Worker** извлекает текст, режет на chunks, считает embeddings, пишет в PostgreSQL (**pgvector**).
+3. **Worker** извлекает текст, режет на chunks, пишет строки чанков с `embedding_vector` = NULL, **коммитит**, затем считает embeddings **батчами** (`EMBEDDING_BATCH_SIZE`, коммит после каждого батча). При сбое повторная задача может **дозаполнить** только NULL-векторы без повторного PDF/OCR, если не менялись `CHUNK_SIZE`/`CHUNK_OVERLAP` (fingerprint в `documents.extraction_meta.indexing`). Пишет в PostgreSQL (**pgvector**).
 4. Поиск и чат обращаются к чанкам с фильтром `workspace_id`; применяются квоты и rate limits.
 
 PDF: эвристическая классификация (text vs scanned/mixed), опциональный **AWS Textract** для слабого native-текста, метрика **extraction coverage** в `documents.extraction_meta`. Подробности: [ingestion-pdf.md](ingestion-pdf.md).
@@ -28,9 +28,9 @@ PDF: эвристическая классификация (text vs scanned/mixe
 
 ## Retrieval (поиск по чанкам)
 
-Слой **generic hybrid** (`app/services/retrieval/generic_hybrid.py`): dense pgvector + полнотекст (tsvector) + RRF. Поверх него **domain rules** (`app/services/retrieval/domain_rules.py`): эвристики по intent (цена / неустойка / расторжение и т.д.), порог `retrieval_min_score`, dedup почти дубликатов; веса вынесены в `RetrievalRuleWeights` (`app/core/settings/retrieval_rules.py`, поле `retrieval_domain_rules` в настройках). Далее общий пайплайн RAG в `rag_retrieval.py`: опциональный cross-encoder rerank, compaction сниппетов, пост-правила для «цена договора» (`nlp.py`).
+Слой **generic hybrid** (`app/services/retrieval/generic_hybrid.py`): dense pgvector + полнотекст (tsvector) + RRF. Поверх него **domain rules** (`app/services/retrieval/domain_rules.py`): эвристики по intent (цена / неустойка / расторжение и т.д.), порог `retrieval_min_score`, dedup почти дубликатов; веса вынесены в `RetrievalRuleWeights` (`app/core/settings/retrieval_rules.py`, поле `retrieval_domain_rules` в настройках). Далее общий пайплайн RAG в `rag_retrieval.py`: опциональный cross-encoder rerank (параметры инференса — device, batch, max length и таймаут predict — в `LLMSettings`; latency и таймауты в `/metrics`), compaction сниппетов, пост-правила для «цена договора» (`nlp.py`).
 
-**Offline eval:** золотой набор `backend/eval/retrieval_gold.jsonl`, эталон метрик `backend/eval/baseline_metrics.json`, прогон `python scripts/eval_retrieval.py` (нужны `DATABASE_URL`, после `python scripts/eval_retrieval.py --seed` — `RETRIEVAL_EVAL_WORKSPACE_ID`). Регрессия: `pytest tests/test_retrieval_eval_integration.py` при `RUN_INTEGRATION_TESTS=1` (входит в CI job с Postgres).
+**Offline eval:** конфиг `backend/eval/retrieval_eval.config.json`, скрипт `backend/scripts/eval_retrieval.py`, синтетический gold (без ПДн) — политика и запуск: [backend/eval/README.md](../backend/eval/README.md). Регрессия: `pytest tests/test_retrieval_eval_integration.py` при `RUN_INTEGRATION_TESTS=1` (входит в CI job с Postgres).
 
 ## Связанные документы
 

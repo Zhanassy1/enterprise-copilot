@@ -1,6 +1,10 @@
 import unittest
 
-from app.services.nlp import CONTRACT_VALUE_UNAVAILABLE_RU, compress_price_answer, filter_ungrounded_sentences
+from app.services.nlp import (
+    CONTRACT_VALUE_UNAVAILABLE_RU,
+    compress_price_answer,
+    filter_ungrounded_sentences,
+)
 
 
 class GroundingFilterTests(unittest.TestCase):

@@ -10,11 +10,14 @@ import json
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
+from unittest.mock import patch
 from uuid import UUID
 
 from sqlalchemy.orm import Session
 
+from app.core.config import settings
 from app.services.embeddings import embed_texts
+from app.services.rag_retrieval import retrieve_ranked_hits
 from app.services.retrieval_metrics import aggregate_metrics
 from app.services.vector_search import search_chunks_pgvector
 
@@ -65,6 +68,37 @@ def run_search_chunks_eval(
         )
         ranked = [str(h["chunk_id"]) for h in hits]
         examples.append((row.gold_chunk_ids, ranked))
+    return aggregate_metrics(examples, k_list=k_list)
+
+
+def run_retrieve_ranked_hits_eval(
+    db: Session,
+    *,
+    workspace_id: UUID,
+    user_id: UUID,
+    gold_rows: list[GoldRow],
+    k_list: tuple[int, ...] = (1, 3, 5, 10),
+) -> dict[str, float]:
+    """
+    Full RAG path: vector → rerank (no-op when disabled) → snippet compaction →
+    contract-value post-rules. Cross-encoder is disabled via ``reranker_enabled=False``.
+    """
+    examples: list[tuple[set[str], list[str]]] = []
+    top_k = max(k_list)
+    with patch.object(settings, "reranker_enabled", False):
+        for row in gold_rows:
+            qvec = embed_texts([row.query_text])[0]
+            hits = retrieve_ranked_hits(
+                db,
+                workspace_id=workspace_id,
+                user_id=user_id,
+                query=row.query_text,
+                query_embedding=qvec,
+                top_k=top_k,
+                compact_snippets=True,
+            )
+            ranked = [str(h["chunk_id"]) for h in hits]
+            examples.append((row.gold_chunk_ids, ranked))
     return aggregate_metrics(examples, k_list=k_list)
 
 

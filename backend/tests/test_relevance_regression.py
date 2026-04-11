@@ -3,7 +3,6 @@ import unittest
 
 from app.core.config import settings
 from app.services.nlp import decide_response_mode
-
 from tests.eval_paths import find_evals_file
 
 

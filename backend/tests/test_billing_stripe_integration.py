@@ -119,9 +119,10 @@ def test_stripe_webhook_checkout_completed_updates_quota(
     two_workspaces: dict[str, dict[str, str]],
     configure_stripe,
 ) -> None:
+    from sqlalchemy import select
+
     from app.db.session import SessionLocal
     from app.models.billing import WorkspaceQuota
-    from sqlalchemy import select
 
     a = two_workspaces["a"]
     wid = a["ws"]
@@ -168,9 +169,10 @@ def test_stripe_webhook_payment_failed_sets_grace(
     two_workspaces: dict[str, dict[str, str]],
     configure_stripe,
 ) -> None:
+    from sqlalchemy import select
+
     from app.db.session import SessionLocal
     from app.models.billing import WorkspaceQuota
-    from sqlalchemy import select
 
     b = two_workspaces["b"]
     wid = b["ws"]
@@ -214,9 +216,10 @@ def test_stripe_webhook_subscription_deleted_downgrades_free(
     two_workspaces: dict[str, dict[str, str]],
     configure_stripe,
 ) -> None:
+    from sqlalchemy import select
+
     from app.db.session import SessionLocal
     from app.models.billing import WorkspaceQuota
-    from sqlalchemy import select
 
     b = two_workspaces["b"]
     wid = b["ws"]

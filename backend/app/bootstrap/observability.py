@@ -7,6 +7,7 @@ from sqlalchemy import func, select
 from app.core.config import Settings
 from app.db.session import SessionLocal
 from app.middleware.metrics import get_metrics_state
+from app.middleware.rerank_metrics import get_rerank_metrics_state
 from app.models.document import IngestionJob
 
 
@@ -43,6 +44,10 @@ def register_metrics_route(app: FastAPI, settings: Settings, log: logging.Logger
         for key, value in sorted(_metrics_latency_sum_ms.items()):
             method, path = key
             lines.append(f'http_request_latency_ms_sum{{method="{method}",path="{path}"}} {float(value):.4f}')
+        rr_calls, rr_latency_sum, rr_timeouts = get_rerank_metrics_state()
+        lines.append(f"rerank_calls_total {int(rr_calls)}")
+        lines.append(f"rerank_latency_ms_sum {float(rr_latency_sum):.4f}")
+        lines.append(f"rerank_timeouts_total {int(rr_timeouts)}")
         try:
             from app.tasks import ingestion as _ing_metrics
 

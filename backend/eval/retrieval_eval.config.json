@@ -1,0 +1,8 @@
+{
+  "gold_relative": "eval/retrieval_gold.jsonl",
+  "baseline_relative": "eval/baseline_metrics.json",
+  "ranked_baseline_relative": "eval/baseline_metrics_ranked.json",
+  "k_list": [1, 3, 5, 10],
+  "regression_epsilon": 0.02,
+  "notes": "Default gold is synthetic (seed_corpus + fixed chunk UUIDs). For CI smoke use eval/retrieval_gold_smoke.jsonl via --gold."
+}

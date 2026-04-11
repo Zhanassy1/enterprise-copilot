@@ -17,3 +17,4 @@ def test_default_chunk_settings() -> None:
     s = IngestionSettings()
     assert s.chunk_size == 800
     assert s.chunk_overlap == 200
+    assert s.embedding_batch_size == 32

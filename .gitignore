@@ -42,3 +42,8 @@ Thumbs.db
 
 # Runtime data
 backend/data/uploads/
+
+# Local retrieval eval datasets (may contain PII or production snippets — never commit)
+backend/eval/*_local.jsonl
+backend/eval/*_private.jsonl
+backend/eval/*_private.*

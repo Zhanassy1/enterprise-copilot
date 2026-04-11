@@ -1,6 +1,6 @@
 [tool.ruff]
 line-length = 100
-target-version = "py311"
+target-version = "py312"
 
 [tool.ruff.lint]
 select = ["E", "W", "F", "I", "B", "UP"]
@@ -14,7 +14,11 @@ ignore = ["E501", "B008"]
 [tool.mypy]
 strict = false
 ignore_missing_imports = true
-python_version = "3.11"
+python_version = "3.12"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+markers = [
+    "retrieval_regression: seeded corpus + gold JSONL regression gates",
+    "perf: opt-in load/perf scenarios (requires RUN_PERF_TESTS=1)",
+]

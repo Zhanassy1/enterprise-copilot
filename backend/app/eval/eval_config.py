@@ -1,0 +1,60 @@
+"""Load retrieval offline-eval config (paths, k-list, regression epsilon)."""
+
+from __future__ import annotations
+
+import json
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Any
+
+
+@dataclass(frozen=True)
+class RetrievalEvalConfig:
+    """Parameters for ``scripts/eval_retrieval.py`` and CI-style regression checks."""
+
+    gold_relative: str
+    baseline_relative: str
+    k_list: tuple[int, ...]
+    regression_epsilon: float
+    notes: str = ""
+    ranked_baseline_relative: str | None = None
+
+    @classmethod
+    def from_dict(cls, raw: dict[str, Any]) -> RetrievalEvalConfig:
+        k_raw = raw.get("k_list") or [1, 3, 5, 10]
+        k_list = tuple(int(x) for x in k_raw)
+        rb = raw.get("ranked_baseline_relative")
+        return cls(
+            gold_relative=str(raw["gold_relative"]),
+            baseline_relative=str(raw["baseline_relative"]),
+            k_list=k_list,
+            regression_epsilon=float(raw.get("regression_epsilon", 0.02)),
+            notes=str(raw.get("notes") or ""),
+            ranked_baseline_relative=str(rb) if rb else None,
+        )
+
+
+def load_retrieval_eval_config(path: Path) -> RetrievalEvalConfig:
+    with path.open(encoding="utf-8") as f:
+        data = json.load(f)
+    return RetrievalEvalConfig.from_dict(data)
+
+
+def resolve_backend_paths(
+    backend_root: Path,
+    config: RetrievalEvalConfig,
+) -> tuple[Path, Path]:
+    """Absolute paths to gold JSONL and baseline JSON."""
+    gold = (backend_root / config.gold_relative).resolve()
+    baseline = (backend_root / config.baseline_relative).resolve()
+    return gold, baseline
+
+
+def resolve_ranked_baseline_path(
+    backend_root: Path,
+    config: RetrievalEvalConfig,
+) -> Path | None:
+    """Absolute path to ranked-pipeline baseline JSON, if configured."""
+    if not config.ranked_baseline_relative:
+        return None
+    return (backend_root / config.ranked_baseline_relative).resolve()

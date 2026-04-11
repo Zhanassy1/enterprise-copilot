@@ -1,7 +1,7 @@
 """Partial unique index: workspace + sha256 for active document pipeline rows
 
-Revision ID: 20260411_0017
-Revises: 20260410_0016_canonical_email_lower
+Revision ID: 20260411_0017_doc_ws_sha256
+Revises: 20260410_0016_email_lower
 Create Date: 2026-04-11
 
 """
@@ -12,8 +12,8 @@ import sqlalchemy as sa
 
 from alembic import op
 
-revision = "20260411_0017_documents_workspace_sha256_active"
-down_revision = "20260410_0016_canonical_email_lower"
+revision = "20260411_0017_doc_ws_sha256"
+down_revision = "20260410_0016_email_lower"
 branch_labels = None
 depends_on = None
 

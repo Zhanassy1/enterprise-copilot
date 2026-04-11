@@ -7,6 +7,7 @@ from pydantic import BaseModel, Field, model_validator
 from app.core.settings.retrieval_rules import RetrievalRuleWeights
 
 AnswerStyle = Literal["concise", "narrative"]
+RerankerDevice = Literal["auto", "cpu", "cuda", "mps"]
 
 
 class LLMSettings(BaseModel):
@@ -41,6 +42,28 @@ class LLMSettings(BaseModel):
     reranker_enabled: bool = Field(default=True)
     reranker_model_name: str = Field(default="cross-encoder/ms-marco-MiniLM-L-6-v2")
     reranker_top_n: int = Field(default=30, ge=2, le=200)
+    reranker_device: RerankerDevice = Field(
+        default="auto",
+        description="Inference device for CrossEncoder; auto picks cuda → mps → cpu.",
+    )
+    reranker_batch_size: int = Field(
+        default=16,
+        ge=1,
+        le=128,
+        description="Batch size for CrossEncoder.predict (throughput vs memory).",
+    )
+    reranker_max_length: int = Field(
+        default=512,
+        ge=32,
+        le=4096,
+        description="Max token length passed to the cross-encoder tokenizer.",
+    )
+    reranker_predict_timeout_seconds: float = Field(
+        default=0.0,
+        ge=0.0,
+        le=600.0,
+        description="If >0, run predict in a thread and on timeout return original order; 0 disables.",
+    )
 
     # Post-RRF domain heuristics (contract/price/penalty/termination); see ``domain_rules`` module.
     retrieval_domain_rules: RetrievalRuleWeights = Field(default_factory=RetrievalRuleWeights)

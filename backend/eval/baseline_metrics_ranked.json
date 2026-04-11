@@ -1,0 +1,15 @@
+{
+  "mrr": 0.85,
+  "recall_at_1": 0.85,
+  "recall_at_3": 0.85,
+  "recall_at_5": 0.85,
+  "recall_at_10": 0.85,
+  "recall_multi_at_1": 0.85,
+  "recall_multi_at_3": 0.85,
+  "recall_multi_at_5": 0.85,
+  "recall_multi_at_10": 0.85,
+  "ndcg_at_1": 0.85,
+  "ndcg_at_3": 0.85,
+  "ndcg_at_5": 0.85,
+  "ndcg_at_10": 0.85
+}

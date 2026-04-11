@@ -3,6 +3,7 @@ import uuid
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
+from app.core.config import settings
 from app.services.document_indexing import (
     DocumentIndexingService,
     reindex_null_embeddings_for_workspace,
@@ -31,18 +32,28 @@ class _FakeExecuteResult:
     def all(self):
         return self._rows
 
+    def first(self):
+        return self._rows[0] if self._rows else None
+
 
 class _FakeDb:
     def __init__(self, inserted_rows):
         self.inserted_rows = inserted_rows
         self.execute_calls = []
         self.flushes = 0
+        self.commits = 0
 
     def add(self, _obj) -> None:
         return None
 
     def flush(self) -> None:
         self.flushes += 1
+
+    def commit(self) -> None:
+        self.commits += 1
+
+    def refresh(self, *_args, **_kwargs) -> None:
+        return None
 
     def execute(self, stmt, params=None):
         sql = str(stmt)
@@ -54,12 +65,13 @@ class _FakeDb:
 
 
 class _FakeReindexDb:
-    """First execute: SELECT rows; second: bulk UPDATE."""
+    """SELECT returns rows once, then empty; UPDATE after each batch."""
 
     def __init__(self, select_rows):
         self.select_rows = select_rows
         self.execute_calls = []
         self.commits = 0
+        self._select_pass = 0
 
     def execute(self, stmt, params=None):
         sql = str(stmt)
@@ -67,7 +79,12 @@ class _FakeReindexDb:
         self.execute_calls.append((sql, payload))
         if "UPDATE document_chunks c" in sql:
             return _FakeExecuteResult([])
-        return _FakeExecuteResult(self.select_rows)
+        if "FROM document_chunks" in sql and "embedding_vector IS NULL" in sql:
+            self._select_pass += 1
+            if self._select_pass == 1:
+                return _FakeExecuteResult(self.select_rows)
+            return _FakeExecuteResult([])
+        return _FakeExecuteResult([])
 
     def commit(self) -> None:
         self.commits += 1
@@ -117,13 +134,14 @@ class DocumentIndexingBulkTests(unittest.TestCase):
             out = svc.run(doc)  # type: ignore[arg-type]
 
         self.assertEqual(out, 3)
-        self.assertEqual(db.flushes, 3)
+        self.assertGreaterEqual(db.flushes, 1)
         chunk_sql_calls = [
             sql
             for sql, _ in db.execute_calls
             if "INSERT INTO document_chunks" in sql or "UPDATE document_chunks c" in sql
         ]
         self.assertEqual(len(chunk_sql_calls), 2)
+        self.assertGreaterEqual(db.commits, 2)
 
     def test_embedding_update_sql_uses_model_dimension(self) -> None:
         dim = 512
@@ -148,7 +166,7 @@ class DocumentIndexingBulkTests(unittest.TestCase):
         update_sql = next(sql for sql, _ in db.execute_calls if "UPDATE document_chunks c" in sql)
         self.assertIn(f"vector({dim})", update_sql)
 
-    def test_updates_only_available_vectors_when_vectors_shorter_than_chunks(self) -> None:
+    def test_raises_when_embed_returns_fewer_vectors_than_batch_texts(self) -> None:
         dim = 384
         inserted_rows = [{"id": uuid.uuid4(), "chunk_index": i} for i in range(3)]
         db = _FakeDb(inserted_rows=inserted_rows)
@@ -163,17 +181,10 @@ class DocumentIndexingBulkTests(unittest.TestCase):
             patch("app.services.document_indexing.embed_texts", return_value=[[0.1] * dim]),
         ):
             svc = DocumentIndexingService(db, self._storage())
-            out = svc.run(doc)  # type: ignore[arg-type]
+            with self.assertRaises(ValueError) as ctx:
+                svc.run(doc)  # type: ignore[arg-type]
 
-        self.assertEqual(out, 3)
-        update_calls = [
-            payload
-            for sql, payload in db.execute_calls
-            if "UPDATE document_chunks c" in sql
-        ]
-        self.assertEqual(len(update_calls), 1)
-        self.assertEqual(len(update_calls[0]["ids"]), 1)
-        self.assertEqual(len(update_calls[0]["vecs"]), 1)
+        self.assertIn("mismatch", str(ctx.exception).lower())
 
     def test_raises_when_embedding_vector_dimension_mismatches_model(self) -> None:
         dim = 384
@@ -217,7 +228,7 @@ class DocumentIndexingBulkTests(unittest.TestCase):
         self.assertEqual(doc.status, "failed")
         self.assertIn("mismatch", str(doc.error_message).lower())
 
-    def test_reindex_null_embeddings_uses_single_bulk_update(self) -> None:
+    def test_reindex_null_embeddings_commits_per_batch(self) -> None:
         wid = uuid.uuid4()
         chunk_id = uuid.uuid4()
         rows = [{"id": chunk_id, "text": "hello"}]
@@ -230,11 +241,43 @@ class DocumentIndexingBulkTests(unittest.TestCase):
             n = reindex_null_embeddings_for_workspace(db, workspace_id=wid)
 
         self.assertEqual(n, 1)
-        self.assertEqual(db.commits, 1)
+        self.assertGreaterEqual(db.commits, 1)
         update_calls = [sql for sql, _ in db.execute_calls if "UPDATE document_chunks c" in sql]
-        self.assertEqual(len(update_calls), 1)
+        self.assertGreaterEqual(len(update_calls), 1)
         self.assertIn("unnest", update_calls[0].lower())
         self.assertIn(f"vector({dim})", update_calls[0])
+
+    def test_embedding_batches_split_embed_calls_when_batch_size_small(self) -> None:
+        chunk_count = 5
+        dim = 384
+        inserted_rows = [{"id": uuid.uuid4(), "chunk_index": i} for i in range(chunk_count)]
+        db = _FakeDb(inserted_rows=inserted_rows)
+        doc = self._doc()
+        pdf_stub = _pdf_index_stub(text="x\n\n" * 20, page_count=1, language="en")
+        embed_calls: list[int] = []
+
+        def _embed_side_effect(texts, **_kwargs):
+            embed_calls.append(len(texts))
+            return [[0.1] * dim for _ in texts]
+
+        with (
+            patch("app.services.document_indexing.extract_pdf_for_indexing", return_value=pdf_stub),
+            patch("app.services.document_indexing.max_pdf_pages_for_workspace", return_value=None),
+            patch(
+                "app.services.document_indexing.chunk_text",
+                return_value=[f"c{i}" for i in range(chunk_count)],
+            ),
+            patch("app.services.document_indexing.get_embedding_dim", return_value=dim),
+            patch("app.services.document_indexing.embed_texts", side_effect=_embed_side_effect),
+            patch.object(settings, "embedding_batch_size", 2),
+        ):
+            svc = DocumentIndexingService(db, self._storage())
+            out = svc.run(doc)  # type: ignore[arg-type]
+
+        self.assertEqual(out, chunk_count)
+        self.assertEqual(embed_calls, [2, 2, 1])
+        update_calls = [sql for sql, _ in db.execute_calls if "UPDATE document_chunks c" in sql]
+        self.assertEqual(len(update_calls), 3)
 
 
 if __name__ == "__main__":

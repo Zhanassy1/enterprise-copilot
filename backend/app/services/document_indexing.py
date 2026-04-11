@@ -60,6 +60,84 @@ def _page_by_pos(spans: list[tuple[int, int, int]], pos: int) -> int | None:
     return None
 
 
+def _indexing_fingerprint(parser_version: str) -> dict:
+    return {
+        "chunk_size": int(settings.chunk_size),
+        "chunk_overlap": int(settings.chunk_overlap),
+        "parser_version": parser_version,
+    }
+
+
+def _merge_indexing_into_extraction_meta(document: Document, parser_version: str) -> None:
+    meta = dict(document.extraction_meta) if isinstance(document.extraction_meta, dict) else {}
+    meta["indexing"] = _indexing_fingerprint(parser_version)
+    document.extraction_meta = meta
+
+
+def _indexing_chunk_config_matches(document: Document) -> bool:
+    meta = document.extraction_meta if isinstance(document.extraction_meta, dict) else {}
+    idx = meta.get("indexing")
+    if not isinstance(idx, dict):
+        return False
+    try:
+        return int(idx.get("chunk_size", -1)) == int(settings.chunk_size) and int(
+            idx.get("chunk_overlap", -1)
+        ) == int(settings.chunk_overlap)
+    except (TypeError, ValueError):
+        return False
+
+
+def _document_chunk_stats(db: Session, document_id: uuid.UUID) -> tuple[int, int]:
+    row = (
+        db.execute(
+            text(
+                """
+            SELECT
+              COUNT(*)::int AS total,
+              COUNT(*) FILTER (WHERE c.embedding_vector IS NULL)::int AS pending
+            FROM document_chunks c
+            WHERE c.document_id = CAST(:document_id AS uuid)
+            """
+            ),
+            {"document_id": str(document_id)},
+        )
+        .mappings()
+        .first()
+    )
+    if not row:
+        return 0, 0
+    return int(row["total"]), int(row["pending"])
+
+
+def _chunk_count(db: Session, document_id: uuid.UUID) -> int:
+    total, _ = _document_chunk_stats(db, document_id)
+    return total
+
+
+def _parser_version_for_finalize(document: Document) -> str:
+    meta = document.extraction_meta if isinstance(document.extraction_meta, dict) else {}
+    idx = meta.get("indexing")
+    if isinstance(idx, dict) and idx.get("parser_version"):
+        return str(idx["parser_version"])
+    return document.parser_version or "v1"
+
+
+def _try_finalize_if_all_embedded(db: Session, document: Document) -> int | None:
+    total, pending = _document_chunk_stats(db, document.id)
+    if total == 0 or pending > 0:
+        return None
+    if document.status == "ready":
+        return total
+    document.status = "ready"
+    document.indexed_at = datetime.now(UTC)
+    document.error_message = None
+    if not document.parser_version:
+        document.parser_version = _parser_version_for_finalize(document)
+    db.add(document)
+    db.flush()
+    return total
+
+
 def _bulk_update_chunk_embeddings(
     db: Session,
     *,
@@ -91,12 +169,125 @@ def _bulk_update_chunk_embeddings(
     )
 
 
+def _embed_chunk_ids_in_batches(
+    db: Session,
+    *,
+    chunk_ids: list[str],
+    texts: list[str],
+    embedding_dim: int,
+    batch_size: int,
+) -> None:
+    if len(chunk_ids) != len(texts):
+        raise ValueError("chunk_ids and texts length mismatch")
+    bs = max(1, int(batch_size))
+    for start in range(0, len(chunk_ids), bs):
+        batch_ids = chunk_ids[start : start + bs]
+        batch_texts = texts[start : start + bs]
+        vectors = embed_texts(
+            batch_texts,
+            encode_batch_size=min(bs, len(batch_texts)),
+        )
+        if len(vectors) != len(batch_ids):
+            raise ValueError("Embedding count mismatch in batch")
+        _bulk_update_chunk_embeddings(
+            db,
+            chunk_ids=batch_ids,
+            vectors=vectors,
+            embedding_dim=embedding_dim,
+        )
+        db.commit()
+
+
+def _pending_chunks_ordered(db: Session, document_id: uuid.UUID) -> list[tuple[str, str]]:
+    rows = (
+        db.execute(
+            text(
+                """
+            SELECT c.id::text AS id, c.text AS text
+            FROM document_chunks c
+            WHERE c.document_id = CAST(:document_id AS uuid)
+              AND c.embedding_vector IS NULL
+            ORDER BY c.chunk_index ASC
+            """
+            ),
+            {"document_id": str(document_id)},
+        )
+        .mappings()
+        .all()
+    )
+    return [(str(r["id"]), str(r["text"])) for r in rows]
+
+
 class DocumentIndexingService:
     def __init__(self, db: Session, storage: StorageService) -> None:
         self.db = db
         self.storage = storage
 
+    def _mark_ready(self, document: Document, parser_ver: str) -> None:
+        document.status = "ready"
+        document.indexed_at = datetime.now(UTC)
+        document.error_message = None
+        document.parser_version = parser_ver
+        self.db.add(document)
+        self.db.flush()
+
+    def _embed_pending_then_ready(
+        self,
+        document: Document,
+        *,
+        embedding_dim: int,
+        batch_size: int,
+        parser_ver: str,
+    ) -> int:
+        pairs = _pending_chunks_ordered(self.db, document.id)
+        if not pairs:
+            total, pending = _document_chunk_stats(self.db, document.id)
+            if total > 0 and pending == 0:
+                self._mark_ready(document, parser_ver)
+                self.db.commit()
+            return _chunk_count(self.db, document.id)
+        ids = [p[0] for p in pairs]
+        texts = [p[1] for p in pairs]
+        _embed_chunk_ids_in_batches(
+            self.db,
+            chunk_ids=ids,
+            texts=texts,
+            embedding_dim=embedding_dim,
+            batch_size=batch_size,
+        )
+        self.db.refresh(document)
+        self._mark_ready(document, parser_ver)
+        self.db.commit()
+        return _chunk_count(self.db, document.id)
+
     def run(self, document: Document) -> int:
+        embedding_dim = get_embedding_dim()
+        batch_size = max(1, int(settings.embedding_batch_size))
+
+        if document.status == "ready":
+            return _chunk_count(self.db, document.id)
+
+        fin = _try_finalize_if_all_embedded(self.db, document)
+        if fin is not None:
+            self.db.commit()
+            return fin
+
+        self.db.refresh(document)
+        total, pending = _document_chunk_stats(self.db, document.id)
+        if (
+            total > 0
+            and pending > 0
+            and document.status in ("processing", "retrying")
+            and _indexing_chunk_config_matches(document)
+        ):
+            parser_ver = _parser_version_for_finalize(document)
+            return self._embed_pending_then_ready(
+                document,
+                embedding_dim=embedding_dim,
+                batch_size=batch_size,
+                parser_ver=parser_ver,
+            )
+
         document.status = "processing"
         document.error_message = None
         self.db.add(document)
@@ -139,13 +330,14 @@ class DocumentIndexingService:
             page_limit = max_pdf_pages_for_workspace(self.db, document.workspace_id)
             if page_limit is not None and int(extracted_doc.page_count or 0) > int(page_limit):
                 raise ValueError(f"Document exceeds plan page limit ({page_limit} pages max)")
+
+            _merge_indexing_into_extraction_meta(document, parser_ver)
+
             chunks = chunk_text(
                 extracted, chunk_size=int(settings.chunk_size), overlap=int(settings.chunk_overlap)
             )
             offsets = _chunk_offsets(extracted, chunks)
             spans = _page_spans(extracted)
-            vectors = embed_texts(chunks)
-            embedding_dim = get_embedding_dim()
 
             chunk_indices = list(range(len(chunks)))
             page_numbers = []
@@ -197,27 +389,22 @@ class DocumentIndexingService:
             ):
                 raise ValueError("Inserted chunk IDs mismatch")
 
-            ids_to_update: list[str] = []
-            vectors_to_write: list[list[float]] = []
-            for i, vec in enumerate(vectors):
-                if i >= len(chunks):
-                    break
-                ids_to_update.append(id_by_chunk_index[i])
-                vectors_to_write.append(vec)
-
-            _bulk_update_chunk_embeddings(
-                self.db,
-                chunk_ids=ids_to_update,
-                vectors=vectors_to_write,
-                embedding_dim=embedding_dim,
-            )
-
-            document.status = "ready"
-            document.indexed_at = datetime.now(UTC)
-            document.error_message = None
-            document.parser_version = parser_ver
             self.db.add(document)
             self.db.flush()
+            self.db.commit()
+
+            ordered_ids = [id_by_chunk_index[i] for i in range(len(chunks))]
+            _embed_chunk_ids_in_batches(
+                self.db,
+                chunk_ids=ordered_ids,
+                texts=chunks,
+                embedding_dim=embedding_dim,
+                batch_size=batch_size,
+            )
+
+            self.db.refresh(document)
+            self._mark_ready(document, parser_ver)
+            self.db.commit()
             return len(chunks)
         except Exception as exc:
             document.status = "failed"
@@ -229,34 +416,42 @@ class DocumentIndexingService:
 
 def reindex_null_embeddings_for_workspace(db: Session, *, workspace_id: uuid.UUID) -> int:
     """Fill embedding_vector for chunks in workspace where it is NULL (legacy rows)."""
-    rows = (
-        db.execute(
-            text(
-                """
+    embedding_dim = get_embedding_dim()
+    batch_size = max(1, int(settings.embedding_batch_size))
+    updated_total = 0
+    while True:
+        rows = (
+            db.execute(
+                text(
+                    """
             SELECT c.id AS id, c.text AS text
             FROM document_chunks c
             JOIN documents d ON d.id = c.document_id
             WHERE d.workspace_id = CAST(:workspace_id AS uuid) AND c.embedding_vector IS NULL
+            LIMIT :lim
             """
-            ),
-            {"workspace_id": str(workspace_id)},
+                ),
+                {"workspace_id": str(workspace_id), "lim": batch_size},
+            )
+            .mappings()
+            .all()
         )
-        .mappings()
-        .all()
-    )
-    if not rows:
-        return 0
-    texts = [str(r["text"]) for r in rows]
-    ids = [str(r["id"]) for r in rows]
-    vectors = embed_texts(texts)
-    if len(vectors) != len(ids):
-        raise ValueError("Embedding count mismatch")
-    embedding_dim = get_embedding_dim()
-    _bulk_update_chunk_embeddings(
-        db,
-        chunk_ids=ids,
-        vectors=vectors,
-        embedding_dim=embedding_dim,
-    )
-    db.commit()
-    return len(ids)
+        if not rows:
+            break
+        texts = [str(r["text"]) for r in rows]
+        ids = [str(r["id"]) for r in rows]
+        vectors = embed_texts(
+            texts,
+            encode_batch_size=min(batch_size, len(texts)),
+        )
+        if len(vectors) != len(ids):
+            raise ValueError("Embedding count mismatch")
+        _bulk_update_chunk_embeddings(
+            db,
+            chunk_ids=ids,
+            vectors=vectors,
+            embedding_dim=embedding_dim,
+        )
+        db.commit()
+        updated_total += len(ids)
+    return updated_total

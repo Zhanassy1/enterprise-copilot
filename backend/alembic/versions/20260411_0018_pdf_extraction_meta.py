@@ -1,7 +1,7 @@
 """documents: pdf_kind, ocr_applied, extraction_meta for OCR pipeline
 
-Revision ID: 20260411_0018
-Revises: 20260411_0017_documents_workspace_sha256_active
+Revision ID: 20260411_0018_pdf_meta
+Revises: 20260411_0017_doc_ws_sha256
 Create Date: 2026-04-11
 
 """
@@ -13,8 +13,8 @@ from sqlalchemy.dialects.postgresql import JSONB
 
 from alembic import op
 
-revision = "20260411_0018_pdf_extraction_meta"
-down_revision = "20260411_0017_documents_workspace_sha256_active"
+revision = "20260411_0018_pdf_meta"
+down_revision = "20260411_0017_doc_ws_sha256"
 branch_labels = None
 depends_on = None
 

@@ -143,6 +143,12 @@ jobs:
       - name: Run integration tests (pytest + unittest compatibility)
         run: python -m pytest tests/ -v
 
+      - name: Perf and load scenarios (scheduled nightly only)
+        if: github.event_name == 'schedule'
+        env:
+          RUN_PERF_TESTS: "1"
+        run: python -m pytest tests/test_perf_load.py -v
+
   backend-async-smoke:
     runs-on: ubuntu-latest
     services:

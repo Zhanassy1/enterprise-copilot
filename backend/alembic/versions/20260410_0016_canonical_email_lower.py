@@ -1,6 +1,6 @@
 """Lowercase trim canonical emails (users + workspace_invitations)
 
-Revision ID: 20260410_0016
+Revision ID: 20260410_0016_email_lower
 Revises: 20260406_0015_reply_meta
 Create Date: 2026-04-10
 
@@ -11,7 +11,7 @@ from __future__ import annotations
 import sqlalchemy as sa
 from alembic import op
 
-revision = "20260410_0016_canonical_email_lower"
+revision = "20260410_0016_email_lower"
 down_revision = "20260406_0015_reply_meta"
 branch_labels = None
 depends_on = None

@@ -30,9 +30,23 @@ def assert_embedding_vector_dim(vec: list[float], *, expected_dim: int) -> None:
         )
 
 
-def embed_texts(texts: list[str]) -> list[list[float]]:
+def embed_texts(
+    texts: list[str],
+    *,
+    encode_batch_size: int | None = None,
+) -> list[list[float]]:
+    """Encode texts; optional ``encode_batch_size`` maps to SentenceTransformer ``encode(batch_size=...)``."""
     if not texts:
         return []
     model = _get_model()
-    embeddings = model.encode(texts, normalize_embeddings=True, show_progress_bar=False)
+    bs = encode_batch_size
+    if bs is None:
+        bs = min(len(texts), max(1, int(settings.embedding_batch_size)))
+    bs = max(1, min(int(bs), len(texts)))
+    embeddings = model.encode(
+        texts,
+        normalize_embeddings=True,
+        show_progress_bar=False,
+        batch_size=bs,
+    )
     return [vec.tolist() for vec in embeddings]
