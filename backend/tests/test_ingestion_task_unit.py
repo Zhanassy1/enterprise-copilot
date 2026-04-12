@@ -1,5 +1,6 @@
 import unittest
 import uuid
+from datetime import UTC, datetime
 from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
@@ -7,15 +8,25 @@ from app.tasks.ingestion import ingest_document_task
 
 
 class _FakeDb:
-    def __init__(self, scalars):
+    def __init__(self, scalars, *, job=None, doc=None):
         self._scalars = list(scalars)
         self.commits = 0
         self.rollbacks = 0
+        self._job = job
+        self._doc = doc
 
     def scalar(self, _query):
         if not self._scalars:
             return None
         return self._scalars.pop(0)
+
+    def get(self, model, ident, **kwargs):
+        name = getattr(model, "__name__", "")
+        if self._job is not None and name == "IngestionJob" and str(ident) == str(self._job.id):
+            return self._job
+        if self._doc is not None and name == "Document" and str(ident) == str(self._doc.id):
+            return self._doc
+        return None
 
     def add(self, _obj) -> None:
         return None
@@ -59,12 +70,19 @@ class IngestionTaskUnitTests(unittest.TestCase):
             workspace_id=workspace_id,
             status="queued",
             error_message=None,
+            deleted_at=None,
         )
         return job, doc, dedup_key
 
     def test_retries_when_attempts_left(self) -> None:
         job, doc, dedup_key = self._job_and_doc(attempts=0)
-        fake_db = _FakeDb([job, doc, job, doc])
+        fake_db = _FakeDb([job, doc, job, doc], job=job, doc=doc)
+
+        def _fake_claim(_db, **kwargs):
+            job.attempts = (job.attempts or 0) + 1
+            job.status = "processing"
+            doc.status = "processing"
+            return True
 
         retry_error = RuntimeError("retry-called")
         ingest_document_task.push_request(id="task-123")
@@ -72,6 +90,7 @@ class IngestionTaskUnitTests(unittest.TestCase):
             with (
                 patch.object(ingest_document_task, "retry", Mock(side_effect=retry_error)),
                 patch("app.tasks.ingestion.SessionLocal", return_value=fake_db),
+                patch("app.tasks.ingestion.claim_job_for_celery", side_effect=_fake_claim),
                 patch("app.tasks.ingestion.settings.ingestion_max_attempts", 3),
                 patch("app.tasks.ingestion.DocumentIndexingService") as indexer_cls,
             ):
@@ -93,11 +112,19 @@ class IngestionTaskUnitTests(unittest.TestCase):
 
     def test_marks_failed_when_attempts_exhausted(self) -> None:
         job, doc, dedup_key = self._job_and_doc(attempts=2)
-        fake_db = _FakeDb([job, doc, job, doc])
+        fake_db = _FakeDb([job, doc, job, doc], job=job, doc=doc)
+
+        def _fake_claim(_db, **kwargs):
+            job.attempts = (job.attempts or 0) + 1
+            job.status = "processing"
+            doc.status = "processing"
+            return True
+
         ingest_document_task.push_request(id="task-456")
         try:
             with (
                 patch("app.tasks.ingestion.SessionLocal", return_value=fake_db),
+                patch("app.tasks.ingestion.claim_job_for_celery", side_effect=_fake_claim),
                 patch("app.tasks.ingestion.settings.ingestion_max_attempts", 3),
                 patch("app.tasks.ingestion.DocumentIndexingService") as indexer_cls,
             ):
@@ -157,6 +184,38 @@ class IngestionTaskUnitTests(unittest.TestCase):
             self.assertEqual(out["status"], "failed")
             self.assertEqual(out["reason"], "workspace_mismatch")
             self.assertEqual(job.error_message, "Workspace mismatch")
+        finally:
+            ingest_document_task.pop_request()
+
+    def test_skips_indexing_when_document_soft_deleted(self) -> None:
+        job, doc, dedup_key = self._job_and_doc(attempts=0)
+        doc.deleted_at = datetime.now(UTC)
+        fake_db = _FakeDb([job, doc, job, doc], job=job, doc=doc)
+
+        def _fake_claim(_db, **kwargs):
+            job.attempts = (job.attempts or 0) + 1
+            job.status = "processing"
+            doc.status = "processing"
+            return True
+
+        ingest_document_task.push_request(id="task-soft-del")
+        try:
+            with (
+                patch("app.tasks.ingestion.SessionLocal", return_value=fake_db),
+                patch("app.tasks.ingestion.claim_job_for_celery", side_effect=_fake_claim),
+                patch("app.tasks.ingestion.DocumentIndexingService") as indexer_cls,
+            ):
+                out = ingest_document_task.run(
+                    document_id=str(doc.id),
+                    workspace_id=str(doc.workspace_id),
+                    ingestion_job_id=str(job.id),
+                    deduplication_key=dedup_key,
+                )
+                self.assertEqual(out["status"], "skipped")
+                self.assertEqual(out["reason"], "document_soft_deleted")
+                indexer_cls.assert_not_called()
+                self.assertEqual(job.status, "failed")
+                self.assertEqual(job.error_message, "Document deleted before ingestion completed")
         finally:
             ingest_document_task.pop_request()
 

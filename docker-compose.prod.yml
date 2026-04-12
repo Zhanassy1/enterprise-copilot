@@ -59,3 +59,14 @@ services:
       PRODUCTION_REQUIRE_DATABASE_SSL: "0"
       PRODUCTION_REQUIRE_S3_BACKEND: "0"
       PRODUCTION_REQUIRE_TRUSTED_PROXY_IPS: "0"
+
+  celery-beat:
+    environment:
+      ENVIRONMENT: production
+      PRODUCTION_PROFILE: minimal
+      DATABASE_URL: ${DATABASE_URL:?DATABASE_URL is required for production compose}
+      REDIS_URL: ${REDIS_URL:?REDIS_URL is required for production compose}
+      SECRET_KEY: ${SECRET_KEY:?SECRET_KEY is required for production compose}
+      PRODUCTION_REQUIRE_DATABASE_SSL: "0"
+      PRODUCTION_REQUIRE_S3_BACKEND: "0"
+      PRODUCTION_REQUIRE_TRUSTED_PROXY_IPS: "0"

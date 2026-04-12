@@ -12,7 +12,7 @@
 
 В **production** синхронная индексация в процессе API отключена: `document_ingestion.py` (upload), `documents.reindex_embeddings` (sync-ветка), плюс `startup_checks` — `ALLOW_SYNC_INGESTION_FOR_DEV` не может быть `true` при `ENVIRONMENT=production`.
 
-Async upload: после `flush` строк `Document` + `IngestionJob` выполняется **`commit` до `apply_async`**, чтобы worker (отдельное соединение к БД) и Celery eager в тестах видели строки.
+Async upload: после `flush` строк `Document` + `IngestionJob` выполняется **`commit` до `apply_async`**, чтобы worker (отдельное соединение к БД) и Celery eager в тестах видели строки. Забор job в Celery и в poller-воркере делается **атомарным claim** в PostgreSQL (`UPDATE … RETURNING` / `FOR UPDATE SKIP LOCKED`), чтобы параллельные воркеры не обрабатывали одну и ту же задачу.
 
 ## HTTP routers (`backend/app/api/routers/`)
 

@@ -4,11 +4,12 @@ import time
 from datetime import UTC, datetime
 
 from sqlalchemy import select
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, selectinload
 
 from app.core.config import settings
 from app.models.document import IngestionJob
 from app.services.document_indexing import DocumentIndexingService
+from app.services.ingestion_job_claim import claim_next_poll_job
 from app.services.storage.base import StorageService
 
 
@@ -21,20 +22,17 @@ class IngestionWorkerService:
         db: Session = self.db_factory()
         try:
             now = datetime.now(UTC)
-            job = db.scalar(
-                select(IngestionJob)
-                .where(IngestionJob.status == "pending", IngestionJob.available_at <= now)
-                .order_by(IngestionJob.created_at.asc())
-                .limit(1)
-            )
-            if not job:
+            job_id = claim_next_poll_job(db, now=now)
+            if not job_id:
                 return False
 
-            job.status = "processing"
-            job.locked_at = now
-            job.attempts = (job.attempts or 0) + 1
-            db.add(job)
-            db.flush()
+            job = db.scalar(
+                select(IngestionJob)
+                .where(IngestionJob.id == job_id)
+                .options(selectinload(IngestionJob.document))
+            )
+            if not job or job.document is None:
+                return False
 
             try:
                 indexer = DocumentIndexingService(db, self.storage)

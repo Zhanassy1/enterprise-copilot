@@ -91,6 +91,7 @@ class DocumentUploadAsyncContractTests(unittest.TestCase):
             patch.dict(os.environ, {"INGESTION_ASYNC_ENABLED": "1"}, clear=False),
             patch("app.services.document_ingestion.settings.ingestion_async_enabled", True),
             patch("app.services.document_ingestion.ingest_document_task.apply_async") as publish_mock,
+            patch("app.services.document_ingestion.process_metering_outbox_for_document"),
         ):
             result = service.upload_document(user_id=user_id, workspace=workspace, file=file)
 
@@ -99,11 +100,11 @@ class DocumentUploadAsyncContractTests(unittest.TestCase):
         self.assertTrue(publish_mock.called)
         self.assertTrue(any(isinstance(obj, IngestionJob) for obj in db._objects))
 
-    def test_async_upload_pre_enqueue_commit_then_usage_events_then_final_commit(self) -> None:
+    def test_async_upload_pre_enqueue_commit_then_outbox_projected_inline(self) -> None:
         db = _SequenceTrackingDb()
 
-        def record_side_effect(*_a, **_k):
-            db.sequence.append("record")
+        def process_side_effect(_db, *, document_id):
+            db.sequence.append("process_outbox")
 
         workspace = SimpleNamespace(id=uuid.uuid4())
         user_id = uuid.uuid4()
@@ -113,19 +114,30 @@ class DocumentUploadAsyncContractTests(unittest.TestCase):
             patch.dict(os.environ, {"INGESTION_ASYNC_ENABLED": "1"}, clear=False),
             patch("app.services.document_ingestion.settings.ingestion_async_enabled", True),
             patch("app.services.document_ingestion.ingest_document_task.apply_async"),
-            patch("app.services.document_ingestion.record_event", side_effect=record_side_effect),
+            patch("app.services.document_ingestion.record_event") as record_mock,
+            patch(
+                "app.services.document_ingestion.process_metering_outbox_for_document",
+                side_effect=process_side_effect,
+            ),
         ):
             DocumentIngestionService(db, _FakeStorage()).upload_document(user_id=user_id, workspace=workspace, file=file)
 
-        self.assertEqual(db.sequence, ["commit", "record", "record", "commit"])
+        self.assertEqual(db.sequence, ["commit", "process_outbox"])
+        record_mock.assert_not_called()
 
-    def test_enqueue_failure_marks_doc_and_job_failed_no_usage_events(self) -> None:
+    def test_enqueue_failure_marks_doc_and_job_failed_cancels_outbox_no_usage_events(self) -> None:
         db = _FakeDb()
         record_calls: list[tuple[str, str]] = []
 
-        def capture_record(_db, *, workspace_id, user_id, event_type, quantity, unit="count", metadata=None):
+        def capture_record(_db, *, workspace_id, user_id, event_type, quantity, unit="count", metadata=None, idempotency_key=None):
             record_calls.append((event_type, unit))
             return None
+
+        cancel_calls: list[uuid.UUID] = []
+
+        def capture_cancel(_db, *, document_id):
+            cancel_calls.append(document_id)
+            return 2
 
         workspace = SimpleNamespace(id=uuid.uuid4())
         user_id = uuid.uuid4()
@@ -138,12 +150,14 @@ class DocumentUploadAsyncContractTests(unittest.TestCase):
             patch("app.services.document_ingestion.scan_uploaded_file_safe"),
             patch("app.services.document_ingestion.ingest_document_task.apply_async", side_effect=RuntimeError("broker down")),
             patch("app.services.document_ingestion.record_event", side_effect=capture_record),
+            patch("app.services.document_ingestion.cancel_pending_upload_outbox_for_document", side_effect=capture_cancel),
         ):
             with self.assertRaises(HTTPException) as ctx:
                 DocumentIngestionService(db, _FakeStorage()).upload_document(user_id=user_id, workspace=workspace, file=file)
 
         self.assertEqual(ctx.exception.status_code, 503)
         self.assertEqual(record_calls, [])
+        self.assertEqual(len(cancel_calls), 1)
         doc = next(o for o in db._objects if isinstance(o, Document))
         job = next(o for o in db._objects if isinstance(o, IngestionJob))
         self.assertEqual(doc.status, "failed")

@@ -28,6 +28,12 @@ from app.services.usage_metering import (
     max_concurrent_ingestion_jobs_for_workspace,
     record_event,
 )
+from app.services.usage_outbox import (
+    cancel_pending_upload_outbox_for_document,
+    enqueue_upload_metering_outbox,
+    process_metering_outbox_for_document,
+    upload_metering_idempotency_key,
+)
 from app.tasks.ingestion import ingest_document_task
 
 logger = logging.getLogger(__name__)
@@ -244,7 +250,10 @@ class DocumentIngestionService:
         self.db.flush()
         return doc
 
-    def _enqueue_ingestion_job(self, workspace: Workspace, stored: StoredFile, doc: Document) -> int:
+    def _enqueue_ingestion_job(
+        self, user_id: uuid.UUID, workspace: Workspace, stored: StoredFile, doc: Document
+    ) -> tuple[int, bool]:
+        """Returns (chunks_created, upload_metering_via_outbox). Outbox rows are committed with the pre-enqueue commit."""
         ingestion_async_enabled, allow_sync_ingestion_for_dev = _effective_ingestion_pipeline_flags()
         if ingestion_async_enabled:
             active_jobs = self.db.scalar(
@@ -275,6 +284,14 @@ class DocumentIngestionService:
             )
             self.db.add(job)
             self.db.flush()
+            enqueue_upload_metering_outbox(
+                self.db,
+                user_id=user_id,
+                workspace_id=workspace.id,
+                document_id=doc.id,
+                filename=doc.filename,
+                size_bytes=int(stored.size_bytes),
+            )
             # Commit before enqueue: worker uses a new DB connection; uncommitted rows are invisible (avoids perpetual "queued" with eager/sync apply).
             self.db.commit()
             self.db.refresh(doc)
@@ -300,10 +317,11 @@ class DocumentIngestionService:
                     job_row.error_message = str(exc)
                     self.db.add(doc_row)
                     self.db.add(job_row)
+                    cancel_pending_upload_outbox_for_document(self.db, document_id=doc.id)
                     self.db.commit()
                 raise HTTPException(status_code=503, detail="Failed to enqueue ingestion task") from exc
             self.db.refresh(doc)
-            return 0
+            return (0, True)
         # Sync path is dev-only; never index in-process in production (even if misconfigured).
         if settings.environment.lower().strip() == "production":
             self.storage.delete(stored.storage_key)
@@ -323,7 +341,7 @@ class DocumentIngestionService:
         chunks_created = self.indexer.run(doc)
         self.db.commit()
         self.db.refresh(doc)
-        return chunks_created
+        return (chunks_created, False)
 
     def _record_upload_events(
         self,
@@ -341,6 +359,7 @@ class DocumentIngestionService:
             quantity=1,
             unit="count",
             metadata={"document_id": str(doc.id), "filename": doc.filename},
+            idempotency_key=upload_metering_idempotency_key(doc.id, "document_upload"),
         )
         record_event(
             self.db,
@@ -350,10 +369,11 @@ class DocumentIngestionService:
             quantity=int(stored.size_bytes),
             unit="bytes",
             metadata={"document_id": str(doc.id)},
+            idempotency_key=upload_metering_idempotency_key(doc.id, "document_upload_bytes"),
         )
 
     def upload_document(self, user_id: uuid.UUID, workspace: Workspace, file: UploadFile) -> DocumentIngestOut:
-        """Async path commits doc/job before Celery enqueue; usage rows commit once at the end of this method."""
+        """Async path commits doc/job/outbox before Celery enqueue; metering is projected to usage_events (outbox worker or inline)."""
         validate_upload(file)
         stored = self._save_and_scan(file)
         should_cleanup_storage = True
@@ -372,7 +392,7 @@ class DocumentIngestionService:
                 doc = self._create_document_record(user_id, workspace, file, stored)
                 # Ownership is transferred to persisted document record.
                 should_cleanup_storage = False
-                chunks_created = self._enqueue_ingestion_job(workspace, stored, doc)
+                chunks_created, metering_via_outbox = self._enqueue_ingestion_job(user_id, workspace, stored, doc)
             except IntegrityError as exc:
                 if not _is_documents_workspace_sha256_unique_violation(exc):
                     raise
@@ -382,8 +402,11 @@ class DocumentIngestionService:
                 if dup2:
                     return DocumentIngestOut(document=DocumentOut.from_document(dup2), chunks_created=0)
                 raise
-            self._record_upload_events(user_id, workspace, doc, stored)
-            self.db.commit()
+            if metering_via_outbox:
+                process_metering_outbox_for_document(self.db, document_id=doc.id)
+            else:
+                self._record_upload_events(user_id, workspace, doc, stored)
+                self.db.commit()
             return DocumentIngestOut(
                 document=DocumentOut.from_document(doc),
                 chunks_created=chunks_created,
@@ -398,3 +421,10 @@ class DocumentIngestionService:
         document.deleted_at = datetime.now(UTC)
         self.db.add(document)
         self.db.commit()
+        if settings.immediate_hard_delete_after_soft_delete:
+            from app.tasks.maintenance import hard_delete_soft_deleted_document_task
+
+            hard_delete_soft_deleted_document_task.apply_async(
+                kwargs={"document_id": str(document.id), "workspace_id": str(workspace_id)},
+                queue=settings.celery_ingestion_queue,
+            )

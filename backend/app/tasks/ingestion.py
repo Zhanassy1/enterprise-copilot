@@ -6,6 +6,7 @@ from datetime import UTC, datetime, timedelta
 
 from celery import Task
 from sqlalchemy import select
+from sqlalchemy.orm import Session
 
 from app.celery_app import celery_app
 from app.core.config import settings
@@ -16,6 +17,7 @@ from app.services.document_indexing import (
     DocumentIndexingService,
     reindex_null_embeddings_for_workspace,
 )
+from app.services.ingestion_job_claim import claim_job_for_celery
 from app.services.storage import get_storage_service
 
 logger = logging.getLogger(__name__)
@@ -48,6 +50,37 @@ def _mark_document_missing(job: IngestionJob) -> None:
     job.locked_at = None
     if settings.ingestion_dead_letter_enabled:
         job.dead_lettered_at = now
+
+
+def _response_after_failed_celery_claim(
+    db: Session,
+    *,
+    job_uuid: uuid.UUID,
+    doc_uuid: uuid.UUID,
+) -> dict:
+    """After atomic claim lost: idempotent outcomes without running the indexer."""
+    job = db.scalar(select(IngestionJob).where(IngestionJob.id == job_uuid))
+    document = db.scalar(select(Document).where(Document.id == doc_uuid))
+    if document and document.status == "ready":
+        now = _utcnow()
+        if job:
+            job.status = "ready"
+            job.error_message = None
+            job.locked_at = None
+            job.completed_at = now
+            job.retry_after_seconds = None
+            db.add(job)
+            db.commit()
+        return {"status": "already_ready", "chunks_created": 0}
+    if job is None:
+        return {"status": "ignored", "reason": "job_not_found"}
+    if job.status == "ready":
+        return {"status": "already_ready", "chunks_created": 0}
+    if job.status == "processing":
+        return {"status": "not_claimed", "reason": "duplicate_or_in_flight"}
+    if job.status == "failed":
+        return {"status": "ignored", "reason": "job_failed"}
+    return {"status": "not_claimed", "reason": "claim_race"}
 
 
 @celery_app.task(
@@ -121,18 +154,37 @@ def ingest_document_task(
             return {"status": "already_ready", "chunks_created": 0}
 
         now = _utcnow()
-        job.status = "processing"
-        job.locked_at = now
-        job.attempts = (job.attempts or 0) + 1
-        job.celery_task_id = self.request.id
-        job.error_message = None
-        job.retry_after_seconds = None
-        db.add(job)
+        if not claim_job_for_celery(
+            db,
+            job_id=job_uuid,
+            deduplication_key=deduplication_key,
+            celery_task_id=self.request.id,
+            now=now,
+        ):
+            return _response_after_failed_celery_claim(db, job_uuid=job_uuid, doc_uuid=doc_uuid)
 
-        document.status = "processing"
-        document.error_message = None
-        db.add(document)
-        db.flush()
+        job = db.get(IngestionJob, job_uuid)
+        document = db.get(Document, doc_uuid)
+        if not job or not document:
+            return {"status": "ignored", "reason": "row_missing_after_claim"}
+
+        # Soft-deleted before/during claim: do not index (avoids dead chunks until retention purge).
+        if document.deleted_at is not None:
+            done_at = _utcnow()
+            job.status = "failed"
+            job.error_message = "Document deleted before ingestion completed"
+            job.completed_at = done_at
+            job.locked_at = None
+            job.retry_after_seconds = None
+            job.dead_lettered_at = None
+            db.add(job)
+            db.commit()
+            logger.info(
+                "ingestion skipped soft-deleted document document_id=%s job_id=%s",
+                document.id,
+                job.id,
+            )
+            return {"status": "skipped", "reason": "document_soft_deleted", "chunks_created": 0}
 
         indexer = DocumentIndexingService(db, get_storage_service())
         chunks_created = indexer.run(document)

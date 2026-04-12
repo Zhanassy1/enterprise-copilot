@@ -314,6 +314,7 @@ def record_event(
     quantity: int,
     unit: str = "count",
     metadata: dict[str, Any] | None = None,
+    idempotency_key: str | None = None,
 ) -> UsageEvent:
     row = UsageEvent(
         workspace_id=workspace_id,
@@ -322,6 +323,7 @@ def record_event(
         quantity=max(0, int(quantity)),
         unit=unit,
         metadata_json=json.dumps(metadata or {}, ensure_ascii=False),
+        idempotency_key=idempotency_key,
     )
     db.add(row)
     return row

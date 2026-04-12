@@ -1,4 +1,4 @@
-from app.models.billing import BillingLedgerEntry, UsageEvent, WorkspaceQuota
+from app.models.billing import BillingLedgerEntry, UsageEvent, UsageOutbox, WorkspaceQuota
 from app.models.chat import ChatMessage, ChatSession
 from app.models.document import Document, DocumentChunk, IngestionJob
 from app.models.security import AuditLog, EmailVerificationToken, PasswordResetToken, RefreshToken
@@ -19,6 +19,7 @@ __all__ = [
     "WorkspaceQuota",
     "BillingLedgerEntry",
     "UsageEvent",
+    "UsageOutbox",
     "RefreshToken",
     "PasswordResetToken",
     "EmailVerificationToken",

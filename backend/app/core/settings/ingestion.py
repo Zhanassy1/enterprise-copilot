@@ -25,6 +25,10 @@ class IngestionSettings(BaseModel):
         le=3650,
         description="Hard-delete soft-deleted documents older than this (maintenance task).",
     )
+    immediate_hard_delete_after_soft_delete: bool = Field(
+        default=False,
+        description="If True, enqueue hard delete (storage + DB row) right after API soft-delete.",
+    )
     chunk_size: int = Field(
         default=800,
         ge=200,

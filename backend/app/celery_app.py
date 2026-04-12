@@ -1,6 +1,7 @@
 import logging
 
 from celery import Celery
+from celery.schedules import crontab
 
 from app.core.config import settings
 from app.core.startup_checks import validate_settings
@@ -23,6 +24,18 @@ celery_app.conf.update(
     task_eager_propagates=settings.celery_task_eager_propagates,
     timezone="UTC",
     enable_utc=True,
+    beat_schedule={
+        "purge-soft-deleted-documents-daily": {
+            "task": "maintenance.purge_soft_deleted_documents",
+            "schedule": crontab(hour=3, minute=17),
+            "options": {"queue": settings.celery_ingestion_queue},
+        },
+        "process-usage-outbox-minutely": {
+            "task": "maintenance.process_usage_outbox",
+            "schedule": crontab(minute="*"),
+            "options": {"queue": settings.celery_ingestion_queue},
+        },
+    },
     # Security: reject pickle/or other unsafe serializers (Celery recommendation for untrusted brokers).
     task_serializer="json",
     result_serializer="json",

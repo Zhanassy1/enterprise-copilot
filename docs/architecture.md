@@ -7,7 +7,7 @@
 ## Поток данных (production)
 
 1. Пользователь загружает файл через API (`POST /documents/upload`).
-2. API сохраняет объект в storage, пишет строки `documents` и `ingestion_jobs`, **коммитит** транзакцию, ставит задачу Celery `ingest_document_task` (не индексирует в HTTP).
+2. API сохраняет объект в storage, в **одном commit до постановки в брокер** пишет `documents`, `ingestion_jobs` и pending-строки **`usage_outbox`** (намерение учёта upload), затем ставит задачу Celery `ingest_document_task` (не индексирует в HTTP). Проекция в `usage_events` выполняется сразу в запросе (`process_metering_outbox_for_document`) и/или задачей **`maintenance.process_usage_outbox`** (beat: раз в минуту); вставка идемпотентна по `idempotency_key`. Если enqueue в брокер падает, doc/job помечаются failed и pending outbox **отменяется** — без «тихого» расхождения doc vs metering.
 3. **Worker** извлекает текст, режет на chunks, пишет строки чанков с `embedding_vector` = NULL, **коммитит**, затем считает embeddings **батчами** (`EMBEDDING_BATCH_SIZE`, коммит после каждого батча). При сбое повторная задача может **дозаполнить** только NULL-векторы без повторного PDF/OCR, если не менялись `CHUNK_SIZE`/`CHUNK_OVERLAP` (fingerprint в `documents.extraction_meta.indexing`). Пишет в PostgreSQL (**pgvector**).
 4. Поиск и чат обращаются к чанкам с фильтром `workspace_id`; применяются квоты и rate limits.
 

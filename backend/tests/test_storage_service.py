@@ -39,6 +39,20 @@ class StorageServiceTests(unittest.TestCase):
             url = svc.presigned_get_url("s3://b/k/x.pdf")
             self.assertEqual(url, "https://example/presigned")
 
+    def test_s3_save_upload_propagates_upload_failure(self) -> None:
+        """upload_file errors must not be masked by a success return (regression: return in finally)."""
+        with patch("boto3.client") as mock_client:
+            inst = MagicMock()
+            inst.upload_file.side_effect = OSError("s3 upload failed")
+            mock_client.return_value = inst
+            from app.services.storage.s3 import S3StorageService
+
+            svc = S3StorageService()
+            with self.assertRaises(OSError) as ctx:
+                svc.save_upload(io.BytesIO(b"data"), "a.txt")
+            self.assertIn("s3 upload failed", str(ctx.exception))
+            inst.upload_file.assert_called_once()
+
 
 if __name__ == "__main__":
     unittest.main()

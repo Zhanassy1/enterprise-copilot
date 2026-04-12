@@ -80,7 +80,7 @@ class QuotaUploadBlocksTests(unittest.TestCase):
         with (
             patch("app.services.document_ingestion.scan_uploaded_file_safe"),
             patch("app.services.document_ingestion.assert_quota", side_effect=quota_side_effect),
-            patch.object(DocumentIngestionService, "_enqueue_ingestion_job", return_value=0),
+            patch.object(DocumentIngestionService, "_enqueue_ingestion_job", return_value=(0, False)),
             patch.object(DocumentIngestionService, "_record_upload_events"),
         ):
             svc = DocumentIngestionService(mock_db, storage)

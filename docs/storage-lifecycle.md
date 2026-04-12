@@ -15,7 +15,8 @@ Enable S3 when running multiple API replicas or when disks should not be the sou
 
 ## Retention and soft delete
 
-- `Document` rows use soft delete via `deleted_at`. Celery task `maintenance.purge_soft_deleted_documents` removes rows (and storage blobs) older than `DOCUMENT_RETENTION_DAYS_AFTER_SOFT_DELETE` (default 30). Schedule it with Celery beat or run manually in ops.
+- `Document` rows use soft delete via `deleted_at`. Celery task `maintenance.purge_soft_deleted_documents` removes rows (and storage blobs) older than `DOCUMENT_RETENTION_DAYS_AFTER_SOFT_DELETE` (default 30). `backend/app/celery_app.py` registers a **daily** beat entry (03:17 UTC) on the ingestion queue; run a **Celery beat** process (see `celery-beat` in `docker-compose.yml`) or call the task manually in ops.
+- Optional: **`IMMEDIATE_HARD_DELETE_AFTER_SOFT_DELETE=1`** — after API soft-delete, enqueue `maintenance.hard_delete_soft_deleted_document` so storage and DB rows (including chunks) are removed without waiting for retention.
 
 ## Antivirus
 

@@ -47,6 +47,7 @@ With `ENVIRONMENT=production` and the flags enabled, the API fails fast unless `
 - **`PRODUCTION_REQUIRE_REDIS_RATE_LIMITING`** (default `1`): in production, `startup_checks` pings `REDIS_URL` (and `CELERY_BROKER_URL` when it differs). The API **does not** fall back to per-process in-memory rate limits when Redis is down; clients get **503** from the rate-limit middleware instead of silently weaker limits across replicas.
 - **`/readyz`**: in production (or when **`READINESS_INCLUDE_REDIS=1`**), the handler pings Redis as well as PostgreSQL so load balancers do not mark a pod ready without a working broker/cache for limits and jobs.
 - **Celery worker**: importing `app.celery_app` runs the same **`validate_settings`** as the API — set **`ENVIRONMENT=production`** and the same critical variables on workers as on API pods.
+- **Celery beat**: run a separate beat process (e.g. `celery -A app.celery_app.celery_app beat`) so scheduled maintenance runs, including daily `maintenance.purge_soft_deleted_documents` for soft-deleted document retention.
 - **`CELERY_TASK_ALWAYS_EAGER`**: must be **`0`** in production (enforced by `startup_checks`).
 
 CORS in production uses **only** `CORS_ORIGINS` (no private-network `allow_origin_regex`); see [`docs/security.md`](security.md).

@@ -116,6 +116,24 @@ services:
       migrate:
         condition: service_completed_successfully
 
+  celery-beat:
+    build:
+      context: ./backend
+    env_file:
+      - ./backend/.env.docker
+    environment:
+      DATABASE_URL: postgresql+psycopg://postgres:postgres@db:5432/enterprise_copilot
+      REDIS_URL: redis://redis:6379/0
+    command: >
+      celery -A app.celery_app.celery_app beat --loglevel=INFO
+    volumes:
+      - ./backend:/app
+    depends_on:
+      redis:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+
   frontend:
     build:
       context: ./frontend
