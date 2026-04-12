@@ -12,7 +12,7 @@
 - [x] **Multi-tenant workspaces** — isolation by `workspace_id`, slug routes `/w/:slug/…`, role-aware UI ([docs/product-glossary.md](docs/product-glossary.md))
 - [x] **Documents + async ingestion** — upload API, Celery worker, job queue UI, pgvector chunks
 - [x] **Search + RAG chat + summaries** — semantic retrieval with workspace scope and citations
-- [x] **Plans + quotas** — tier limits, usage display, enforcement on hot paths ([docs/quotas.md](docs/quotas.md))
+- [x] **Plans + quotas** — tier limits, usage display, enforcement on hot paths; ledger projection `usage_events` / `usage_outbox` ([docs/quotas.md](docs/quotas.md))
 - [x] **Team + invitations** — invitations API, Team page (roles matrix, invites); members API ([docs/WORKSPACE_ROUTING.md](docs/WORKSPACE_ROUTING.md))
 - [x] **Billing (optional)** — Stripe Checkout, Customer Portal, webhooks, grace period ([docs/billing.md](docs/billing.md))
 - [x] **Security + ops** — JWT/refresh, rate limits, audit log, metrics, production startup checks ([docs/security.md](docs/security.md))
@@ -167,7 +167,7 @@ Motion demo: embed a walkthrough via [docs/DEMO_MEDIA.md](docs/DEMO_MEDIA.md) (`
 
 ### Платформенный блок (одним абзацем)
 
-**Enterprise Copilot** — готовое **веб-приложение** для командной работы с документами: маркетинговая главная и **`/pricing`**, приложение с **переключателем рабочего пространства (workspace)** и бейджем роли, **«Команда и доступ»** (матрица прав; каталог участников и email-приглашения подключаются расширением API), **документы**, **поиск**, **чат**, **«План и лимиты»** (`/billing` с расходом квот), **очередь индексации** и **журнал аудита**. Картой лимитов служит **[docs/quotas.md](docs/quotas.md)**. Онлайн-оплата через внешнего провайдера и self-service смена тарифа в один клик запланированы как следующий слой; **текущий план и usage уже отражаются в UI и API**.
+**Enterprise Copilot** — готовое **веб-приложение** для командной работы с документами: маркетинговая главная и **`/pricing`**, приложение с **переключателем рабочего пространства (workspace)** и бейджем роли, **«Команда и доступ»** (матрица прав, участники и приглашения через API при настроенной почте), **документы**, **поиск**, **чат**, **«План и лимиты»** (`/billing` с расходом квот), **очередь индексации** и **журнал аудита**. Картой лимитов служит **[docs/quotas.md](docs/quotas.md)**. **Stripe** (Checkout, Customer Portal) — опционально при ключах в env; **текущий план и usage** отражаются в UI и API независимо от оплаты.
 
 ---
 
@@ -267,15 +267,15 @@ Motion demo: embed a walkthrough via [docs/DEMO_MEDIA.md](docs/DEMO_MEDIA.md) (`
 
 | Состояние | Что имеется в виду |
 |-----------|---------------------|
-| **Работает** | Auth, workspace scope, upload, async ingestion, поиск и чат с источниками, summary, квоты, rate limits по плану, audit API + UI, отображение плана и расхода в **«План и лимиты»** (интеграция со Stripe/инвойсами — отдельная веха). |
-| **Production stack** | Compose dev/prod overlay, startup checks, метрики, runbook, S3; при корректных секретах и worker готово к эксплуатации у заказчика. |
-| **Следующие вехи** | Внешний биллинг и **API приглашений** в workspace; до их появления экран **«Команда и доступ»** показывает матрицу прав и UI, готовый к данным API. **Наблюдатель (viewer):** запись в документы и активный чат отключены в UI; политика совпадает с API. Детали: [docs/IMPLEMENTATION_STATUS.md](docs/IMPLEMENTATION_STATUS.md). |
+| **Работает** | Auth, workspace scope, upload, async ingestion, поиск и чат с источниками, summary, квоты и учёт usage (в т.ч. outbox→ledger), rate limits по плану, audit API + UI, отображение плана и расхода в **«План и лимиты»**; опционально Stripe Checkout/Portal при настроенных ключах. |
+| **Production stack** | Compose dev/prod overlay (**minimal** в `docker-compose.prod.yml`), отдельный **hardened** профиль и третий overlay — [docs/hardened-deploy.md](docs/hardened-deploy.md); startup checks, метрики, runbook, S3. |
+| **Следующие вехи** | Полировка SaaS-оболочки (например role-based nav), расширение e2e; SSO и пр. — [docs/IMPLEMENTATION_STATUS.md](docs/IMPLEMENTATION_STATUS.md). **Наблюдатель (viewer):** запись в документы и активный чат отключены в UI; политика совпадает с API. |
 
 ### Roadmap (кратко)
 
 | Горизонт | Направления |
 |----------|-------------|
-| **Near-term** | Внешний биллинг, API и UI **приглашений** в workspace, расширение e2e Playwright. |
+| **Near-term** | Углубление e2e Playwright, доработки team/billing UX по мере обратной связи (приглашения и Stripe уже в контуре — см. выше). |
 | **Long-term** | SSO, расширенный admin tenant, сравнение документов, расширенная аналитика. |
 
 Детализация по шагам зрелости: **[docs/IMPLEMENTATION_STATUS.md](docs/IMPLEMENTATION_STATUS.md)**.
@@ -322,11 +322,15 @@ docker compose up --build
 
 ## Production setup
 
+**Minimal** (внутренний `db`/Redis в compose, `PRODUCTION_PROFILE=minimal` в overlay):
+
 ```bash
 docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
 ```
 
-Подробности: **[docs/deployment.md](docs/deployment.md)**. Шаблон: **[.env.production.example](.env.production.example)**.
+**Hardened** (рекомендуемый профиль для реального продакшена: TLS к БД, S3, `TRUSTED_PROXY_IPS`) — третий файл compose и чеклист: **[docs/hardened-deploy.md](docs/hardened-deploy.md)**.
+
+Подробности профилей и переменных: **[docs/deployment.md](docs/deployment.md)**. Шаблон env: **[.env.production.example](.env.production.example)**.
 
 Старт с `ENVIRONMENT=production` и небезопасным конфигом **блокируется** ([`startup_checks.py`](backend/app/core/startup_checks.py)).
 
@@ -353,6 +357,7 @@ docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
 |----------|------------|
 | [CONTRIBUTING.md](CONTRIBUTING.md) | Как вносить изменения, проверки CI, безопасность |
 | [docs/deployment.md](docs/deployment.md) | Dev vs prod compose, TLS, S3/MinIO, миграции |
+| [docs/hardened-deploy.md](docs/hardened-deploy.md) | Профили `hardened` vs `minimal`, overlay `docker-compose.prod.hardened.yml` |
 | [docs/security.md](docs/security.md) | Секреты, proxy, rate limits, audit |
 | [docs/quotas.md](docs/quotas.md) | Планы free/pro/team, enforcement, 429 |
 | [docs/observability.md](docs/observability.md) | Логи, Sentry, `/metrics` |
@@ -398,6 +403,7 @@ enterprise-copilot/
 ├── docs/
 ├── docker-compose.yml
 ├── docker-compose.prod.yml
+├── docker-compose.prod.hardened.yml   # optional third overlay (hardened profile)
 └── README.md
 ```
 
