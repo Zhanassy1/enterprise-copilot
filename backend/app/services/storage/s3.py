@@ -7,6 +7,9 @@ import uuid
 from contextlib import contextmanager
 from pathlib import Path
 from typing import BinaryIO
+from urllib.parse import quote
+
+from starlette.responses import StreamingResponse
 
 from app.core.config import settings
 from app.core.upload_limits import MAX_UPLOAD_BYTES, UploadTooLargeError
@@ -99,3 +102,34 @@ class S3StorageService(StorageService):
             yield tmp_path
         finally:
             Path(tmp_path).unlink(missing_ok=True)
+
+    def _attachment_disposition_header(self, filename: str) -> str:
+        if all(ord(c) < 128 for c in filename) and '"' not in filename and "\r" not in filename:
+            return f'attachment; filename="{filename}"'
+        return f"attachment; filename*=UTF-8''{quote(filename, safe='')}"
+
+    def direct_download_response(
+        self, storage_key: str, *, filename: str, content_type: str | None
+    ) -> StreamingResponse:
+        if not storage_key.startswith("s3://"):
+            raise RuntimeError("Expected s3:// path for S3 storage backend")
+        _, _, rest = storage_key.partition("s3://")
+        bucket, _, key = rest.partition("/")
+        if not bucket or not key:
+            raise RuntimeError("Malformed S3 storage path")
+
+        obj = self._client.get_object(Bucket=bucket, Key=key)
+        body = obj["Body"]
+        media_type = content_type or "application/octet-stream"
+        headers: dict[str, str] = {"Content-Disposition": self._attachment_disposition_header(filename)}
+        clen = obj.get("ContentLength")
+        if clen is not None:
+            headers["Content-Length"] = str(int(clen))
+
+        def iter_body():
+            try:
+                yield from body.iter_chunks(chunk_size=1024 * 1024)
+            finally:
+                body.close()
+
+        return StreamingResponse(iter_body(), media_type=media_type, headers=headers)

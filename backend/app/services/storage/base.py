@@ -5,6 +5,8 @@ from contextlib import contextmanager
 from dataclasses import dataclass
 from typing import BinaryIO
 
+from starlette.responses import Response
+
 
 @dataclass
 class StoredFile:
@@ -26,6 +28,13 @@ class StorageService(ABC):
     @contextmanager
     def local_path(self, storage_key: str):
         raise NotImplementedError
+
+    @abstractmethod
+    def direct_download_response(
+        self, storage_key: str, *, filename: str, content_type: str | None
+    ) -> Response:
+        """Serve bytes when presigned URL is unavailable. Must not buffer the entire object in RAM."""
+        ...
 
     def presigned_get_url(self, storage_key: str, *, expires_seconds: int = 3600) -> str | None:
         """Return a time-limited download URL, or None if not supported (e.g. local dev)."""

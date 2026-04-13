@@ -29,9 +29,7 @@ from app.services.usage_metering import (
     record_event,
 )
 from app.services.usage_outbox import (
-    cancel_pending_upload_outbox_for_document,
-    enqueue_upload_metering_outbox,
-    process_metering_outbox_for_document,
+    delete_upload_usage_events_for_document,
     upload_metering_idempotency_key,
 )
 from app.tasks.ingestion import ingest_document_task
@@ -253,7 +251,11 @@ class DocumentIngestionService:
     def _enqueue_ingestion_job(
         self, user_id: uuid.UUID, workspace: Workspace, stored: StoredFile, doc: Document
     ) -> tuple[int, bool]:
-        """Returns (chunks_created, upload_metering_via_outbox). Outbox rows are committed with the pre-enqueue commit."""
+        """Returns (chunks_created, usage_events_committed_with_job).
+
+        Async: ``usage_events`` are inserted in the same transaction as document/job, then one commit before Celery.
+        Sync: caller commits upload metering after this method returns (``usage_events_committed_with_job`` is False).
+        """
         ingestion_async_enabled, allow_sync_ingestion_for_dev = _effective_ingestion_pipeline_flags()
         if ingestion_async_enabled:
             active_jobs = self.db.scalar(
@@ -284,14 +286,7 @@ class DocumentIngestionService:
             )
             self.db.add(job)
             self.db.flush()
-            enqueue_upload_metering_outbox(
-                self.db,
-                user_id=user_id,
-                workspace_id=workspace.id,
-                document_id=doc.id,
-                filename=doc.filename,
-                size_bytes=int(stored.size_bytes),
-            )
+            self._record_upload_events(user_id, workspace, doc, stored)
             # Commit before enqueue: worker uses a new DB connection; uncommitted rows are invisible (avoids perpetual "queued" with eager/sync apply).
             self.db.commit()
             self.db.refresh(doc)
@@ -317,7 +312,7 @@ class DocumentIngestionService:
                     job_row.error_message = str(exc)
                     self.db.add(doc_row)
                     self.db.add(job_row)
-                    cancel_pending_upload_outbox_for_document(self.db, document_id=doc.id)
+                    delete_upload_usage_events_for_document(self.db, document_id=doc.id)
                     self.db.commit()
                 raise HTTPException(status_code=503, detail="Failed to enqueue ingestion task") from exc
             self.db.refresh(doc)
@@ -350,7 +345,7 @@ class DocumentIngestionService:
         doc: Document,
         stored: StoredFile,
     ) -> None:
-        """Insert usage rows; caller (``upload_document``) commits the session."""
+        """Insert usage rows; async path commits in ``_enqueue_ingestion_job``; sync path commits in ``upload_document``."""
         record_event(
             self.db,
             workspace_id=workspace.id,
@@ -373,7 +368,7 @@ class DocumentIngestionService:
         )
 
     def upload_document(self, user_id: uuid.UUID, workspace: Workspace, file: UploadFile) -> DocumentIngestOut:
-        """Async path commits doc/job/outbox before Celery enqueue; metering is projected to usage_events (outbox worker or inline)."""
+        """Async path commits doc/job/usage_events before Celery; sync dev path commits metering after indexing."""
         validate_upload(file)
         stored = self._save_and_scan(file)
         should_cleanup_storage = True
@@ -392,7 +387,7 @@ class DocumentIngestionService:
                 doc = self._create_document_record(user_id, workspace, file, stored)
                 # Ownership is transferred to persisted document record.
                 should_cleanup_storage = False
-                chunks_created, metering_via_outbox = self._enqueue_ingestion_job(user_id, workspace, stored, doc)
+                chunks_created, usage_committed_with_job = self._enqueue_ingestion_job(user_id, workspace, stored, doc)
             except IntegrityError as exc:
                 if not _is_documents_workspace_sha256_unique_violation(exc):
                     raise
@@ -402,9 +397,7 @@ class DocumentIngestionService:
                 if dup2:
                     return DocumentIngestOut(document=DocumentOut.from_document(dup2), chunks_created=0)
                 raise
-            if metering_via_outbox:
-                process_metering_outbox_for_document(self.db, document_id=doc.id)
-            else:
+            if not usage_committed_with_job:
                 self._record_upload_events(user_id, workspace, doc, stored)
                 self.db.commit()
             return DocumentIngestOut(

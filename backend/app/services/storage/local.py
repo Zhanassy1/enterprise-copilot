@@ -6,6 +6,8 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import BinaryIO
 
+from starlette.responses import FileResponse
+
 from app.core.config import settings
 from app.core.upload_limits import MAX_UPLOAD_BYTES, UploadTooLargeError
 from app.services.storage.base import StorageService, StoredFile
@@ -50,3 +52,12 @@ class LocalStorageService(StorageService):
     @contextmanager
     def local_path(self, storage_key: str):
         yield storage_key
+
+    def direct_download_response(
+        self, storage_key: str, *, filename: str, content_type: str | None
+    ) -> FileResponse:
+        return FileResponse(
+            storage_key,
+            filename=filename,
+            media_type=content_type or "application/octet-stream",
+        )

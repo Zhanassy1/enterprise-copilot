@@ -8,7 +8,7 @@ import uuid
 from datetime import UTC, datetime
 from typing import Any
 
-from sqlalchemy import select, update
+from sqlalchemy import delete, select, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.orm import Session
 
@@ -78,6 +78,16 @@ def cancel_pending_upload_outbox_for_document(db: Session, *, document_id: uuid.
         .where(UsageOutbox.document_id == document_id, UsageOutbox.status == OUTBOX_PENDING)
         .values(status=OUTBOX_CANCELLED)
     )
+    return int(res.rowcount or 0)
+
+
+def delete_upload_usage_events_for_document(db: Session, *, document_id: uuid.UUID) -> int:
+    """Remove ``usage_events`` rows for this upload (same idempotency keys as ``_record_upload_events``). Used when Celery enqueue fails after commit."""
+    keys = (
+        upload_metering_idempotency_key(document_id, "document_upload"),
+        upload_metering_idempotency_key(document_id, "document_upload_bytes"),
+    )
+    res = db.execute(delete(UsageEvent).where(UsageEvent.idempotency_key.in_(keys)))
     return int(res.rowcount or 0)
 
 

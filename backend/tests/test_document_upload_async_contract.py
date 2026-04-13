@@ -12,6 +12,7 @@ from fastapi import HTTPException, UploadFile
 from app.models.document import Document, IngestionJob
 from app.services import document_ingestion as document_ingestion_module
 from app.services.document_ingestion import DocumentIngestionService
+from app.services.usage_metering import EVENT_DOCUMENT_UPLOAD, EVENT_UPLOAD_BYTES
 
 
 class _StoredUpload:
@@ -91,7 +92,6 @@ class DocumentUploadAsyncContractTests(unittest.TestCase):
             patch.dict(os.environ, {"INGESTION_ASYNC_ENABLED": "1"}, clear=False),
             patch("app.services.document_ingestion.settings.ingestion_async_enabled", True),
             patch("app.services.document_ingestion.ingest_document_task.apply_async") as publish_mock,
-            patch("app.services.document_ingestion.process_metering_outbox_for_document"),
         ):
             result = service.upload_document(user_id=user_id, workspace=workspace, file=file)
 
@@ -100,11 +100,11 @@ class DocumentUploadAsyncContractTests(unittest.TestCase):
         self.assertTrue(publish_mock.called)
         self.assertTrue(any(isinstance(obj, IngestionJob) for obj in db._objects))
 
-    def test_async_upload_pre_enqueue_commit_then_outbox_projected_inline(self) -> None:
+    def test_async_upload_records_usage_then_single_commit_before_celery(self) -> None:
         db = _SequenceTrackingDb()
 
-        def process_side_effect(_db, *, document_id):
-            db.sequence.append("process_outbox")
+        def record_side_effect(_db, **_kwargs):
+            db.sequence.append("record_event")
 
         workspace = SimpleNamespace(id=uuid.uuid4())
         user_id = uuid.uuid4()
@@ -114,18 +114,13 @@ class DocumentUploadAsyncContractTests(unittest.TestCase):
             patch.dict(os.environ, {"INGESTION_ASYNC_ENABLED": "1"}, clear=False),
             patch("app.services.document_ingestion.settings.ingestion_async_enabled", True),
             patch("app.services.document_ingestion.ingest_document_task.apply_async"),
-            patch("app.services.document_ingestion.record_event") as record_mock,
-            patch(
-                "app.services.document_ingestion.process_metering_outbox_for_document",
-                side_effect=process_side_effect,
-            ),
+            patch("app.services.document_ingestion.record_event", side_effect=record_side_effect),
         ):
             DocumentIngestionService(db, _FakeStorage()).upload_document(user_id=user_id, workspace=workspace, file=file)
 
-        self.assertEqual(db.sequence, ["commit", "process_outbox"])
-        record_mock.assert_not_called()
+        self.assertEqual(db.sequence, ["record_event", "record_event", "commit"])
 
-    def test_enqueue_failure_marks_doc_and_job_failed_cancels_outbox_no_usage_events(self) -> None:
+    def test_enqueue_failure_marks_doc_and_job_failed_deletes_usage_events(self) -> None:
         db = _FakeDb()
         record_calls: list[tuple[str, str]] = []
 
@@ -133,10 +128,10 @@ class DocumentUploadAsyncContractTests(unittest.TestCase):
             record_calls.append((event_type, unit))
             return None
 
-        cancel_calls: list[uuid.UUID] = []
+        delete_calls: list[uuid.UUID] = []
 
-        def capture_cancel(_db, *, document_id):
-            cancel_calls.append(document_id)
+        def capture_delete(_db, *, document_id):
+            delete_calls.append(document_id)
             return 2
 
         workspace = SimpleNamespace(id=uuid.uuid4())
@@ -150,14 +145,17 @@ class DocumentUploadAsyncContractTests(unittest.TestCase):
             patch("app.services.document_ingestion.scan_uploaded_file_safe"),
             patch("app.services.document_ingestion.ingest_document_task.apply_async", side_effect=RuntimeError("broker down")),
             patch("app.services.document_ingestion.record_event", side_effect=capture_record),
-            patch("app.services.document_ingestion.cancel_pending_upload_outbox_for_document", side_effect=capture_cancel),
+            patch("app.services.document_ingestion.delete_upload_usage_events_for_document", side_effect=capture_delete),
         ):
             with self.assertRaises(HTTPException) as ctx:
                 DocumentIngestionService(db, _FakeStorage()).upload_document(user_id=user_id, workspace=workspace, file=file)
 
         self.assertEqual(ctx.exception.status_code, 503)
-        self.assertEqual(record_calls, [])
-        self.assertEqual(len(cancel_calls), 1)
+        self.assertEqual(
+            set(record_calls),
+            {(EVENT_DOCUMENT_UPLOAD, "count"), (EVENT_UPLOAD_BYTES, "bytes")},
+        )
+        self.assertEqual(len(delete_calls), 1)
         doc = next(o for o in db._objects if isinstance(o, Document))
         job = next(o for o in db._objects if isinstance(o, IngestionJob))
         self.assertEqual(doc.status, "failed")

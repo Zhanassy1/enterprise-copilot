@@ -17,7 +17,7 @@ Default plan limits are defined in code (`PLAN_LIMITS` / `PLAN_DOCUMENT_CAP` in 
 - **Requests**: `search_request`, `chat_message`, `document_upload` events (monthly rolling by UTC calendar month).
 - **Tokens**: estimated input + output tokens for search and chat (`llm_tokens`).
 - **Upload bytes**: per upload after deduplication (duplicate SHA256 reuses existing document and does not consume a new upload slot).
-- **Async production uploads:** metering intent is stored in **`usage_outbox`** in the same pre-broker DB commit as the document row; events appear in **`usage_events`** after idempotent projection (usually within the same HTTP request; otherwise the minutely Celery drain). UI/API usage totals may lag by up to ~1 minute only if inline projection did not run.
+- **Async production uploads:** **`usage_events`** for the upload are written in the **same** pre-broker DB commit as `documents` and `ingestion_jobs`, so `assert_quota` and monthly totals stay consistent with persisted documents. **`usage_outbox`** remains for draining any legacy backlog; the minutely Celery task `process_usage_outbox` projects those rows idempotently.
 - **Rerank**: when the cross-encoder reranker is enabled, each search records a `rerank_pass` event; monthly **rerank** cap is enforced separately from request count (`monthly_rerank_limit` per plan).
 
 ## Enforcement

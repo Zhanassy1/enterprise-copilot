@@ -1,5 +1,4 @@
 import uuid
-from pathlib import Path
 
 from fastapi import APIRouter, Body, File, HTTPException, UploadFile
 from fastapi.responses import RedirectResponse, Response
@@ -114,12 +113,10 @@ def download_document(
     url = storage.presigned_get_url(doc.storage_key)
     if url:
         return RedirectResponse(url)
-    with storage.local_path(doc.storage_key) as local_path:
-        data = Path(local_path).read_bytes()
-    return Response(
-        content=data,
-        media_type=doc.content_type or "application/octet-stream",
-        headers={"Content-Disposition": f'attachment; filename="{doc.filename}"'},
+    return storage.direct_download_response(
+        doc.storage_key,
+        filename=doc.filename,
+        content_type=doc.content_type,
     )
 
 
