@@ -25,6 +25,10 @@
 - Often expired refresh, reuse after rotation, or revoked session. Check audit for `auth.refresh_reuse_detected`.
 - Client should clear tokens and re-login; verify clock skew.
 
+## API returns 400 `X-Workspace-Id header is required`
+
+- Workspace-scoped routes (documents, search, chat, billing scoped by header, etc.) expect a non-empty **`X-Workspace-Id`** (UUID). Call **`GET /api/v1/workspaces`** first, then send the chosen workspace id on subsequent requests. This is intentional: there is no server-side “default workspace” for those routes.
+
 ## Queue not moving (ingestion stuck)
 
 - Confirm worker container/process and same `REDIS_URL` / queue name as API.

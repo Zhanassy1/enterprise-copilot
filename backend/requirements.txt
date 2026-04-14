@@ -3,6 +3,7 @@ uvicorn[standard]==0.42.0
 
 SQLAlchemy==2.0.44
 psycopg[binary]==3.3.3
+pgvector>=0.3.6
 alembic==1.15.1
 
 python-jose==3.4.0

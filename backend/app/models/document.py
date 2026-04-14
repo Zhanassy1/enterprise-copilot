@@ -1,11 +1,14 @@
 import uuid
 from datetime import datetime
 
+from pgvector.sqlalchemy import Vector
 from sqlalchemy import Boolean, DateTime, ForeignKey, String, Text, func
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
+
+_EMBEDDING_VECTOR_DIM: int = 384
 
 
 class Document(Base):
@@ -57,8 +60,10 @@ class DocumentChunk(Base):
     paragraph_index: Mapped[int | None] = mapped_column(nullable=True)
     text: Mapped[str] = mapped_column(Text, nullable=False)
 
-    # pgvector column will be added via migration (Vector type); keep nullable placeholder for ORM-only usage later
-    embedding: Mapped[str | None] = mapped_column(Text, nullable=True)
+    embedding_vector: Mapped[list[float] | None] = mapped_column(
+        Vector(_EMBEDDING_VECTOR_DIM),
+        nullable=True,
+    )
 
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
 

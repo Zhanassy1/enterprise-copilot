@@ -16,7 +16,6 @@ from jwt import ExpiredSignatureError, PyJWTError
 from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
 
-from app.core.config import settings
 from app.core.platform_admin import user_is_platform_admin
 from app.core.security import decode_token
 from app.core.workspace_slug import resolve_workspace_ref_to_id
@@ -119,46 +118,32 @@ def get_workspace_context(
     user: CurrentUser,
     x_workspace_id: Annotated[str | None, Header(alias="X-Workspace-Id")] = None,
 ) -> WorkspaceContext:
-    env = settings.environment.lower().strip()
-    if env == "production" and settings.require_workspace_header_in_production:
-        if not (x_workspace_id and str(x_workspace_id).strip()):
-            raise HTTPException(status_code=400, detail="X-Workspace-Id header is required")
+    if not (x_workspace_id and str(x_workspace_id).strip()):
+        raise HTTPException(status_code=400, detail="X-Workspace-Id header is required")
 
-    if x_workspace_id:
-        try:
-            workspace_uuid = uuid.UUID(x_workspace_id)
-        except ValueError:
-            raise HTTPException(status_code=400, detail="Invalid X-Workspace-Id") from None
+    try:
+        workspace_uuid = uuid.UUID(x_workspace_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid X-Workspace-Id") from None
 
-        membership = db.scalar(
-            select(WorkspaceMember)
-            .where(WorkspaceMember.workspace_id == workspace_uuid, WorkspaceMember.user_id == user.id)
-            .options(selectinload(WorkspaceMember.role))
-            .limit(1)
+    membership = db.scalar(
+        select(WorkspaceMember)
+        .where(WorkspaceMember.workspace_id == workspace_uuid, WorkspaceMember.user_id == user.id)
+        .options(selectinload(WorkspaceMember.role))
+        .limit(1)
+    )
+    if not membership:
+        write_audit_log(
+            db,
+            event_type="workspace.access_denied",
+            workspace_id=workspace_uuid,
+            user_id=user.id,
+            target_type="workspace",
+            target_id=str(workspace_uuid),
+            metadata={"reason": "not_a_member"},
         )
-        if not membership:
-            write_audit_log(
-                db,
-                event_type="workspace.access_denied",
-                workspace_id=workspace_uuid,
-                user_id=user.id,
-                target_type="workspace",
-                target_id=str(workspace_uuid),
-                metadata={"reason": "not_a_member"},
-            )
-            db.commit()
-            raise HTTPException(status_code=403, detail="No access to workspace")
-    else:
-        membership = db.scalar(
-            select(WorkspaceMember)
-            .join(Workspace, Workspace.id == WorkspaceMember.workspace_id)
-            .where(WorkspaceMember.user_id == user.id)
-            .options(selectinload(WorkspaceMember.role))
-            .order_by(Workspace.personal_for_user_id.desc().nullslast(), Workspace.created_at.asc())
-            .limit(1)
-        )
-        if not membership:
-            raise HTTPException(status_code=403, detail="No workspace membership found")
+        db.commit()
+        raise HTTPException(status_code=403, detail="No access to workspace")
 
     workspace = db.scalar(select(Workspace).where(Workspace.id == membership.workspace_id))
     if not workspace:

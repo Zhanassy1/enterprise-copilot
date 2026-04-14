@@ -5,8 +5,6 @@ class OpsSettings(BaseModel):
     app_name: str = "enterprise-copilot"
     environment: str = Field(default="local")
     api_v1_prefix: str = "/api/v1"
-    # When True and environment is production, every workspace-scoped request must send X-Workspace-Id (no implicit first-workspace fallback).
-    require_workspace_header_in_production: bool = Field(default=True)
 
     # Database
     database_url: str = Field(default="postgresql+psycopg://postgres:postgres@localhost:5432/enterprise_copilot")

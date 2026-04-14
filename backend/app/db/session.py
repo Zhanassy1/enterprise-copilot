@@ -1,7 +1,8 @@
 import os
 from collections.abc import Generator
 
-from sqlalchemy import create_engine
+from pgvector.psycopg import register_vector
+from sqlalchemy import create_engine, event
 from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import NullPool
 
@@ -15,6 +16,13 @@ if os.environ.get("SQLALCHEMY_USE_NULLPOOL") == "1":
     _engine_kwargs["poolclass"] = NullPool
 
 engine = create_engine(settings.database_url, **_engine_kwargs)
+
+
+@event.listens_for(engine, "connect")
+def _register_pgvector_types(dbapi_connection: object, _connection_record: object) -> None:
+    register_vector(dbapi_connection)
+
+
 SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False)
 
 
