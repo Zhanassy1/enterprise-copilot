@@ -40,6 +40,9 @@ Thumbs.db
 .vscode/
 .idea/
 
+# Celery Beat local schedule DB (machine-specific)
+**/celerybeat-schedule
+
 # Runtime data
 backend/data/uploads/
 

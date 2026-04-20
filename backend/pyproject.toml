@@ -20,5 +20,6 @@ python_version = "3.12"
 testpaths = ["tests"]
 markers = [
     "retrieval_regression: seeded corpus + gold JSONL regression gates",
+    "rerank_gain: optional real cross-encoder paired eval (RUN_RERANK_EVAL=1)",
     "perf: opt-in load/perf scenarios (requires RUN_PERF_TESTS=1)",
 ]

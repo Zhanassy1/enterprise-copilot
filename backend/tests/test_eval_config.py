@@ -7,6 +7,7 @@ from pathlib import Path
 
 from app.eval.eval_config import (
     load_retrieval_eval_config,
+    resolve_answer_gold_path,
     resolve_backend_paths,
     resolve_ranked_baseline_path,
 )
@@ -28,6 +29,7 @@ def test_ranked_baseline_optional(tmp_path: Path) -> None:
     c = load_retrieval_eval_config(p)
     assert c.ranked_baseline_relative is None
     assert resolve_ranked_baseline_path(tmp_path, c) is None
+    assert c.answer_gold_relative == "eval/answer_gold.jsonl"
 
 
 def test_load_retrieval_eval_config_defaults(tmp_path: Path) -> None:
@@ -47,6 +49,7 @@ def test_load_retrieval_eval_config_defaults(tmp_path: Path) -> None:
     assert c.gold_relative == "eval/a.jsonl"
     assert c.k_list == (1, 5)
     assert c.regression_epsilon == 0.03
+    assert c.answer_gold_relative == "eval/answer_gold.jsonl"
 
 
 def test_resolve_backend_paths() -> None:
@@ -61,3 +64,6 @@ def test_resolve_backend_paths() -> None:
     rb = resolve_ranked_baseline_path(root, c)
     assert rb is not None
     assert rb.name == "baseline_metrics_ranked.json"
+    ag = resolve_answer_gold_path(root, c)
+    assert ag.name == "answer_gold.jsonl"
+    assert c.answer_gold_relative == "eval/answer_gold.jsonl"

@@ -78,14 +78,16 @@ def run_retrieve_ranked_hits_eval(
     user_id: UUID,
     gold_rows: list[GoldRow],
     k_list: tuple[int, ...] = (1, 3, 5, 10),
+    reranker_enabled: bool = False,
 ) -> dict[str, float]:
     """
-    Full RAG path: vector → rerank (no-op when disabled) → snippet compaction →
-    contract-value post-rules. Cross-encoder is disabled via ``reranker_enabled=False``.
+    Full RAG path: vector → rerank → snippet compaction → contract-value post-rules.
+
+    Default ``reranker_enabled=False`` matches the committed ranked baseline (no cross-encoder).
     """
     examples: list[tuple[set[str], list[str]]] = []
     top_k = max(k_list)
-    with patch.object(settings, "reranker_enabled", False):
+    with patch.object(settings, "reranker_enabled", reranker_enabled):
         for row in gold_rows:
             qvec = embed_texts([row.query_text])[0]
             hits = retrieve_ranked_hits(
@@ -100,6 +102,54 @@ def run_retrieve_ranked_hits_eval(
             ranked = [str(h["chunk_id"]) for h in hits]
             examples.append((row.gold_chunk_ids, ranked))
     return aggregate_metrics(examples, k_list=k_list)
+
+
+def build_rerank_gain_report(
+    metrics_off: dict[str, float],
+    metrics_on: dict[str, float],
+) -> dict[str, object]:
+    """Pair retrieval metrics with per-key deltas (on minus off)."""
+    delta: dict[str, float] = {}
+    for key in sorted(set(metrics_off) & set(metrics_on)):
+        delta[key] = float(metrics_on[key]) - float(metrics_off[key])
+    return {
+        "reranker_disabled": dict(metrics_off),
+        "reranker_enabled": dict(metrics_on),
+        "delta": delta,
+    }
+
+
+def run_rerank_gain_eval(
+    db: Session,
+    *,
+    workspace_id: UUID,
+    user_id: UUID,
+    gold_rows: list[GoldRow],
+    k_list: tuple[int, ...] = (1, 3, 5, 10),
+) -> dict[str, object]:
+    """
+    Run ``retrieve_ranked_hits`` twice: reranker off vs on (cross-encoder when enabled in settings).
+
+    Intended for offline reports and optional CI (``RUN_RERANK_EVAL=1``); PR jobs should patch
+    ``rerank_hits`` or keep rerank off to avoid model load.
+    """
+    off = run_retrieve_ranked_hits_eval(
+        db,
+        workspace_id=workspace_id,
+        user_id=user_id,
+        gold_rows=gold_rows,
+        k_list=k_list,
+        reranker_enabled=False,
+    )
+    on = run_retrieve_ranked_hits_eval(
+        db,
+        workspace_id=workspace_id,
+        user_id=user_id,
+        gold_rows=gold_rows,
+        k_list=k_list,
+        reranker_enabled=True,
+    )
+    return build_rerank_gain_report(off, on)
 
 
 def load_baseline_metrics(path: Path) -> dict[str, float]:

@@ -18,12 +18,14 @@ class RetrievalEvalConfig:
     regression_epsilon: float
     notes: str = ""
     ranked_baseline_relative: str | None = None
+    answer_gold_relative: str = "eval/answer_gold.jsonl"
 
     @classmethod
     def from_dict(cls, raw: dict[str, Any]) -> RetrievalEvalConfig:
         k_raw = raw.get("k_list") or [1, 3, 5, 10]
         k_list = tuple(int(x) for x in k_raw)
         rb = raw.get("ranked_baseline_relative")
+        ag = raw.get("answer_gold_relative") or "eval/answer_gold.jsonl"
         return cls(
             gold_relative=str(raw["gold_relative"]),
             baseline_relative=str(raw["baseline_relative"]),
@@ -31,6 +33,7 @@ class RetrievalEvalConfig:
             regression_epsilon=float(raw.get("regression_epsilon", 0.02)),
             notes=str(raw.get("notes") or ""),
             ranked_baseline_relative=str(rb) if rb else None,
+            answer_gold_relative=str(ag),
         )
 
 
@@ -58,3 +61,8 @@ def resolve_ranked_baseline_path(
     if not config.ranked_baseline_relative:
         return None
     return (backend_root / config.ranked_baseline_relative).resolve()
+
+
+def resolve_answer_gold_path(backend_root: Path, config: RetrievalEvalConfig) -> Path:
+    """Absolute path to answer + citation gold JSONL."""
+    return (backend_root / config.answer_gold_relative).resolve()

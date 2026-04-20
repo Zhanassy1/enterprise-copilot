@@ -9,13 +9,13 @@ from __future__ import annotations
 import uuid
 from datetime import UTC, datetime
 
-from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from app.core.security import hash_password
 from app.models.document import Document
 from app.models.user import User
 from app.models.workspace import Workspace, WorkspaceMember
+from app.repositories.document_chunks import DocumentChunkRepository
 from app.services.embeddings import embed_texts, get_embedding_dim
 from app.services.usage_metering import get_or_create_quota
 from app.services.workspace_service import ensure_default_roles
@@ -97,35 +97,20 @@ def seed_retrieval_eval_corpus(db: Session) -> tuple[uuid.UUID, uuid.UUID, uuid.
         (CHUNK_ID_TERMINATION, 1, texts[1], vecs[1]),
         (CHUNK_ID_PENALTY, 2, texts[2], vecs[2]),
     ]
+    repo = DocumentChunkRepository(db)
     for cid, idx, txt, vec in chunk_specs:
         if len(vec) != dim:
             raise ValueError(f"embedding dim {len(vec)} != {dim}")
         qv = "[" + ",".join(f"{float(x):.8f}" for x in vec) + "]"
-        db.execute(
-            text(
-                f"""
-                INSERT INTO document_chunks (
-                  id, document_id, chunk_index, text, embedding_vector, page_number, paragraph_index
-                ) VALUES (
-                  CAST(:cid AS uuid),
-                  CAST(:did AS uuid),
-                  :idx,
-                  :txt,
-                  CAST(:qv AS vector({dim})),
-                  :pg,
-                  :para
-                )
-                """
-            ),
-            {
-                "cid": str(cid),
-                "did": str(doc.id),
-                "idx": idx,
-                "txt": txt,
-                "qv": qv,
-                "pg": idx + 1,
-                "para": 0,
-            },
+        repo.insert_chunk_with_embedding(
+            chunk_id=cid,
+            document_id=doc.id,
+            chunk_index=idx,
+            text=txt,
+            embedding_dim=dim,
+            vector_literal=qv,
+            page_number=idx + 1,
+            paragraph_index=0,
         )
 
     return ws.id, user.id, doc.id

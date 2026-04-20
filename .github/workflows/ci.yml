@@ -149,6 +149,53 @@ jobs:
           RUN_PERF_TESTS: "1"
         run: python -m pytest tests/test_perf_load.py -v
 
+  # Manual optional job: real cross-encoder paired rerank eval (slow, model download).
+  backend-rerank-eval:
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: enterprise_copilot_test
+        ports:
+          - 5433:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d enterprise_copilot_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    defaults:
+      run:
+        working-directory: backend
+    env:
+      DATABASE_URL: postgresql+psycopg://postgres:postgres@localhost:5433/enterprise_copilot_test
+      RUN_INTEGRATION_TESTS: "1"
+      RUN_RERANK_EVAL: "1"
+      SQLALCHEMY_USE_NULLPOOL: "1"
+      INGESTION_ASYNC_ENABLED: "0"
+      ALLOW_SYNC_INGESTION_FOR_DEV: "1"
+      ENVIRONMENT: local
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install backend deps
+        run: pip install -r requirements.txt
+
+      - name: Run migrations
+        run: alembic upgrade head
+
+      - name: Real rerank paired eval (opt-in marker)
+        run: python -m pytest tests/test_rerank_gain_eval.py -v -m rerank_gain
+
   backend-async-smoke:
     runs-on: ubuntu-latest
     services:

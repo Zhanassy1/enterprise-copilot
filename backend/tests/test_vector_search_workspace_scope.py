@@ -24,7 +24,7 @@ class VectorSearchWorkspaceScopeTests(unittest.TestCase):
         db = _Exec()
         wid = uuid.uuid4()
         dim = 256
-        with patch("app.services.retrieval.generic_hybrid.get_embedding_dim", return_value=dim):
+        with patch("app.repositories.document_chunks.get_embedding_dim", return_value=dim):
             dense_candidates(
                 db,  # type: ignore[arg-type]
                 workspace_id=wid,
