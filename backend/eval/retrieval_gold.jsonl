@@ -1,3 +1,4 @@
 {"query_id":"eval_price","query_text":"какова цена договора","gold_chunk_ids":["f0000001-0001-0001-0001-000000000001"],"tags":["price"]}
 {"query_id":"eval_termination","query_text":"условия расторжения договора","gold_chunk_ids":["f0000001-0001-0001-0001-000000000002"],"tags":["termination"]}
 {"query_id":"eval_penalty","query_text":"размер неустойки за просрочку","gold_chunk_ids":["f0000001-0001-0001-0001-000000000003"],"tags":["penalty"]}
+{"query_id":"eval_sku","query_text":"MIL-SPEC-99X","gold_chunk_ids":["f0000001-0001-0001-0001-000000000004"],"tags":["sku","keyword"]}

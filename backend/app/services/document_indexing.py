@@ -12,6 +12,7 @@ from app.models.document import Document
 from app.repositories.document_chunks import DocumentChunkRepository
 from app.services.chunking import chunk_text
 from app.services.embeddings import embed_texts, get_embedding_dim
+from app.services.retrieval.chunk_search_aux import build_chunk_search_aux
 from app.services.pdf_ingestion import extract_pdf_for_indexing
 from app.services.storage.base import StorageService
 from app.services.text_extraction import extract_text_metadata_from_file
@@ -278,12 +279,14 @@ class DocumentIndexingService:
                 page_numbers.append(_page_by_pos(spans, start))
                 paragraph_indices.append(_paragraph_index_by_pos(extracted, start))
 
+            search_aux_texts = [build_chunk_search_aux(t) for t in chunks]
             inserted_rows = self._chunks.bulk_insert_placeholder_chunks(
                 document_id=document.id,
                 chunk_indices=chunk_indices,
                 page_numbers=page_numbers,
                 paragraph_indices=paragraph_indices,
                 texts=chunks,
+                search_aux_texts=search_aux_texts,
             )
 
             id_by_chunk_index = {int(row["chunk_index"]): str(row["id"]) for row in inserted_rows}

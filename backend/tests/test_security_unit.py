@@ -4,10 +4,13 @@ from __future__ import annotations
 
 import uuid
 
+import jwt
 from passlib.context import CryptContext
 
+from app.core.config import settings
 from app.core.email_normalization import normalize_email
 from app.core.security import (
+    ALGORITHM,
     create_access_token,
     decode_token,
     hash_password,
@@ -46,6 +49,24 @@ def test_access_token_roundtrip_claims() -> None:
     assert payload.get("iss")
     assert payload.get("aud")
     assert "exp" in payload and "iat" in payload
+
+
+def test_access_token_expires_minutes_zero_not_replaced_by_default() -> None:
+    uid = str(uuid.uuid4())
+    tok = create_access_token(uid, expires_minutes=0)
+    # exp == iat; decode_token() would often fail with ExpiredSignatureError before this assert.
+    payload = jwt.decode(
+        tok,
+        settings.secret_key,
+        algorithms=[ALGORITHM],
+        audience=settings.jwt_audience,
+        issuer=settings.jwt_issuer,
+        options={
+            "verify_exp": False,
+            "require": ["exp", "sub", "iat", "jti", "aud", "iss"],
+        },
+    )
+    assert payload["exp"] - payload["iat"] == 0
 
 
 def test_new_password_uses_argon2_scheme() -> None:

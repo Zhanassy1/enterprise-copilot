@@ -24,6 +24,7 @@ from app.services.workspace_service import ensure_default_roles
 CHUNK_ID_PRICE = uuid.UUID("f0000001-0001-0001-0001-000000000001")
 CHUNK_ID_TERMINATION = uuid.UUID("f0000001-0001-0001-0001-000000000002")
 CHUNK_ID_PENALTY = uuid.UUID("f0000001-0001-0001-0001-000000000003")
+CHUNK_ID_SKU = uuid.UUID("f0000001-0001-0001-0001-000000000004")
 
 TEXT_PRICE = (
     "Цена договора 200 000 тенге подлежит оплате в течение 10 дней с момента подписания."
@@ -34,11 +35,14 @@ TEXT_TERMINATION = (
 TEXT_PENALTY = (
     "Неустойка за просрочку исполнения обязательства составляет 0,1% за каждый день просрочки."
 )
+TEXT_SKU = (
+    "Поставка изделия по спецификации: артикул MIL-SPEC-99X/12.3 и ГОСТ 12345-89. Приложение № 4."
+)
 
 
 def seed_retrieval_eval_corpus(db: Session) -> tuple[uuid.UUID, uuid.UUID, uuid.UUID]:
     """
-    Insert user, workspace, one ready document, three chunks with embeddings.
+    Insert user, workspace, one ready document, four chunks with embeddings.
 
     Returns ``(workspace_id, user_id, document_id)``. Commits are left to the caller.
     """
@@ -89,13 +93,14 @@ def seed_retrieval_eval_corpus(db: Session) -> tuple[uuid.UUID, uuid.UUID, uuid.
     db.add(doc)
     db.flush()
 
-    texts = [TEXT_PRICE, TEXT_TERMINATION, TEXT_PENALTY]
+    texts = [TEXT_PRICE, TEXT_TERMINATION, TEXT_PENALTY, TEXT_SKU]
     vecs = embed_texts(texts)
     dim = get_embedding_dim()
     chunk_specs = [
         (CHUNK_ID_PRICE, 0, texts[0], vecs[0]),
         (CHUNK_ID_TERMINATION, 1, texts[1], vecs[1]),
         (CHUNK_ID_PENALTY, 2, texts[2], vecs[2]),
+        (CHUNK_ID_SKU, 3, texts[3], vecs[3]),
     ]
     repo = DocumentChunkRepository(db)
     for cid, idx, txt, vec in chunk_specs:

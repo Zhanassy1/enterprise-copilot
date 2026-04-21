@@ -59,6 +59,7 @@ class DocumentChunk(Base):
     page_number: Mapped[int | None] = mapped_column(nullable=True)
     paragraph_index: Mapped[int | None] = mapped_column(nullable=True)
     text: Mapped[str] = mapped_column(Text, nullable=False)
+    chunk_search_aux: Mapped[str] = mapped_column(Text, nullable=False, default="")
 
     embedding_vector: Mapped[list[float] | None] = mapped_column(
         Vector(_EMBEDDING_VECTOR_DIM),

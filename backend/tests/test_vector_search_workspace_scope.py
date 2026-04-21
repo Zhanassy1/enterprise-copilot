@@ -47,6 +47,9 @@ class VectorSearchWorkspaceScopeTests(unittest.TestCase):
                     def mappings(self):
                         return iter([])
 
+                    def scalar(self):
+                        return "foo"
+
                 return R()
 
         db = _Exec()
