@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 import re
+import uuid
 from typing import Literal, cast
 
 from app.core.settings.llm import AnswerStyle
@@ -569,12 +570,42 @@ def postprocess_llm_answer(
     return ""
 
 
-def _answer_extractive(query: str, hits: list[dict], *, answer_style: AnswerStyle) -> str:
+def _parse_hit_chunk_id(h: dict) -> uuid.UUID | None:
+    raw = h.get("chunk_id")
+    if raw is None:
+        return None
+    if isinstance(raw, uuid.UUID):
+        return raw
+    return uuid.UUID(str(raw))
+
+
+def _provenance_for_llm_context(hits: list[dict], *, k: int = 6) -> list[uuid.UUID]:
+    out: list[uuid.UUID] = []
+    seen: set[uuid.UUID] = set()
+    for h in hits[:k]:
+        uid = _parse_hit_chunk_id(h)
+        if uid is not None and uid not in seen:
+            seen.add(uid)
+            out.append(uid)
+    return out
+
+
+def _answer_extractive_with_provenance(
+    query: str, hits: list[dict], *, answer_style: AnswerStyle
+) -> tuple[str, list[uuid.UUID]]:
+    """Extractive string + ordered unique chunk_ids that supplied first use of each line in ``parts``."""
     parts: list[str] = []
+    provenance: list[uuid.UUID] = []
+    seen_lines: set[str] = set()
     for h in hits[:3]:
+        uid = _parse_hit_chunk_id(h)
         for ln in extract_relevant_lines(query, str(h.get("text") or ""), max_lines=3):
-            if ln not in parts:
-                parts.append(ln)
+            if ln in seen_lines:
+                continue
+            seen_lines.add(ln)
+            parts.append(ln)
+            if uid is not None and uid not in provenance:
+                provenance.append(uid)
             if len(parts) >= 5:
                 break
         if len(parts) >= 5:
@@ -582,30 +613,35 @@ def _answer_extractive(query: str, hits: list[dict], *, answer_style: AnswerStyl
 
     if not parts:
         if is_contract_value_query(query):
-            return CONTRACT_VALUE_UNAVAILABLE_RU
-        return "По загруженным документам релевантной информации не найдено."
+            return CONTRACT_VALUE_UNAVAILABLE_RU, []
+        return "По загруженным документам релевантной информации не найдено.", []
     joined = "\n".join(parts[:5])
     if is_price_intent(query):
-        return compress_price_answer(
+        out = compress_price_answer(
             query,
             joined,
             hits,
             answer_style=answer_style,
             advisory=is_advisory_intent(query),
         )
-    return joined
+        return out, provenance
+    return joined, provenance
 
 
-def build_answer(
+def _answer_extractive(query: str, hits: list[dict], *, answer_style: AnswerStyle) -> str:
+    return _answer_extractive_with_provenance(query, hits, answer_style=answer_style)[0]
+
+
+def build_answer_with_provenance(
     query: str,
     hits: list[dict],
     *,
     conversation_history: str | None = None,
     answer_style: AnswerStyle = "concise",
     extractive_only: bool = False,
-) -> str:
+) -> tuple[str, list[uuid.UUID]]:
     if not hits:
-        return "По загруженным документам релевантной информации не найдено."
+        return "По загруженным документам релевантной информации не найдено.", []
 
     chunks_text = [str(h.get("text") or "") for h in hits[:6] if h.get("text")]
 
@@ -622,9 +658,54 @@ def build_answer(
         if llm_result:
             grounded = postprocess_llm_answer(query, llm_result, hits, answer_style=answer_style)
             if grounded:
-                return grounded
+                return grounded, _provenance_for_llm_context(hits, k=6)
 
-    return _answer_extractive(query, hits, answer_style=answer_style)
+    return _answer_extractive_with_provenance(query, hits, answer_style=answer_style)
+
+
+def build_answer(
+    query: str,
+    hits: list[dict],
+    *,
+    conversation_history: str | None = None,
+    answer_style: AnswerStyle = "concise",
+    extractive_only: bool = False,
+) -> str:
+    return build_answer_with_provenance(
+        query,
+        hits,
+        conversation_history=conversation_history,
+        answer_style=answer_style,
+        extractive_only=extractive_only,
+    )[0]
+
+
+_CITATION_BRACKET_RE = re.compile(r"\[(\d+)\]")
+
+
+def suggest_citation_index_to_chunk(
+    answer: str, hits: list[dict]
+) -> dict[str, str] | None:
+    """
+    If ``answer`` contains ``[1]``-style markers, map each index to the ``chunk_id`` of the
+    n-th hit (1-based). None when no such markers. Used for API provenance, not a guarantee
+    the model used those chunks correctly.
+    """
+    if not (answer or "").strip() or not hits:
+        return None
+    indices: set[int] = set()
+    for m in _CITATION_BRACKET_RE.finditer(answer):
+        indices.add(int(m.group(1)))
+    if not indices:
+        return None
+    out: dict[str, str] = {}
+    for n in sorted(indices):
+        if n < 1 or n > len(hits):
+            continue
+        uid = _parse_hit_chunk_id(hits[n - 1])
+        if uid is not None:
+            out[str(n)] = str(uid)
+    return out or None
 
 
 def _clamp01(value: float) -> float:

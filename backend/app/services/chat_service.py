@@ -33,9 +33,11 @@ from app.services.nlp import (
     serialize_reply_meta,
 )
 from app.services.rag_retrieval import retrieve_ranked_hits
+from app.services.retrieval.query_input import normalize_search_query_for_retrieval
 from app.services.usage_metering import (
     EVENT_CHAT_MESSAGE,
-    EVENT_TOKENS,
+    EVENT_EMBEDDING_TOKENS,
+    EVENT_GENERATION_TOKENS,
     assert_quota,
     estimate_tokens,
     record_event,
@@ -139,7 +141,8 @@ class ChatService:
             raise HTTPException(status_code=404, detail="Chat session not found")
         prior_rows = load_prior_messages_for_rag(self.db, session.id)
         conversation_history = format_prior_messages_for_rag(prior_rows)
-        query_tokens = estimate_tokens(message)
+        q_rag = normalize_search_query_for_retrieval(message)
+        query_tokens = estimate_tokens(q_rag)
         assert_quota(
             self.db,
             workspace_id=workspace_id,
@@ -148,12 +151,12 @@ class ChatService:
             token_increment=query_tokens,
         )
 
-        qvec = embed_texts([message])[0]
+        qvec = embed_texts([q_rag])[0]
         hits = retrieve_ranked_hits(
             self.db,
             workspace_id=workspace_id,
             user_id=user_id,
-            query=message,
+            query=q_rag,
             query_embedding=qvec,
             top_k=top_k,
             compact_snippets=True,
@@ -229,8 +232,17 @@ class ChatService:
             self.db,
             workspace_id=workspace_id,
             user_id=user_id,
-            event_type=EVENT_TOKENS,
-            quantity=query_tokens + output_tokens,
+            event_type=EVENT_EMBEDDING_TOKENS,
+            quantity=query_tokens,
+            unit="tokens",
+            metadata={"scope": "chat", "session_id": str(session.id)},
+        )
+        record_event(
+            self.db,
+            workspace_id=workspace_id,
+            user_id=user_id,
+            event_type=EVENT_GENERATION_TOKENS,
+            quantity=output_tokens,
             unit="tokens",
             metadata={"scope": "chat", "session_id": str(session.id)},
         )
@@ -272,7 +284,8 @@ class ChatService:
             return
 
         try:
-            query_tokens = estimate_tokens(message)
+            q_rag = normalize_search_query_for_retrieval(message)
+            query_tokens = estimate_tokens(q_rag)
             assert_quota(
                 self.db,
                 workspace_id=workspace_id,
@@ -284,12 +297,12 @@ class ChatService:
             prior_rows = load_prior_messages_for_rag(self.db, session.id)
             conversation_history = format_prior_messages_for_rag(prior_rows)
 
-            qvec = embed_texts([message])[0]
+            qvec = embed_texts([q_rag])[0]
             hits = retrieve_ranked_hits(
                 self.db,
                 workspace_id=workspace_id,
                 user_id=user_id,
-                query=message,
+                query=q_rag,
                 query_embedding=qvec,
                 top_k=top_k,
                 compact_snippets=True,
@@ -433,8 +446,17 @@ class ChatService:
                 self.db,
                 workspace_id=workspace_id,
                 user_id=user_id,
-                event_type=EVENT_TOKENS,
-                quantity=query_tokens + output_tokens,
+                event_type=EVENT_EMBEDDING_TOKENS,
+                quantity=query_tokens,
+                unit="tokens",
+                metadata={"scope": "chat", "session_id": str(session.id), "stream": True},
+            )
+            record_event(
+                self.db,
+                workspace_id=workspace_id,
+                user_id=user_id,
+                event_type=EVENT_GENERATION_TOKENS,
+                quantity=output_tokens,
                 unit="tokens",
                 metadata={"scope": "chat", "session_id": str(session.id), "stream": True},
             )

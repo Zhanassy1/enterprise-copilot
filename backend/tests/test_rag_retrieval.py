@@ -54,7 +54,6 @@ def test_retrieve_ranked_hits_passes_effective_top_k_to_vector_search() -> None:
 
     with (
         patch("app.services.rag_retrieval.search_chunks_pgvector", side_effect=fake_search_chunks),
-        patch("app.services.rag_retrieval.rerank_hits", side_effect=lambda q, h, top_n: h),
         patch("app.services.rag_retrieval.assert_quota"),
         patch("app.services.rag_retrieval.record_event"),
         patch.object(settings, "reranker_enabled", False),
@@ -197,7 +196,6 @@ def test_retrieve_ranked_hits_skips_rerank_quota_when_disabled() -> None:
             "app.services.rag_retrieval.search_chunks_pgvector",
             return_value=[{"chunk_id": "c1", "text": "x", "score": 0.5}],
         ),
-        patch("app.services.rag_retrieval.rerank_hits", side_effect=lambda q, h, top_n: h),
         patch("app.services.rag_retrieval.assert_quota", side_effect=capture_quota),
         patch("app.services.rag_retrieval.record_event") as rec,
         patch.object(settings, "reranker_enabled", False),
@@ -229,7 +227,6 @@ def test_effective_k_always_at_least_reranker_top_n(request_top_k: int) -> None:
 
     with (
         patch("app.services.rag_retrieval.search_chunks_pgvector", side_effect=fake_search_chunks),
-        patch("app.services.rag_retrieval.rerank_hits", side_effect=lambda q, h, top_n: h),
         patch("app.services.rag_retrieval.assert_quota"),
         patch("app.services.rag_retrieval.record_event"),
         patch.object(settings, "reranker_enabled", False),

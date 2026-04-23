@@ -6,13 +6,15 @@ from app.core.config import settings
 from app.schemas.documents import AnswerStyle, SearchOut
 from app.services.embeddings import embed_texts
 from app.services.nlp import (
-    build_answer,
+    build_answer_with_provenance,
     build_clarifying_question,
     build_next_step,
     decide_response_mode,
     resolve_answer_style,
+    suggest_citation_index_to_chunk,
 )
 from app.services.rag_retrieval import retrieve_ranked_hits
+from app.services.retrieval.query_input import normalize_search_query_for_retrieval
 
 
 class SearchService:
@@ -29,13 +31,15 @@ class SearchService:
         answer_style: AnswerStyle | None = None,
     ) -> SearchOut:
         from app.services.usage_metering import (
+            EVENT_EMBEDDING_TOKENS,
+            EVENT_GENERATION_TOKENS,
             EVENT_SEARCH_REQUEST,
-            EVENT_TOKENS,
             assert_quota,
             estimate_tokens,
             record_event,
         )
 
+        query = normalize_search_query_for_retrieval(query)
         query_tokens = estimate_tokens(query)
         assert_quota(
             self.db,
@@ -64,8 +68,11 @@ class SearchService:
         resolved_style = resolve_answer_style(answer_style, settings.default_answer_style)
         details: str | None = None
         clarifying_question: str | None = None
+        ev_ids: list[uuid.UUID] = []
+        cit_map: dict[str, str] | None = None
         if decision == "answer":
-            answer = build_answer(query, hits, answer_style=resolved_style)
+            answer, ev_ids = build_answer_with_provenance(query, hits, answer_style=resolved_style)
+            cit_map = suggest_citation_index_to_chunk(answer, hits)
             details = "Ответ сформирован строго по найденным фрагментам документов."
         else:
             answer = ""
@@ -91,8 +98,17 @@ class SearchService:
             self.db,
             workspace_id=workspace_id,
             user_id=user_id,
-            event_type=EVENT_TOKENS,
-            quantity=query_tokens + output_tokens,
+            event_type=EVENT_EMBEDDING_TOKENS,
+            quantity=query_tokens,
+            unit="tokens",
+            metadata={"scope": "search"},
+        )
+        record_event(
+            self.db,
+            workspace_id=workspace_id,
+            user_id=user_id,
+            event_type=EVENT_GENERATION_TOKENS,
+            quantity=output_tokens,
             unit="tokens",
             metadata={"scope": "search"},
         )
@@ -107,4 +123,6 @@ class SearchService:
             evidence_collapsed_by_default=(resolved_style == "narrative"),
             answer_style=resolved_style,
             hits=hits,
+            evidence_chunk_ids=ev_ids,
+            citation_index_to_chunk_id=cit_map,
         )

@@ -13,6 +13,9 @@ class UsageSummaryOut(BaseModel):
     max_documents: int | None
     usage_requests_month: int
     usage_tokens_month: int
+    usage_embedding_tokens_month: int
+    usage_generation_tokens_month: int
+    usage_llm_tokens_month: int
     usage_bytes_month: int
     document_count: int
 

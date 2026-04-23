@@ -543,13 +543,31 @@ export default function BillingPage() {
                 upgradeHref="#billing-payment-section"
               />
               <QuotaUsageRow
-                title="Токены LLM"
-                description="Оценка входящих и исходящих токенов модели для поиска и чата (квота tokens)."
+                title="Токены (квота)"
+                description="Сумма оценок: embedding (запрос в эмбеддер) + generation (текст ответа/уточнения) + устаревший счётчик llm_tokens, если есть. Всё списывается в один месячный лимит."
                 used={data.usage_tokens_month}
                 limit={data.monthly_token_limit}
                 unit="tokens"
                 upgradeHref="#billing-payment-section"
               />
+              <ul className="ml-4 list-disc space-y-1 text-xs text-muted-foreground">
+                <li>
+                  Embedding:{" "}
+                  <span className="font-mono text-foreground">{data.usage_embedding_tokens_month.toLocaleString()}</span>{" "}
+                  tokens
+                </li>
+                <li>
+                  Generation:{" "}
+                  <span className="font-mono text-foreground">{data.usage_generation_tokens_month.toLocaleString()}</span>{" "}
+                  tokens
+                </li>
+                {data.usage_llm_tokens_month > 0 ? (
+                  <li>
+                    Legacy <span className="font-mono">llm_tokens</span>:{" "}
+                    <span className="font-mono text-foreground">{data.usage_llm_tokens_month.toLocaleString()}</span>
+                  </li>
+                ) : null}
+              </ul>
               <QuotaUsageRow
                 title="Объём загрузок"
                 description="Суммарный размер принятых файлов за месяц после дедупликации (квота storage / upload bytes)."

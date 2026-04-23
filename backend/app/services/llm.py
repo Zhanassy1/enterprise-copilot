@@ -228,3 +228,57 @@ def llm_summarize(text: str) -> str:
     if out == LLM_SERVICE_UNAVAILABLE_RU:
         return ""
     return out
+
+
+_FAITHFULNESS_JUDGE_SYSTEM = (
+    "Ты оценщик RAG-ответа. Сравни ответ с цитатами дословно: каждое сущностное "
+    "утверждение в ответе должно вытекать из фрагментов.\n"
+    "Верни ровно одну строку формата: `faithfulness=0.00 completeness=0.00` — числа от 0 до 1. "
+    "faithfulness: нет фактов вне evidence. completeness: вопрос закрыт в пределах evidence."
+)
+
+
+def answer_quality_judge_scores(
+    query: str,
+    answer: str,
+    evidence: str,
+) -> tuple[float | None, float | None]:
+    """
+    Optional LLM-as-judge (temperature 0). Returns (faithfulness, completeness) in [0,1] or (None, None).
+    For offline / nightly use with synthetic gold, not for deterministic CI.
+    """
+    if not llm_enabled() or not (answer or "").strip():
+        return None, None
+    import re
+
+    user = (
+        f"Вопрос:\n{query}\n\n"
+        f"Фрагменты (доказательная база):\n{evidence[:12000]}\n\n"
+        f"Ответ ассистента:\n{answer[:8000]}"
+    )
+    client = _get_client()
+    try:
+        resp = client.chat.completions.create(
+            model=settings.llm_model,
+            messages=[
+                {"role": "system", "content": _FAITHFULNESS_JUDGE_SYSTEM},
+                {"role": "user", "content": user},
+            ],
+            temperature=0.0,
+            max_tokens=64,
+            timeout=settings.llm_request_timeout_seconds,
+        )
+        raw = (resp.choices[0].message.content or "").strip()
+    except Exception as e:  # pragma: no cover - network
+        logger.warning("answer_quality_judge_scores failed: %s", e)
+        return None, None
+
+    m1 = re.search(r"faithfulness\s*=\s*([0-1](?:\.\d+)?)", raw, re.I)
+    m2 = re.search(r"completeness\s*=\s*([0-1](?:\.\d+)?)", raw, re.I)
+    f_v = float(m1.group(1)) if m1 else None
+    c_v = float(m2.group(1)) if m2 else None
+    if f_v is not None:
+        f_v = min(1.0, max(0.0, f_v))
+    if c_v is not None:
+        c_v = min(1.0, max(0.0, c_v))
+    return f_v, c_v

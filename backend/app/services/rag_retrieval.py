@@ -28,6 +28,7 @@ from app.services.nlp import (
     text_suggests_security_deposit_without_contract_value,
 )
 from app.services.reranker import rerank_hits
+from app.services.retrieval.query_input import normalize_search_query_for_retrieval
 from app.services.usage_metering import EVENT_RERANK, assert_quota, record_event
 from app.services.vector_search import search_chunks_pgvector
 
@@ -140,7 +141,9 @@ def run_cross_encoder_rerank(
 ) -> list[dict]:
     """
     Stage 2: optional cross-encoder rerank with quota + audit event.
-    When reranking is disabled, still calls ``rerank_hits`` which returns hits unchanged.
+
+    Returns ``hits`` unchanged when ``reranker_enabled`` is false, ``top_k == 0``, or
+    there is at most one candidate (no ``rerank_hits``, no rerank quota, no ``EVENT_RERANK``).
     """
     will_rerank = settings.reranker_enabled and int(top_k) > 0 and len(hits) > 1
     if will_rerank:
@@ -160,8 +163,6 @@ def run_cross_encoder_rerank(
             unit="count",
             metadata={"top_n": int(settings.reranker_top_n), "candidates": len(hits)},
         )
-    elif not settings.reranker_enabled:
-        hits = rerank_hits(query, hits, top_n=int(settings.reranker_top_n))
     return hits
 
 
@@ -194,9 +195,11 @@ def retrieve_ranked_hits(
     Full pipeline: vector search → rerank → optional snippet compaction → contract-value rules.
 
     When reranking is enabled, ``assert_quota`` for rerank runs before ``rerank_hits``;
-    ``EVENT_RERANK`` is recorded only after a successful rerank. Skips rerank (and rerank
-    quota) when ``top_k == 0`` or when there is at most one candidate.
+    ``EVENT_RERANK`` is recorded only after a successful rerank. With reranking disabled,
+    or when ``top_k == 0`` or there is at most one candidate, skips ``rerank_hits`` and
+    rerank quota.
     """
+    query = normalize_search_query_for_retrieval(query)
     price_intent = is_price_intent(query)
     effective_k = max(int(top_k), int(settings.reranker_top_n))
     hits = retrieve_vector_search_hits(

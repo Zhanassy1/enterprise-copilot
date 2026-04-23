@@ -215,7 +215,12 @@ export interface UsageSummaryOut {
   monthly_upload_bytes_limit: number;
   max_documents: number | null;
   usage_requests_month: number;
+  /** Sum debited against monthly_token_limit (embedding + generation + legacy llm_tokens). */
   usage_tokens_month: number;
+  usage_embedding_tokens_month: number;
+  usage_generation_tokens_month: number;
+  /** Pre-split metering rows only (before embedding_tokens / generation_tokens). */
+  usage_llm_tokens_month: number;
   usage_bytes_month: number;
   document_count: number;
 }

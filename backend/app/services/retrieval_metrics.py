@@ -110,3 +110,64 @@ def aggregate_metrics(
         out[f"recall_multi_at_{k}"] = mean_recall_at_k_multi(examples, k)
         out[f"ndcg_at_{k}"] = mean_ndcg_at_k(examples, k)
     return out
+
+
+def _sanitize_segment_key(segment: str) -> str:
+    s = (segment or "").strip()
+    if not s:
+        return "default"
+    out: list[str] = []
+    for c in s:
+        if c.isalnum() or c in ("_", "-"):
+            out.append(c)
+        elif c.isspace():
+            out.append("_")
+        else:
+            out.append("_")
+    collapsed = "".join(out).strip("_")
+    return collapsed or "default"
+
+
+def primary_segment_key(*, query_type: str | None, tags: frozenset[str] | list[str] | None) -> str | None:
+    """
+    One segment per gold row for stratified metrics: explicit ``query_type`` wins, else first tag
+    in sorted order (stable) when multiple tags are present.
+    """
+    if query_type and str(query_type).strip():
+        return _sanitize_segment_key(str(query_type))
+    if not tags:
+        return None
+    if isinstance(tags, frozenset):
+        tag_list = sorted(tags)
+    else:
+        tag_list = [str(t) for t in tags if str(t).strip()]
+        tag_list.sort()
+    if not tag_list:
+        return None
+    return _sanitize_segment_key(tag_list[0])
+
+
+def aggregate_metrics_stratified(
+    examples: list[tuple[set[str], list[str], str | None]],
+    *,
+    k_list: tuple[int, ...] = (1, 3, 5, 10),
+) -> dict[str, float]:
+    """
+    Global MRR/Recall/nDCG plus per-segment metrics when the third field is a non-empty segment key.
+    Keys: ``mrr``, ``recall_at_k``, ... and ``mrr__<segment>``, ``recall_at_k__<segment>``, ...
+    """
+    unlabeled: list[tuple[set[str], list[str]]] = [(g, r) for g, r, _ in examples]
+    out = aggregate_metrics(unlabeled, k_list=k_list)
+    by_seg: dict[str, list[tuple[set[str], list[str]]]] = {}
+    for g, r, seg in examples:
+        if not seg:
+            continue
+        k = _sanitize_segment_key(seg)
+        by_seg.setdefault(k, []).append((g, r))
+    for seg, sub in by_seg.items():
+        if len(sub) < 1:
+            continue
+        sub_m = aggregate_metrics(sub, k_list=k_list)
+        for key, val in sub_m.items():
+            out[f"{key}__{seg}"] = val
+    return out

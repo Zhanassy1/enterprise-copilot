@@ -4,6 +4,8 @@ from typing import Literal, Self
 
 from pydantic import BaseModel, Field, model_validator
 
+RetrievalFusionMode = Literal["rrf", "weighted_scores"]
+
 from app.core.settings.retrieval_rules import RetrievalRuleWeights
 
 AnswerStyle = Literal["concise", "narrative"]
@@ -37,6 +39,26 @@ class LLMSettings(BaseModel):
     retrieval_rrf_k: int = Field(default=60, ge=1, le=2000)
     retrieval_rrf_weight_dense: float = Field(default=1.0, ge=0.0, le=10.0)
     retrieval_rrf_weight_keyword: float = Field(default=1.0, ge=0.0, le=10.0)
+    retrieval_fusion_mode: RetrievalFusionMode = Field(
+        default="rrf",
+        description="rrf: rank fusion; weighted_scores: per-query min-max dense/keyword with alpha mix.",
+    )
+    retrieval_score_fusion_alpha: float = Field(
+        default=0.5,
+        ge=0.0,
+        le=1.0,
+        description="Weight on dense in weighted_scores (1-alpha on keyword), after per-list min-max.",
+    )
+    retrieval_weighted_fusion_magnitude: float = Field(
+        default=0.04,
+        ge=1e-6,
+        le=1.0,
+        description="Scale min-max combined score to align with RRF scale before rrf_score_scale in domain rules.",
+    )
+    retrieval_query_kind_policy_json: str = Field(
+        default="",
+        description="Optional JSON: {query_kind: {retrieval_field: override}} merged with built-in defaults.",
+    )
     retrieval_candidate_multiplier: int = Field(default=10, ge=2, le=100)
     retrieval_candidate_floor: int = Field(default=60, ge=10, le=1000)
     reranker_enabled: bool = Field(default=True)

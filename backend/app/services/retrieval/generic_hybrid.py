@@ -13,6 +13,7 @@ from sqlalchemy.orm import Session
 
 from app.core.config import settings
 from app.repositories.document_chunks import DocumentChunkRepository
+from app.services.retrieval.tuning import RetrievalContext, build_retrieval_context
 
 
 def dense_candidates(
@@ -110,6 +111,91 @@ def rrf_fuse(
     )
 
 
+def _min_max_norm_map(values: list[float]) -> dict[int, float]:
+    if not values:
+        return {}
+    lo = min(values)
+    hi = max(values)
+    if hi <= lo + 1e-12:
+        return {i: 0.5 for i in range(len(values))}
+    return {i: (values[i] - lo) / (hi - lo) for i in range(len(values))}
+
+
+def weighted_score_fuse(
+    dense: list[dict],
+    keyword: list[dict],
+    *,
+    alpha: float,
+    score_magnitude: float,
+) -> list[dict]:
+    """
+    Min-max each list, combine: alpha * norm_dense + (1-alpha) * norm_keyword; missing side uses 0.
+    Final score scaled by ``score_magnitude`` to sit near raw RRF magnitudes.
+    """
+    a = max(0.0, min(1.0, float(alpha)))
+    mag = float(score_magnitude)
+    dense_raw = [float(r.get("dense_score") or 0.0) for r in dense]
+    key_raw = [float(r.get("keyword_score") or 0.0) for r in keyword]
+    dn = _min_max_norm_map(dense_raw)
+    kn = _min_max_norm_map(key_raw)
+    dense_by_id: dict[str, float] = {
+        str(dense[i]["chunk_id"]): dn[i] for i in range(len(dense)) if i in dn
+    }
+    key_by_id: dict[str, float] = {
+        str(keyword[i]["chunk_id"]): kn[i] for i in range(len(keyword)) if i in kn
+    }
+    row_by_id: dict[str, dict] = {}
+    for r in dense:
+        cid = str(r["chunk_id"])
+        if cid not in row_by_id:
+            row_by_id[cid] = {
+                "document_id": r["document_id"],
+                "source_filename": r.get("source_filename"),
+                "chunk_id": r["chunk_id"],
+                "chunk_index": r["chunk_index"],
+                "page_number": r.get("page_number"),
+                "paragraph_index": r.get("paragraph_index"),
+                "text": r["text"],
+                "dense_score": float(r.get("dense_score") or 0.0),
+                "keyword_score": 0.0,
+            }
+    for r in keyword:
+        cid = str(r["chunk_id"])
+        if cid not in row_by_id:
+            row_by_id[cid] = {
+                "document_id": r["document_id"],
+                "source_filename": r.get("source_filename"),
+                "chunk_id": r["chunk_id"],
+                "chunk_index": r["chunk_index"],
+                "page_number": r.get("page_number"),
+                "paragraph_index": r.get("paragraph_index"),
+                "text": r["text"],
+                "dense_score": 0.0,
+                "keyword_score": float(r.get("keyword_score") or 0.0),
+            }
+        else:
+            row_by_id[cid]["keyword_score"] = float(r.get("keyword_score") or 0.0)
+
+    fused: list[dict] = []
+    for cid, base_row in row_by_id.items():
+        row = base_row
+        nd = dense_by_id.get(cid, 0.0)
+        nk = key_by_id.get(cid, 0.0)
+        comb = a * nd + (1.0 - a) * nk
+        row = dict(row)
+        row["score"] = comb * mag
+        fused.append(row)
+    return sorted(
+        fused,
+        key=lambda r: (
+            float(r.get("score") or 0.0),
+            float(r.get("keyword_score") or 0.0),
+            float(r.get("dense_score") or 0.0),
+        ),
+        reverse=True,
+    )
+
+
 def hybrid_fuse_candidates(
     db: Session,
     *,
@@ -117,8 +203,10 @@ def hybrid_fuse_candidates(
     query_text_expanded: str,
     query_embedding: list[float],
     candidate_k: int,
+    retrieval_ctx: RetrievalContext | None = None,
 ) -> list[dict]:
-    """Dense + keyword lists merged by RRF, or dense-only when hybrid is disabled."""
+    """Dense + keyword lists merged by RRF (default) or weighted min-max, or dense-only if hybrid is disabled."""
+    ctx = retrieval_ctx or build_retrieval_context(query_text_expanded)
     repo = DocumentChunkRepository(db)
     dense = repo.dense_candidates(
         workspace_id=workspace_id,
@@ -149,10 +237,17 @@ def hybrid_fuse_candidates(
         query_text=query_text_expanded,
         candidate_k=candidate_k,
     )
+    if ctx.fusion_mode == "weighted_scores":
+        return weighted_score_fuse(
+            dense,
+            keyword,
+            alpha=ctx.score_fusion_alpha,
+            score_magnitude=ctx.weighted_fusion_magnitude,
+        )
     return rrf_fuse(
         dense,
         keyword,
-        rrf_k=int(settings.retrieval_rrf_k),
-        dense_weight=float(settings.retrieval_rrf_weight_dense),
-        keyword_weight=float(settings.retrieval_rrf_weight_keyword),
+        rrf_k=int(ctx.rrf_k),
+        dense_weight=float(ctx.dense_weight),
+        keyword_weight=float(ctx.keyword_weight),
     )

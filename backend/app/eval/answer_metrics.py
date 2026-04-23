@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import re
+import uuid
+
 from app.services.nlp import tokenize
 
 
@@ -52,3 +55,76 @@ def gold_chunks_in_top_k(gold_ids: set[str], ranked_chunk_ids: list[str], k: int
         return False
     top = set(ranked_chunk_ids[:k])
     return gold_ids <= top
+
+
+def must_cover_satisfied(answer: str, must_cover: list[str]) -> bool:
+    """All substrings in ``must_cover`` appear in ``answer`` (case-insensitive)."""
+    if not must_cover:
+        return True
+    low = (answer or "").lower()
+    return all((c or "").lower() in low for c in must_cover)
+
+
+def forbidden_satisfied(answer: str, forbidden: list[str]) -> bool:
+    """True if none of the ``forbidden`` substrings appear in ``answer`` (case-insensitive)."""
+    if not forbidden:
+        return True
+    low = (answer or "").lower()
+    for phrase in forbidden:
+        if (phrase or "").lower() in low:
+            return False
+    return True
+
+
+def reference_token_f1(answer: str, reference: str) -> float:
+    """
+    Simple token F1 between answer and a reference string (synthetic / smoke only).
+    Returns 0.0 if ``reference`` is empty.
+    """
+    ref = (reference or "").strip()
+    if not ref:
+        return 0.0
+    a = set(tokenize(answer or ""))
+    r = set(tokenize(ref))
+    if not a and not r:
+        return 1.0
+    if not a or not r:
+        return 0.0
+    inter = a & r
+    if not inter:
+        return 0.0
+    p = len(inter) / float(len(a))
+    rec = len(inter) / float(len(r))
+    if p + rec == 0.0:
+        return 0.0
+    return 2.0 * p * rec / (p + rec)
+
+
+def evidence_covers_required_chunk_ids(
+    evidence_chunk_ids: list[uuid.UUID] | list[str],
+    required: set[str],
+) -> bool:
+    """
+    All ``required`` chunk id strings (normalized) appear in the provenance list.
+    """
+    if not required:
+        return True
+    have = {_uuid_str(x) for x in evidence_chunk_ids}
+    need = {_uuid_str(x) for x in required}
+    return need <= have
+
+
+def _uuid_str(x: uuid.UUID | str) -> str:
+    if isinstance(x, uuid.UUID):
+        return str(x)
+    return str(uuid.UUID(str(x)))
+
+
+_CIT_RE = re.compile(r"\[(\d+)\]")
+
+
+def parse_citation_indices_from_answer(answer: str) -> set[int]:
+    """Indices n from ``[n]`` markers in the answer text, if the model emits them."""
+    if not (answer or "").strip():
+        return set()
+    return {int(m.group(1)) for m in _CIT_RE.finditer(answer)}

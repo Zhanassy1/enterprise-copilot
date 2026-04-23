@@ -16,10 +16,13 @@ from app.services.audit import write_audit_log
 from app.services.usage_metering import (
     EVENT_CHAT_MESSAGE,
     EVENT_DOCUMENT_UPLOAD,
+    EVENT_EMBEDDING_TOKENS,
+    EVENT_GENERATION_TOKENS,
     EVENT_SEARCH_REQUEST,
     EVENT_TOKENS,
     EVENT_UPLOAD_BYTES,
     PLAN_LIMITS,
+    TOKEN_EVENT_TYPES_FOR_MONTHLY_CAP,
     _sum_events,
     apply_plan_limits_to_quota,
     get_or_create_quota,
@@ -63,10 +66,34 @@ def admin_workspace_usage(workspace_id: uuid.UUID, db: DbDep, _admin: PlatformAd
         from_dt=start,
         to_dt=end,
     )
-    tok = _sum_events(
+    tok_embed = _sum_events(
+        db,
+        workspace_id=workspace_id,
+        event_types=(EVENT_EMBEDDING_TOKENS,),
+        unit="tokens",
+        from_dt=start,
+        to_dt=end,
+    )
+    tok_gen = _sum_events(
+        db,
+        workspace_id=workspace_id,
+        event_types=(EVENT_GENERATION_TOKENS,),
+        unit="tokens",
+        from_dt=start,
+        to_dt=end,
+    )
+    tok_legacy = _sum_events(
         db,
         workspace_id=workspace_id,
         event_types=(EVENT_TOKENS,),
+        unit="tokens",
+        from_dt=start,
+        to_dt=end,
+    )
+    tok = _sum_events(
+        db,
+        workspace_id=workspace_id,
+        event_types=TOKEN_EVENT_TYPES_FOR_MONTHLY_CAP,
         unit="tokens",
         from_dt=start,
         to_dt=end,
@@ -92,6 +119,9 @@ def admin_workspace_usage(workspace_id: uuid.UUID, db: DbDep, _admin: PlatformAd
         max_documents=int(quota.max_documents) if quota.max_documents is not None else None,
         usage_requests_month=int(req),
         usage_tokens_month=int(tok),
+        usage_embedding_tokens_month=int(tok_embed),
+        usage_generation_tokens_month=int(tok_gen),
+        usage_llm_tokens_month=int(tok_legacy),
         usage_bytes_month=int(byt),
         document_count=int(doc_count or 0),
     )

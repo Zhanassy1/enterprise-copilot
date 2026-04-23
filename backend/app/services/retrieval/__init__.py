@@ -11,6 +11,7 @@ from app.services.retrieval.generic_hybrid import (
     hybrid_fuse_candidates,
     keyword_candidates,
     rrf_fuse,
+    weighted_score_fuse,
 )
 
 __all__ = [
@@ -22,4 +23,5 @@ __all__ = [
     "hybrid_fuse_candidates",
     "keyword_candidates",
     "rrf_fuse",
+    "weighted_score_fuse",
 ]

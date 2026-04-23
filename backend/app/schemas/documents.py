@@ -154,4 +154,12 @@ class SearchOut(BaseModel):
     evidence_collapsed_by_default: bool = True
     answer_style: AnswerStyle = "concise"
     hits: list[SearchHit]
+    evidence_chunk_ids: list[uuid.UUID] = Field(
+        default_factory=list,
+        description="Chunk UUIDs that contributed to synthesis (provenance; order = first use).",
+    )
+    citation_index_to_chunk_id: dict[str, str] | None = Field(
+        default=None,
+        description='Optional [n] -> chunk_id string when the answer uses bracketed citations aligned with hits order.',
+    )
 

@@ -18,7 +18,15 @@ from sqlalchemy.orm import Session
 from app.core.config import settings
 from app.services.embeddings import embed_texts
 from app.services.rag_retrieval import retrieve_ranked_hits
-from app.services.retrieval_metrics import aggregate_metrics
+from app.services.retrieval_metrics import (
+    aggregate_metrics,
+    aggregate_metrics_stratified,
+    primary_segment_key,
+)
+from app.eval.retrieval_eval_harness import (
+    RetrievalEvalParamOverrides,
+    apply_retrieval_eval_overrides,
+)
 from app.services.vector_search import search_chunks_pgvector
 
 
@@ -27,6 +35,10 @@ class GoldRow:
     query_id: str
     query_text: str
     gold_chunk_ids: set[str]
+    # Optional: drives stratified metrics (overrides first tag when set).
+    query_type: str | None = None
+    # Optional: first tag used for segment when query_type is unset.
+    tags: frozenset[str] = frozenset()
 
 
 def load_gold_jsonl(path: Path) -> list[GoldRow]:
@@ -38,11 +50,17 @@ def load_gold_jsonl(path: Path) -> list[GoldRow]:
                 continue
             obj: dict[str, Any] = json.loads(line)
             gids = obj.get("gold_chunk_ids") or []
+            raw_tags = obj.get("tags") or obj.get("query_tags") or []
+            tag_set = frozenset(str(t) for t in raw_tags if str(t).strip())
+            qtype = obj.get("query_type")
+            qtype_s = str(qtype).strip() if qtype is not None else None
             rows.append(
                 GoldRow(
                     query_id=str(obj["query_id"]),
                     query_text=str(obj["query_text"]),
                     gold_chunk_ids={str(x) for x in gids},
+                    query_type=qtype_s or None,
+                    tags=tag_set,
                 )
             )
     return rows
@@ -54,21 +72,24 @@ def run_search_chunks_eval(
     workspace_id: UUID,
     gold_rows: list[GoldRow],
     k_list: tuple[int, ...] = (1, 3, 5, 10),
+    settings_overrides: RetrievalEvalParamOverrides | None = None,
 ) -> dict[str, float]:
-    """Vector search only (generic + domain rules), no rerank."""
-    examples: list[tuple[set[str], list[str]]] = []
-    for row in gold_rows:
-        qvec = embed_texts([row.query_text])[0]
-        hits = search_chunks_pgvector(
-            db,
-            workspace_id=workspace_id,
-            query_text=row.query_text,
-            query_embedding=qvec,
-            top_k=max(k_list),
-        )
-        ranked = [str(h["chunk_id"]) for h in hits]
-        examples.append((row.gold_chunk_ids, ranked))
-    return aggregate_metrics(examples, k_list=k_list)
+    """Vector search only (generic + domain rules), no rerank. Adds per-segment keys when gold has query_type or tags."""
+    examples: list[tuple[set[str], list[str], str | None]] = []
+    with apply_retrieval_eval_overrides(settings_overrides or RetrievalEvalParamOverrides()):
+        for row in gold_rows:
+            qvec = embed_texts([row.query_text])[0]
+            hits = search_chunks_pgvector(
+                db,
+                workspace_id=workspace_id,
+                query_text=row.query_text,
+                query_embedding=qvec,
+                top_k=max(k_list),
+            )
+            ranked = [str(h["chunk_id"]) for h in hits]
+            seg = primary_segment_key(query_type=row.query_type, tags=row.tags)
+            examples.append((row.gold_chunk_ids, ranked, seg))
+    return aggregate_metrics_stratified(examples, k_list=k_list)
 
 
 def run_retrieve_ranked_hits_eval(
@@ -79,29 +100,32 @@ def run_retrieve_ranked_hits_eval(
     gold_rows: list[GoldRow],
     k_list: tuple[int, ...] = (1, 3, 5, 10),
     reranker_enabled: bool = False,
+    settings_overrides: RetrievalEvalParamOverrides | None = None,
 ) -> dict[str, float]:
     """
     Full RAG path: vector → rerank → snippet compaction → contract-value post-rules.
 
     Default ``reranker_enabled=False`` matches the committed ranked baseline (no cross-encoder).
     """
-    examples: list[tuple[set[str], list[str]]] = []
+    examples: list[tuple[set[str], list[str], str | None]] = []
     top_k = max(k_list)
     with patch.object(settings, "reranker_enabled", reranker_enabled):
-        for row in gold_rows:
-            qvec = embed_texts([row.query_text])[0]
-            hits = retrieve_ranked_hits(
-                db,
-                workspace_id=workspace_id,
-                user_id=user_id,
-                query=row.query_text,
-                query_embedding=qvec,
-                top_k=top_k,
-                compact_snippets=True,
-            )
-            ranked = [str(h["chunk_id"]) for h in hits]
-            examples.append((row.gold_chunk_ids, ranked))
-    return aggregate_metrics(examples, k_list=k_list)
+        with apply_retrieval_eval_overrides(settings_overrides or RetrievalEvalParamOverrides()):
+            for row in gold_rows:
+                qvec = embed_texts([row.query_text])[0]
+                hits = retrieve_ranked_hits(
+                    db,
+                    workspace_id=workspace_id,
+                    user_id=user_id,
+                    query=row.query_text,
+                    query_embedding=qvec,
+                    top_k=top_k,
+                    compact_snippets=True,
+                )
+                ranked = [str(h["chunk_id"]) for h in hits]
+                seg = primary_segment_key(query_type=row.query_type, tags=row.tags)
+                examples.append((row.gold_chunk_ids, ranked, seg))
+    return aggregate_metrics_stratified(examples, k_list=k_list)
 
 
 def build_rerank_gain_report(

@@ -57,8 +57,17 @@ EVENT_SEARCH_REQUEST = "search_request"
 EVENT_CHAT_MESSAGE = "chat_message"
 EVENT_DOCUMENT_UPLOAD = "document_upload"
 EVENT_TOKENS = "llm_tokens"
+EVENT_EMBEDDING_TOKENS = "embedding_tokens"
+EVENT_GENERATION_TOKENS = "generation_tokens"
 EVENT_UPLOAD_BYTES = "document_upload_bytes"
 EVENT_RERANK = "rerank_pass"
+
+# All token event types that debit monthly_token_limit (legacy llm_tokens + split metering).
+TOKEN_EVENT_TYPES_FOR_MONTHLY_CAP = (
+    EVENT_TOKENS,
+    EVENT_EMBEDDING_TOKENS,
+    EVENT_GENERATION_TOKENS,
+)
 
 
 def plan_rate_multiplier(plan_slug: str) -> float:
@@ -269,7 +278,7 @@ def assert_quota(
         current_tokens = _sum_events(
             db,
             workspace_id=workspace_id,
-            event_types=(EVENT_TOKENS,),
+            event_types=TOKEN_EVENT_TYPES_FOR_MONTHLY_CAP,
             unit="tokens",
             from_dt=start,
             to_dt=end,

@@ -2,7 +2,7 @@ import unittest
 
 from app.core.config import settings
 from app.services.reranker import rerank_hits
-from app.services.retrieval.generic_hybrid import rrf_fuse
+from app.services.retrieval.generic_hybrid import rrf_fuse, weighted_score_fuse
 
 
 class HybridRetrievalTests(unittest.TestCase):
@@ -21,6 +21,18 @@ class HybridRetrievalTests(unittest.TestCase):
         top_ids = [row["chunk_id"] for row in fused[:3]]
         self.assertIn("c2", top_ids)
         self.assertIn("c3", top_ids)
+
+    def test_weighted_fusion_prefers_high_dense_when_alpha_one(self) -> None:
+        dense = [
+            {"chunk_id": "a", "document_id": "d", "chunk_index": 0, "text": "t", "dense_score": 0.9},
+            {"chunk_id": "b", "document_id": "d", "chunk_index": 1, "text": "t", "dense_score": 0.1},
+        ]
+        keyword = [
+            {"chunk_id": "b", "document_id": "d", "chunk_index": 1, "text": "t", "keyword_score": 0.99},
+            {"chunk_id": "a", "document_id": "d", "chunk_index": 0, "text": "t", "keyword_score": 0.1},
+        ]
+        fused = weighted_score_fuse(dense, keyword, alpha=1.0, score_magnitude=1.0)
+        self.assertEqual(fused[0]["chunk_id"], "a")
 
     def test_reranker_returns_same_hits_when_disabled(self) -> None:
         original = settings.reranker_enabled
