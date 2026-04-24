@@ -29,6 +29,7 @@ PLAN_LIMITS: dict[str, dict[str, int | None]] = {
         "monthly_token_limit": 2_000_000,
         "monthly_upload_bytes_limit": 536_870_912,  # 512 MiB
         "monthly_rerank_limit": 2_000,
+        "monthly_summary_generation_limit": 100,
         "max_documents": 50,
         "max_concurrent_ingestion_jobs": 2,
         "max_pdf_pages": 150,
@@ -38,6 +39,7 @@ PLAN_LIMITS: dict[str, dict[str, int | None]] = {
         "monthly_token_limit": 20_000_000,
         "monthly_upload_bytes_limit": 5_368_709_120,  # 5 GiB
         "monthly_rerank_limit": 50_000,
+        "monthly_summary_generation_limit": 5_000,
         "max_documents": 10_000,
         "max_concurrent_ingestion_jobs": 8,
         "max_pdf_pages": 2000,
@@ -47,6 +49,7 @@ PLAN_LIMITS: dict[str, dict[str, int | None]] = {
         "monthly_token_limit": 200_000_000,
         "monthly_upload_bytes_limit": 53_687_091_200,  # 50 GiB
         "monthly_rerank_limit": 500_000,
+        "monthly_summary_generation_limit": 50_000,
         "max_documents": None,
         "max_concurrent_ingestion_jobs": 32,
         "max_pdf_pages": None,
@@ -61,6 +64,7 @@ EVENT_EMBEDDING_TOKENS = "embedding_tokens"
 EVENT_GENERATION_TOKENS = "generation_tokens"
 EVENT_UPLOAD_BYTES = "document_upload_bytes"
 EVENT_RERANK = "rerank_pass"
+EVENT_SUMMARY_GENERATION = "summary_generation"
 
 # All token event types that debit monthly_token_limit (legacy llm_tokens + split metering).
 TOKEN_EVENT_TYPES_FOR_MONTHLY_CAP = (
@@ -239,6 +243,7 @@ def assert_quota(
     token_increment: int = 0,
     upload_bytes_increment: int = 0,
     rerank_increment: int = 0,
+    summary_generation_increment: int = 0,
 ) -> None:
     quota = get_or_create_quota(db, workspace_id)
     start, end = month_window()
@@ -273,6 +278,27 @@ def assert_quota(
                 _log_quota_violation(workspace_id, "monthly_rerank")
                 _audit_quota_denied(db, workspace_id=workspace_id, user_id=user_id, reason="monthly_rerank")
                 raise HTTPException(status_code=429, detail="Workspace monthly rerank quota exceeded")
+
+    if summary_generation_increment > 0:
+        slug = (quota.plan_slug or "free").lower()
+        cap = _defaults_for_plan(slug).get("monthly_summary_generation_limit")
+        if cap is not None:
+            current_sg = _sum_events(
+                db,
+                workspace_id=workspace_id,
+                event_types=(EVENT_SUMMARY_GENERATION,),
+                unit="count",
+                from_dt=start,
+                to_dt=end,
+            )
+            if current_sg + int(summary_generation_increment) > int(cap):
+                _log_quota_violation(workspace_id, "monthly_summary_generation")
+                _audit_quota_denied(
+                    db, workspace_id=workspace_id, user_id=user_id, reason="monthly_summary_generation"
+                )
+                raise HTTPException(
+                    status_code=429, detail="Workspace monthly document summary generation quota exceeded"
+                )
 
     if token_increment > 0:
         current_tokens = _sum_events(

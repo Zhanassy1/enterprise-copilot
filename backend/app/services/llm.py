@@ -102,8 +102,21 @@ def llm_chat(
     *,
     max_tokens: int = 1024,
 ) -> str:
+    text, _, _ = llm_chat_with_usage(system_prompt, user_prompt, max_tokens=max_tokens)
+    return text
+
+
+def llm_chat_with_usage(
+    system_prompt: str,
+    user_prompt: str,
+    *,
+    max_tokens: int = 1024,
+) -> tuple[str, int, int]:
+    """Returns (assistant_text, prompt_tokens, completion_tokens). Uses API usage when present."""
     if not llm_enabled():
-        return LLM_SERVICE_UNAVAILABLE_RU
+        return LLM_SERVICE_UNAVAILABLE_RU, 0, 0
+
+    from app.services.usage_metering import estimate_tokens
 
     client = _get_client()
     try:
@@ -117,10 +130,30 @@ def llm_chat(
             max_tokens=max_tokens,
             timeout=settings.llm_request_timeout_seconds,
         )
-        return (resp.choices[0].message.content or "").strip()
+        content = (resp.choices[0].message.content or "").strip()
+        usage = getattr(resp, "usage", None)
+        p_tok = int(getattr(usage, "prompt_tokens", 0) or 0) if usage else 0
+        c_tok = int(getattr(usage, "completion_tokens", 0) or 0) if usage else 0
+        if not p_tok:
+            p_tok = estimate_tokens(system_prompt) + estimate_tokens(user_prompt)
+        if not c_tok:
+            c_tok = estimate_tokens(content)
+        return content, p_tok, c_tok
     except Exception as e:
         logger.error("LLM call failed: %s", e)
-        return LLM_SERVICE_UNAVAILABLE_RU
+        return LLM_SERVICE_UNAVAILABLE_RU, 0, 0
+
+
+def _summary_prompt_parts(text: str) -> tuple[str, str]:
+    truncated = text[: settings.llm_max_context_tokens * 3]
+    return SUMMARY_SYSTEM_PROMPT, f"Документ:\n\n{truncated}"
+
+
+def estimate_summary_prompt_tokens(text: str) -> int:
+    from app.services.usage_metering import estimate_tokens
+
+    system, user = _summary_prompt_parts(text)
+    return estimate_tokens(system) + estimate_tokens(user)
 
 
 def _rag_system_prompt(
@@ -213,21 +246,16 @@ def rag_answer_stream(
         yield from _yield_extractive_stream()
 
 
-def llm_summarize(text: str) -> str:
-    """Generate an LLM-based summary. Returns empty string if LLM is not configured or call failed."""
+def llm_summarize(text: str) -> tuple[str, int, int]:
+    """LLM summary and token counts. Returns (\"\", 0, 0) if LLM is off or the call failed."""
     if not llm_enabled():
-        return ""
+        return "", 0, 0
 
-    truncated = text[: settings.llm_max_context_tokens * 3]
-
-    system = SUMMARY_SYSTEM_PROMPT
-
-    user = f"Документ:\n\n{truncated}"
-
-    out = llm_chat(system, user, max_tokens=1024)
-    if out == LLM_SERVICE_UNAVAILABLE_RU:
-        return ""
-    return out
+    system, user = _summary_prompt_parts(text)
+    out, p_tok, c_tok = llm_chat_with_usage(system, user, max_tokens=1024)
+    if out == LLM_SERVICE_UNAVAILABLE_RU or not out:
+        return "", 0, 0
+    return out, p_tok, c_tok
 
 
 _FAITHFULNESS_JUDGE_SYSTEM = (

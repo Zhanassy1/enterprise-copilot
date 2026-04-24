@@ -19,7 +19,7 @@ from app.db.session import SessionLocal
 from app.models.document import Document, IngestionJob
 from app.models.user import User
 from app.models.workspace import Workspace, WorkspaceMember
-from app.services.ingestion_job_claim import claim_job_for_celery, claim_next_poll_job
+from app.services.ingestion_job_claim import claim_job_for_celery
 from app.services.workspace_service import ensure_default_roles
 
 
@@ -89,67 +89,6 @@ class IngestionJobClaimIntegrationTests(unittest.TestCase):
         finally:
             db.close()
 
-    def _seed_pending_job(self) -> IngestionJob:
-        db = SessionLocal()
-        try:
-            roles = ensure_default_roles(db)
-            uid = uuid.uuid4()
-            user = User(
-                id=uid,
-                email=f"poll_{uid.hex[:10]}@example.com",
-                password_hash=hash_password("PollTest1!"),
-                full_name="Poll Test",
-            )
-            db.add(user)
-            db.flush()
-            ws = Workspace(
-                id=uuid.uuid4(),
-                name="Poll WS",
-                slug=f"poll-ws-{uuid.uuid4().hex[:10]}",
-                owner_user_id=user.id,
-                personal_for_user_id=user.id,
-            )
-            db.add(ws)
-            db.flush()
-            db.add(
-                WorkspaceMember(
-                    id=uuid.uuid4(),
-                    workspace_id=ws.id,
-                    user_id=user.id,
-                    role_id=roles["owner"].id,
-                )
-            )
-            doc = Document(
-                id=uuid.uuid4(),
-                owner_id=user.id,
-                workspace_id=ws.id,
-                filename="poll.txt",
-                content_type="text/plain",
-                storage_key=f"/tmp/poll_{uuid.uuid4().hex}",
-                status="queued",
-                file_size_bytes=1,
-                created_at=datetime.now(UTC),
-                updated_at=datetime.now(UTC),
-            )
-            db.add(doc)
-            db.flush()
-            dedup = f"{ws.id}:{doc.id}"
-            job = IngestionJob(
-                id=uuid.uuid4(),
-                document_id=doc.id,
-                workspace_id=ws.id,
-                status="pending",
-                attempts=0,
-                deduplication_key=dedup,
-                celery_task_id=None,
-            )
-            db.add(job)
-            db.commit()
-            db.expunge(job)
-            return job
-        finally:
-            db.close()
-
     def _cleanup_job_tree(self, job_id: uuid.UUID) -> None:
         db = SessionLocal()
         try:
@@ -194,46 +133,6 @@ class IngestionJobClaimIntegrationTests(unittest.TestCase):
 
             self.assertEqual(sum(1 for x in results if x is True), 1)
             self.assertEqual(sum(1 for x in results if x is False), 1)
-
-            verify = SessionLocal()
-            try:
-                j = verify.get(IngestionJob, job.id)
-                self.assertIsNotNone(j)
-                assert j is not None
-                self.assertEqual(j.status, "processing")
-                self.assertEqual(j.attempts, 1)
-            finally:
-                verify.close()
-        finally:
-            self._cleanup_job_tree(job.id)
-
-    def test_concurrent_poll_claim_single_winner(self) -> None:
-        job = self._seed_pending_job()
-        try:
-            now = datetime.now(UTC)
-            results: list[uuid.UUID | None] = []
-            barrier = threading.Barrier(2)
-
-            def worker() -> None:
-                s = SessionLocal()
-                try:
-                    barrier.wait()
-                    r = claim_next_poll_job(s, now=now)
-                    results.append(r)
-                finally:
-                    s.close()
-
-            t1 = threading.Thread(target=worker)
-            t2 = threading.Thread(target=worker)
-            t1.start()
-            t2.start()
-            t1.join()
-            t2.join()
-
-            non_none = [x for x in results if x is not None]
-            self.assertEqual(len(non_none), 1)
-            self.assertEqual(non_none[0], job.id)
-            self.assertEqual(sum(1 for x in results if x is None), 1)
 
             verify = SessionLocal()
             try:

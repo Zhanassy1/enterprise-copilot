@@ -1,10 +1,17 @@
+import hashlib
 import uuid
 
 from fastapi import APIRouter, Body, File, HTTPException, UploadFile
 from fastapi.responses import RedirectResponse, Response
 from sqlalchemy import select
 
-from app.api.deps import BillingWorkspaceWriteAccess, CurrentUser, DbDep, WorkspaceReadAccess
+from app.api.deps import (
+    BillingWorkspaceWriteAccess,
+    CurrentUser,
+    DbDep,
+    WorkspaceReadAccess,
+    role_rank,
+)
 from app.core.config import settings
 from app.models.document import IngestionJob
 from app.schemas.common_api import EmptyJSONBody
@@ -18,8 +25,21 @@ from app.schemas.documents import (
 from app.services.audit import write_audit_log
 from app.services.document_indexing import reindex_null_embeddings_for_workspace
 from app.services.document_ingestion import DocumentIngestionService, validate_upload
+from app.services.document_summary_cache import (
+    advisory_lock_document_summary,
+    get_cached_summary,
+    put_cached_summary,
+)
+from app.services.llm import estimate_summary_prompt_tokens, llm_enabled, llm_summarize
 from app.services.storage import get_storage_service
 from app.services.summary import summarize_document
+from app.services.usage_metering import (
+    EVENT_EMBEDDING_TOKENS,
+    EVENT_GENERATION_TOKENS,
+    EVENT_SUMMARY_GENERATION,
+    assert_quota,
+    record_event,
+)
 
 router = APIRouter(prefix="/documents", tags=["documents"])
 
@@ -140,11 +160,101 @@ def delete_document(document_id: uuid.UUID, db: DbDep, user: CurrentUser, ws: Bi
 
 
 @router.get("/{document_id}/summary", response_model=DocumentSummaryOut)
-def summarize_document_endpoint(document_id: uuid.UUID, db: DbDep, _user: CurrentUser, ws: WorkspaceReadAccess) -> DocumentSummaryOut:
+def summarize_document_endpoint(document_id: uuid.UUID, db: DbDep, user: CurrentUser, ws: WorkspaceReadAccess) -> DocumentSummaryOut:
     service = DocumentIngestionService(db, get_storage_service())
     doc = service.get_document(ws.workspace.id, document_id)
     if not doc:
         raise HTTPException(status_code=404, detail="Not found")
-    summary = summarize_document(doc.extracted_text or "")
-    return DocumentSummaryOut(document_id=doc.id, summary=summary)
+    raw = doc.extracted_text or ""
+    if not raw.strip():
+        summary = summarize_document(raw, allow_llm=False)
+        return DocumentSummaryOut(document_id=doc.id, summary=summary)
+    text_hash = hashlib.sha256(raw.encode("utf-8")).hexdigest()
+    parser_ver = doc.parser_version or ""
+
+    cached = get_cached_summary(
+        db,
+        document_id=doc.id,
+        parser_version=parser_ver,
+        extracted_text_hash=text_hash,
+    )
+    if cached is not None:
+        return DocumentSummaryOut(document_id=doc.id, summary=cached)
+
+    role_name = ws.membership.role.name if ws.membership.role else None
+    can_llm = (role_rank(role_name) or 0) >= (role_rank("member") or 0)
+    if not can_llm or not llm_enabled():
+        summary = summarize_document(raw, allow_llm=False)
+        return DocumentSummaryOut(document_id=doc.id, summary=summary)
+
+    advisory_lock_document_summary(db, doc.id)
+    cached_after_lock = get_cached_summary(
+        db,
+        document_id=doc.id,
+        parser_version=parser_ver,
+        extracted_text_hash=text_hash,
+    )
+    if cached_after_lock is not None:
+        return DocumentSummaryOut(document_id=doc.id, summary=cached_after_lock)
+
+    prompt_est = estimate_summary_prompt_tokens(raw)
+    assert_quota(
+        db,
+        workspace_id=ws.workspace.id,
+        user_id=user.id,
+        summary_generation_increment=1,
+    )
+    assert_quota(
+        db,
+        workspace_id=ws.workspace.id,
+        user_id=user.id,
+        token_increment=prompt_est,
+    )
+    summary_text, prompt_tok, completion_tok = llm_summarize(raw)
+    if not summary_text:
+        summary_text = summarize_document(raw, allow_llm=False)
+        return DocumentSummaryOut(document_id=doc.id, summary=summary_text)
+
+    assert_quota(
+        db,
+        workspace_id=ws.workspace.id,
+        user_id=user.id,
+        token_increment=completion_tok,
+    )
+    record_event(
+        db,
+        workspace_id=ws.workspace.id,
+        user_id=user.id,
+        event_type=EVENT_SUMMARY_GENERATION,
+        quantity=1,
+        unit="count",
+        metadata={"document_id": str(doc.id)},
+    )
+    record_event(
+        db,
+        workspace_id=ws.workspace.id,
+        user_id=user.id,
+        event_type=EVENT_EMBEDDING_TOKENS,
+        quantity=prompt_tok,
+        unit="tokens",
+        metadata={"scope": "document_summary", "document_id": str(doc.id)},
+    )
+    record_event(
+        db,
+        workspace_id=ws.workspace.id,
+        user_id=user.id,
+        event_type=EVENT_GENERATION_TOKENS,
+        quantity=completion_tok,
+        unit="tokens",
+        metadata={"scope": "document_summary", "document_id": str(doc.id)},
+    )
+    put_cached_summary(
+        db,
+        document_id=doc.id,
+        parser_version=parser_ver,
+        extracted_text_hash=text_hash,
+        summary=summary_text,
+    )
+    db.commit()
+    return DocumentSummaryOut(document_id=doc.id, summary=summary_text)
 

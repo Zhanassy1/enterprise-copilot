@@ -1,4 +1,4 @@
-"""PostgreSQL-only atomic claim for ingestion jobs (SKIP LOCKED / UPDATE … RETURNING)."""
+"""PostgreSQL-only atomic claim for ingestion jobs (Celery worker)."""
 
 from __future__ import annotations
 
@@ -7,45 +7,6 @@ from datetime import datetime
 
 from sqlalchemy import text
 from sqlalchemy.orm import Session
-
-
-def claim_next_poll_job(db: Session, *, now: datetime) -> uuid.UUID | None:
-    """
-    Pick one pending job with FOR UPDATE SKIP LOCKED, set processing, commit.
-    Returns job id if a row was claimed, else None.
-    """
-    row = (
-        db.execute(
-            text(
-                """
-                WITH picked AS (
-                    SELECT id FROM ingestion_jobs
-                    WHERE status = 'pending' AND available_at <= :now
-                    ORDER BY created_at ASC
-                    LIMIT 1
-                    FOR UPDATE SKIP LOCKED
-                )
-                UPDATE ingestion_jobs AS j
-                SET
-                    status = 'processing',
-                    locked_at = :now,
-                    attempts = COALESCE(j.attempts, 0) + 1
-                FROM picked
-                WHERE j.id = picked.id
-                RETURNING j.id
-                """
-            ),
-            {"now": now},
-        )
-        .mappings()
-        .first()
-    )
-    if not row:
-        db.rollback()
-        return None
-    job_id = row["id"]
-    db.commit()
-    return job_id
 
 
 def claim_job_for_celery(

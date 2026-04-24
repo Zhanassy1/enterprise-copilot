@@ -12,7 +12,6 @@ class IngestionSettings(BaseModel):
         default=False,
         description="If True and ENVIRONMENT=local, allow sync indexing on upload when INGESTION_ASYNC_ENABLED=0.",
     )
-    ingestion_worker_poll_seconds: float = Field(default=2.0, ge=0.1, le=60.0)
     ingestion_max_attempts: int = Field(default=5, ge=1, le=50)
     ingestion_retry_backoff_seconds: int = Field(default=5, ge=1, le=300)
     ingestion_retry_backoff_max_seconds: int = Field(default=300, ge=1, le=3600)

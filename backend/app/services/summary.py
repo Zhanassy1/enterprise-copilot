@@ -4,13 +4,13 @@ from app.services.llm import llm_enabled, llm_summarize
 from app.services.nlp import tokenize
 
 
-def summarize_document(text: str, *, max_sentences: int = 5) -> str:
+def summarize_document(text: str, *, max_sentences: int = 5, allow_llm: bool = True) -> str:
     cleaned = (text or "").strip()
     if not cleaned:
         return "Документ пустой или текст не извлечен."
 
-    if llm_enabled():
-        llm_result = llm_summarize(cleaned)
+    if allow_llm and llm_enabled():
+        llm_result, _, _ = llm_summarize(cleaned)
         if llm_result:
             return llm_result
 
