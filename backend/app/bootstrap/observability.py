@@ -6,6 +6,7 @@ from sqlalchemy import func, select
 
 from app.core.config import Settings
 from app.db.session import SessionLocal
+from app.db.pool_metrics import get_db_pool_metrics_state
 from app.middleware.metrics import get_metrics_state
 from app.middleware.rerank_metrics import get_rerank_metrics_state
 from app.models.document import IngestionJob
@@ -48,6 +49,11 @@ def register_metrics_route(app: FastAPI, settings: Settings, log: logging.Logger
         lines.append(f"rerank_calls_total {int(rr_calls)}")
         lines.append(f"rerank_latency_ms_sum {float(rr_latency_sum):.4f}")
         lines.append(f"rerank_timeouts_total {int(rr_timeouts)}")
+        co_total, sa_total, sa_ms_sum, sa_slow = get_db_pool_metrics_state()
+        lines.append(f"db_pool_checkout_total {int(co_total)}")
+        lines.append(f"db_session_acquire_total {int(sa_total)}")
+        lines.append(f"db_session_acquire_ms_sum {float(sa_ms_sum):.4f}")
+        lines.append(f"db_session_slow_acquire_total {int(sa_slow)}")
         try:
             from app.tasks import ingestion as _ing_metrics
 

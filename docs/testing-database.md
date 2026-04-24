@@ -30,4 +30,4 @@ That reflects **GC finalizing a pooled connection** while the pool still holds s
 
 **Mitigation for strict CI:** set `SQLALCHEMY_USE_NULLPOOL=1` for integration/smoke jobs (as in `.github/workflows/ci.yml`).
 
-**Production** uses the default `QueuePool` (unless you override); do **not** set `SQLALCHEMY_USE_NULLPOOL` in production.
+**Production** uses the default `QueuePool` (unless you override); do **not** set `SQLALCHEMY_USE_NULLPOOL` in production. Pool sizing, server-side timeouts, and `application_name` for Postgres are controlled via `DB_*` / `DB_APPLICATION_NAME` (see `backend/.env.example`); with `SQLALCHEMY_USE_NULLPOOL=1`, the engine still uses **`NullPool`** and ignores `DB_POOL_SIZE` / `DB_MAX_OVERFLOW` (only connect-time options apply).

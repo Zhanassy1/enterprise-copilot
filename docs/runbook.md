@@ -6,6 +6,7 @@
 
 - Check Postgres connectivity from the API container: `GET /readyz` (expects `db: true`).
 - Verify `DATABASE_URL`, network policy, and that migrations ran (`alembic upgrade head`).
+- **Connection capacity (SaaS):** each API or Celery **process** holds its own SQLAlchemy `QueuePool`. Rough upper bound of open DB sessions is **`N_processes × (DB_POOL_SIZE + DB_MAX_OVERFLOW)`** (see `app.core.settings` / `DB_*` in `.env.example`). That sum must stay below Postgres `max_connections` (and below any PgBouncer or proxy limits). Long migrations or ETL with a strict `DB_STATEMENT_TIMEOUT_MS` may need a separate role, URL, or `statement_timeout=0` for that session.
 - See logs: structured JSON lines with `event: http_request` and `status_code`.
 
 ## Redis / Celery
@@ -36,7 +37,7 @@
 
 ## Metrics
 
-- `GET /metrics` (when `observability_metrics_enabled`) exposes Prometheus-style counters for HTTP requests and latency sums.
+- `GET /metrics` (when `observability_metrics_enabled`) exposes Prometheus-style counters for HTTP requests and latency sums, plus `db_pool_checkout_total`, `db_session_acquire_*` when the process records them (`db_pool_metrics_enabled`).
 - Optional Sentry: set `SENTRY_DSN`; `workspace_id` tag is attached when `X-Workspace-Id` is sent.
 
 ## Ingestion failures

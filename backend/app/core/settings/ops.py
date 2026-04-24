@@ -8,6 +8,24 @@ class OpsSettings(BaseModel):
 
     # Database
     database_url: str = Field(default="postgresql+psycopg://postgres:postgres@localhost:5432/enterprise_copilot")
+    # Per-process pool (QueuePool). Total DB connections ≈ (uvicorn/gunicorn workers + celery workers) × (db_pool_size + db_max_overflow) — must stay under Postgres max_connections.
+    db_connect_timeout: int = Field(default=10, ge=1, le=120, description="TCP connect timeout in seconds (psycopg)")
+    db_pool_size: int = Field(default=5, ge=1, le=100)
+    db_max_overflow: int = Field(default=10, ge=0, le=100)
+    db_pool_recycle: int = Field(default=1800, ge=0, le=86400, description="Seconds before recycling a connection; 0 = SQLAlchemy default (no recycle)")
+    db_pool_timeout: int = Field(default=30, ge=1, le=300, description="Seconds to wait for a free connection from the pool")
+    db_statement_timeout_ms: int = Field(
+        default=0, ge=0, le=3_600_000, description="PostgreSQL statement_timeout; 0 = not set. Use 0 for long migrations/ETL or a separate role."
+    )
+    db_idle_in_transaction_session_timeout_ms: int = Field(
+        default=0, ge=0, le=3_600_000, description="PostgreSQL idle_in_transaction_session_timeout; 0 = not set"
+    )
+    # Empty: use app_name (psycopg application_name, visible in pg_stat_activity). Override e.g. enterprise-copilot-celery per worker in compose.
+    db_application_name: str = Field(default="")
+    db_pool_metrics_enabled: bool = Field(default=True, description="Pool/checkout counters; disable in tight unit tests if needed")
+    db_checkout_warn_ms: float = Field(
+        default=500.0, ge=0.0, description="Log warning if get_db() session acquire exceeds this (ms). 0 = off"
+    )
 
     # Redis (jobs/cache later)
     redis_url: str = Field(default="redis://localhost:6379/0")
