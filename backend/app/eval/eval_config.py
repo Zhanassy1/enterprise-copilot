@@ -19,6 +19,12 @@ class RetrievalEvalConfig:
     notes: str = ""
     ranked_baseline_relative: str | None = None
     answer_gold_relative: str = "eval/answer_gold.jsonl"
+    # P2 (large synthetic gold, multilingual + safety fixtures)
+    gold_p2_relative: str = "eval/retrieval_gold_p2.jsonl"
+    answer_gold_p2_relative: str = "eval/answer_gold_p2.jsonl"
+    baseline_p2_retrieval_relative: str = "eval/baseline_metrics_p2.json"
+    baseline_p2_answer_relative: str = "eval/baseline_p2_answer.json"
+    p2_regression_epsilon: float = 0.12
 
     @classmethod
     def from_dict(cls, raw: dict[str, Any]) -> RetrievalEvalConfig:
@@ -34,6 +40,15 @@ class RetrievalEvalConfig:
             notes=str(raw.get("notes") or ""),
             ranked_baseline_relative=str(rb) if rb else None,
             answer_gold_relative=str(ag),
+            gold_p2_relative=str(raw.get("gold_p2_relative") or "eval/retrieval_gold_p2.jsonl"),
+            answer_gold_p2_relative=str(raw.get("answer_gold_p2_relative") or "eval/answer_gold_p2.jsonl"),
+            baseline_p2_retrieval_relative=str(
+                raw.get("baseline_p2_retrieval_relative") or "eval/baseline_metrics_p2.json"
+            ),
+            baseline_p2_answer_relative=str(
+                raw.get("baseline_p2_answer_relative") or "eval/baseline_p2_answer.json"
+            ),
+            p2_regression_epsilon=float(raw.get("p2_regression_epsilon", 0.12)),
         )
 
 
@@ -66,3 +81,15 @@ def resolve_ranked_baseline_path(
 def resolve_answer_gold_path(backend_root: Path, config: RetrievalEvalConfig) -> Path:
     """Absolute path to answer + citation gold JSONL."""
     return (backend_root / config.answer_gold_relative).resolve()
+
+
+def resolve_p2_gold_paths(
+    backend_root: Path, config: RetrievalEvalConfig
+) -> tuple[Path, Path, Path, Path]:
+    """retrieval p2, answer p2, baseline retrieval, baseline answer (absolute)."""
+    return (
+        (backend_root / config.gold_p2_relative).resolve(),
+        (backend_root / config.answer_gold_p2_relative).resolve(),
+        (backend_root / config.baseline_p2_retrieval_relative).resolve(),
+        (backend_root / config.baseline_p2_answer_relative).resolve(),
+    )

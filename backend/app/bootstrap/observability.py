@@ -2,14 +2,14 @@ import logging
 
 from fastapi import FastAPI
 from fastapi.responses import Response
-from sqlalchemy import func, select
+from sqlalchemy import distinct, func, select
 
 from app.core.config import Settings
 from app.db.session import SessionLocal
 from app.db.pool_metrics import get_db_pool_metrics_state
 from app.middleware.metrics import get_metrics_state
 from app.middleware.rerank_metrics import get_rerank_metrics_state
-from app.models.document import IngestionJob
+from app.models.document import Document, DocumentChunk, IngestionJob
 
 
 def init_sentry(settings: Settings, log: logging.Logger | None = None) -> None:
@@ -69,6 +69,16 @@ def register_metrics_route(app: FastAPI, settings: Settings, log: logging.Logger
                 ).all()
                 for st, cnt in rows:
                     lines.append(f'ingestion_jobs_total{{status="{st}"}} {int(cnt)}')
+                n_null = db.scalar(
+                    select(func.count(distinct(Document.id)))
+                    .select_from(Document)
+                    .join(DocumentChunk, DocumentChunk.document_id == Document.id)
+                    .where(
+                        Document.deleted_at.is_(None),
+                        DocumentChunk.embedding_vector.is_(None),
+                    )
+                )
+                lines.append(f"documents_with_null_embeddings {int(n_null or 0)}")
             finally:
                 db.close()
         except Exception as e:

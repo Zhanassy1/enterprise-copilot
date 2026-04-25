@@ -11,7 +11,10 @@ venv/
 # Local Python install / venv layout under backend (Windows py -m venv or manual)
 backend/Lib/
 backend/Include/
+# On case-insensitive FS, ``Scripts`` (venv) can hide ``scripts/`` — un-ignore, then add only
+# the CLI ``*.py`` you want (or use ``git add -f path``). Put local venv under ``.venv/`` instead.
 backend/Scripts/
+!backend/scripts/
 backend/share/
 
 # Environment

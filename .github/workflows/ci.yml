@@ -118,6 +118,8 @@ jobs:
     env:
       DATABASE_URL: postgresql+psycopg://postgres:postgres@localhost:5433/enterprise_copilot_test
       RUN_INTEGRATION_TESTS: "1"
+      # P2 50-row RAG eval: nightly + manual dispatch (longer; see tests/test_p2_rag_eval_integration.py)
+      RUN_P2_EVAL: ${{ (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && '1' || '0' }}
       SQLALCHEMY_USE_NULLPOOL: "1"
       # No Redis/Celery in this job; uploads use sync ingest (see tests/conftest.py).
       INGESTION_ASYNC_ENABLED: "0"

@@ -46,6 +46,12 @@ class IngestionSettings(BaseModel):
         le=512,
         description="Max texts per embedding encode + DB update batch during indexing (memory and retry granularity).",
     )
+    ingestion_stale_requeue_after_minutes: int = Field(
+        default=20,
+        ge=1,
+        le=10080,
+        description="Requeue ingestion jobs with NULL chunk embeddings if processing lock or retrying schedule is older than this (maintenance).",
+    )
 
     # PDF: native text vs scanned / OCR (AWS Textract)
     pdf_ocr_enabled: bool = Field(default=False, description="Run cloud OCR when native PDF text is weak or empty.")

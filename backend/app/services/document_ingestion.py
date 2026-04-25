@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+import io
 import logging
 import os
 import re
 import uuid
+import zipfile
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -14,7 +16,13 @@ from sqlalchemy.orm import Session
 
 from app.constants.ingestion import DOCUMENT_DEDUP_ACTIVE_STATUSES
 from app.core.config import settings
-from app.core.upload_limits import UploadTooLargeError
+from app.core.upload_limits import (
+    MAX_DOCX_UNCOMPRESSED_SINGLE,
+    MAX_DOCX_UNCOMPRESSED_SUM,
+    MAX_DOCX_ZIP_MEMBERS,
+    MAX_UPLOAD_BYTES,
+    UploadTooLargeError,
+)
 from app.models.document import Document, IngestionJob
 from app.models.workspace import Workspace
 from app.schemas.documents import DocumentIngestOut, DocumentOut
@@ -89,7 +97,112 @@ def _is_documents_workspace_sha256_unique_violation(exc: IntegrityError) -> bool
     return name == "uq_documents_workspace_sha256_active"
 
 
+_OOXML_REQUIRED_PATHS: tuple[str, ...] = ("[Content_Types].xml", "word/document.xml")
+_DOCX_XML_PREFIX_MAX = 4096
+
+
+def _normalize_zip_entry_name(name: str) -> str | None:
+    s = name.replace("\\", "/").strip()
+    if s.startswith("/"):
+        s = s[1:]
+    parts = [p for p in s.split("/") if p and p != "."]
+    if any(p == ".." for p in parts):
+        return None
+    return "/".join(parts)
+
+
+def _looks_like_xml_prefix(buf: bytes) -> bool:
+    s = buf.lstrip()
+    return bool(s.startswith(b"<?xml") or s.startswith(b"<"))
+
+
+def _validate_docx_ooxml(file_obj: object) -> None:
+    """
+    Check OOXML parts and ZIP central-directory metadata (not full decompression).
+    Resets the stream to offset 0 on success; best-effort seek(0) on errors.
+    """
+    try:
+        file_obj.seek(0)  # type: ignore[union-attr]
+    except Exception as exc:
+        logger.warning("Upload DOCX validation failed: %s", exc)
+        raise HTTPException(
+            status_code=400, detail="Could not validate uploaded file"
+        ) from None
+    try:
+        raw = file_obj.read(MAX_UPLOAD_BYTES + 1)  # type: ignore[union-attr]
+    except Exception as exc:
+        logger.warning("Upload DOCX validation failed: %s", exc)
+        raise HTTPException(
+            status_code=400, detail="Could not validate uploaded file"
+        ) from None
+    if len(raw) > MAX_UPLOAD_BYTES:
+        try:
+            file_obj.seek(0)  # type: ignore[union-attr]
+        except Exception:
+            pass
+        raise HTTPException(status_code=413, detail="File too large (max 25MB)")
+    try:
+        with zipfile.ZipFile(io.BytesIO(raw)) as zf:
+            infos = zf.infolist()
+            if len(infos) > MAX_DOCX_ZIP_MEMBERS:
+                raise HTTPException(
+                    status_code=400, detail="File content does not match DOCX format"
+                )
+            total_uncompressed = 0
+            for info in infos:
+                if info.is_dir():
+                    continue
+                u = int(info.file_size)
+                if u > MAX_DOCX_UNCOMPRESSED_SINGLE:
+                    raise HTTPException(
+                        status_code=400, detail="File content does not match DOCX format"
+                    )
+                total_uncompressed += u
+                if total_uncompressed > MAX_DOCX_UNCOMPRESSED_SUM:
+                    raise HTTPException(
+                        status_code=400, detail="File content does not match DOCX format"
+                    )
+            normalized: set[str] = set()
+            for name in zf.namelist():
+                norm = _normalize_zip_entry_name(name)
+                if norm is None:
+                    raise HTTPException(
+                        status_code=400, detail="File content does not match DOCX format"
+                    )
+                normalized.add(norm)
+            for path in _OOXML_REQUIRED_PATHS:
+                if path not in normalized:
+                    raise HTTPException(
+                        status_code=400, detail="File content does not match DOCX format"
+                    )
+            for path in _OOXML_REQUIRED_PATHS:
+                with zf.open(path) as member:
+                    chunk = member.read(_DOCX_XML_PREFIX_MAX)
+                if not _looks_like_xml_prefix(chunk):
+                    raise HTTPException(
+                        status_code=400, detail="File content does not match DOCX format"
+                    )
+    except HTTPException:
+        raise
+    except zipfile.BadZipFile:
+        raise HTTPException(
+            status_code=400, detail="File content does not match DOCX format"
+        ) from None
+    finally:
+        try:
+            file_obj.seek(0)  # type: ignore[union-attr]
+        except Exception:
+            pass
+
+
 def validate_upload(file: UploadFile) -> None:
+    """Validate filename, content-type, magic bytes, and format-specific structure.
+
+    If the upload stream cannot be read for header checks, the request is rejected
+    (fail-closed) instead of accepting the file. For ``.docx``, ZIP must contain
+    standard OOXML parts (e.g. ``[Content_Types].xml``, ``word/document.xml``) and
+    must pass non-destructive zip-bomb heuristics on central-directory metadata.
+    """
     raw_name = (file.filename or "").strip()
     if not raw_name or raw_name.endswith((".", "/")):
         raise HTTPException(status_code=400, detail="Invalid filename")
@@ -109,13 +222,17 @@ def validate_upload(file: UploadFile) -> None:
         pos = file.file.tell()
         header = file.file.read(8) or b""
         file.file.seek(pos)
-    except Exception as e:
-        logger.debug("upload magic-byte read skipped (stream error): %s", e)
-        return
+    except Exception as exc:
+        logger.warning("Upload magic-byte validation failed: %s", exc)
+        raise HTTPException(
+            status_code=400, detail="Could not validate uploaded file"
+        ) from None
     if suffix == ".pdf" and not header.startswith(b"%PDF"):
         raise HTTPException(status_code=400, detail="File content does not match PDF format")
     if suffix == ".docx" and not header.startswith(b"PK"):
         raise HTTPException(status_code=400, detail="File content does not match DOCX format")
+    if suffix == ".docx":
+        _validate_docx_ooxml(file.file)
     if suffix == ".pdf":
         try:
             file.file.seek(0)

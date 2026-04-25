@@ -119,3 +119,87 @@ def seed_retrieval_eval_corpus(db: Session) -> tuple[uuid.UUID, uuid.UUID, uuid.
         )
 
     return ws.id, user.id, doc.id
+
+
+def seed_p2_rag_eval_corpus(db: Session) -> tuple[uuid.UUID, uuid.UUID, uuid.UUID]:
+    """
+    P2 eval: 50 synthetic chunks (RU / EN / mixed / injection fixture), fixed UUIDs
+    in ``app/eval/p2_corpus_data.py`` (prefix ``f0000002-...``).
+
+    Commits are left to the caller.
+    """
+    from app.eval.p2_corpus_data import (
+        P2_N_CHUNKS,
+        build_p2_corpus_texts,
+        p2_chunk_uuid,
+    )
+
+    roles = ensure_default_roles(db)
+    uid = uuid.uuid4()
+    email = f"p2_rag_{uid.hex[:10]}@example.com"
+    user = User(
+        id=uid,
+        email=email,
+        password_hash=hash_password("P2RagEval1!"),
+        full_name="P2 RAG Eval",
+    )
+    db.add(user)
+    db.flush()
+
+    ws = Workspace(
+        id=uuid.uuid4(),
+        name="P2 RAG Eval WS",
+        slug=f"p2reval-{uuid.uuid4().hex[:8]}",
+        owner_user_id=user.id,
+        personal_for_user_id=user.id,
+    )
+    db.add(ws)
+    db.flush()
+
+    db.add(
+        WorkspaceMember(
+            id=uuid.uuid4(),
+            workspace_id=ws.id,
+            user_id=user.id,
+            role_id=roles["owner"].id,
+        )
+    )
+    get_or_create_quota(db, ws.id)
+
+    doc = Document(
+        id=uuid.uuid4(),
+        owner_id=user.id,
+        workspace_id=ws.id,
+        filename="p2_eval_synthetic_corpus.txt",
+        content_type="text/plain",
+        storage_key="local/eval/p2_eval_placeholder.txt",
+        status="ready",
+        file_size_bytes=1,
+        created_at=datetime.now(UTC),
+        updated_at=datetime.now(UTC),
+    )
+    db.add(doc)
+    db.flush()
+
+    texts = build_p2_corpus_texts()
+    vecs = embed_texts(texts)
+    dim = get_embedding_dim()
+    repo = DocumentChunkRepository(db)
+    for idx, (txt, vec) in enumerate(zip(texts, vecs, strict=True), start=1):
+        cid = p2_chunk_uuid(idx)
+        if len(vec) != dim:
+            raise ValueError(f"embedding dim {len(vec)} != {dim}")
+        qv = "[" + ",".join(f"{float(x):.8f}" for x in vec) + "]"
+        repo.insert_chunk_with_embedding(
+            chunk_id=cid,
+            document_id=doc.id,
+            chunk_index=idx - 1,
+            text=txt,
+            embedding_dim=dim,
+            vector_literal=qv,
+            page_number=idx,
+            paragraph_index=0,
+        )
+    if len(texts) != P2_N_CHUNKS:
+        raise ValueError("p2_corpus_data.P2_N_CHUNKS and texts length must match")
+    return ws.id, user.id, doc.id

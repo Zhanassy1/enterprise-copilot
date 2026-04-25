@@ -21,5 +21,6 @@ testpaths = ["tests"]
 markers = [
     "retrieval_regression: seeded corpus + gold JSONL regression gates",
     "rerank_gain: optional real cross-encoder paired eval (RUN_RERANK_EVAL=1)",
+    "p2_rag: 50-row P2 RAG eval (RUN_P2_EVAL=1, RUN_INTEGRATION_TESTS=1)",
     "perf: opt-in load/perf scenarios (requires RUN_PERF_TESTS=1)",
 ]

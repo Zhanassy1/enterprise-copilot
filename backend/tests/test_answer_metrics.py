@@ -6,7 +6,9 @@ import pytest
 
 from app.eval.answer_eval_runner import load_answer_gold_jsonl
 from app.eval.answer_metrics import (
+    citation_chunk_precision,
     evidence_covers_required_chunk_ids,
+    faithfulness_proxy_row,
     forbidden_satisfied,
     gold_chunks_in_top_k,
     grounded_line_ratio,
@@ -85,4 +87,26 @@ def test_evidence_covers_required() -> None:
 
 def test_parse_citation_indices() -> None:
     assert parse_citation_indices_from_answer("See [1] and [2]") == {1, 2}
+
+
+def test_citation_chunk_precision() -> None:
+    u1 = "f0000001-0001-0001-0001-000000000001"
+    u2 = "f0000001-0001-0001-0001-000000000002"
+    gr = {u1, u2}
+    assert citation_chunk_precision([], gold_relevant=gr) == 0.0
+    assert citation_chunk_precision([u1, u1], gold_relevant=gr) == 1.0
+    assert citation_chunk_precision([u1, u2], gold_relevant=gr) == 1.0
+    import uuid
+
+    assert citation_chunk_precision([uuid.UUID(u1), u2], gold_relevant=gr) == 1.0
+    u3 = "f0000001-0001-0001-0001-000000000099"
+    assert abs(citation_chunk_precision([u1, u2, u3], gold_relevant=gr) - (2.0 / 3.0)) < 0.0001
+    assert citation_chunk_precision([u1], gold_relevant=set()) == 1.0
+
+
+def test_faithfulness_proxy_row() -> None:
+    p = faithfulness_proxy_row(0.8, evidence_ok=True, forbidden_ok=True, has_required_evidence=False, reference_f1=None)
+    assert p == pytest.approx(0.9)
+    p2 = faithfulness_proxy_row(1.0, evidence_ok=False, forbidden_ok=True, has_required_evidence=True, reference_f1=0.5)
+    assert p2 == pytest.approx(0.625)
     assert not parse_citation_indices_from_answer("no brackets")

@@ -12,6 +12,7 @@ from app.tasks.maintenance import (
     delete_document_blob_and_row,
     hard_delete_soft_deleted_document_task,
     process_usage_outbox_task,
+    requeue_stale_ingestion_jobs_task,
 )
 
 
@@ -27,6 +28,14 @@ class MaintenanceTaskTests(unittest.TestCase):
         bs = celery_app.conf.beat_schedule or {}
         self.assertIn("process-usage-outbox-minutely", bs)
         self.assertEqual(bs["process-usage-outbox-minutely"]["task"], "maintenance.process_usage_outbox")
+
+    def test_beat_schedule_registers_stale_ingestion_requeue(self) -> None:
+        bs = celery_app.conf.beat_schedule or {}
+        self.assertIn("requeue-stale-ingestion-every-5m", bs)
+        self.assertEqual(
+            bs["requeue-stale-ingestion-every-5m"]["task"],
+            "maintenance.requeue_stale_ingestion_jobs",
+        )
 
     def test_delete_document_blob_and_row(self) -> None:
         storage = MagicMock()
@@ -87,6 +96,23 @@ class MaintenanceTaskTests(unittest.TestCase):
 
         self.assertEqual(out["processed"], 3)
         batch.assert_called_once_with(db, limit=10)
+        db.close.assert_called_once()
+
+    @patch("app.tasks.maintenance.requeue_stale_ingestion_jobs")
+    @patch("app.tasks.maintenance.SessionLocal")
+    def test_requeue_stale_ingestion_jobs_task(
+        self, session_local: MagicMock, requeue_fn: MagicMock
+    ) -> None:
+        jid = uuid.uuid4()
+        requeue_fn.return_value = MagicMock(requeued=1, job_ids=[jid])
+        db = MagicMock()
+        session_local.return_value = db
+
+        out = requeue_stale_ingestion_jobs_task(limit=7)
+
+        self.assertEqual(out["requeued"], 1)
+        self.assertEqual(out["job_ids"], [str(jid)])
+        requeue_fn.assert_called_once_with(db, limit=7)
         db.close.assert_called_once()
 
 

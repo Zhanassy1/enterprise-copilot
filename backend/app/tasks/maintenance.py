@@ -13,6 +13,8 @@ from app.celery_app import celery_app
 from app.core.config import settings
 from app.db.session import SessionLocal
 from app.models.document import Document
+from app.services.ingestion_stale_requeue import requeue_stale_ingestion_jobs
+from app.services.ingestion_stale_requeue import requeue_stale_ingestion_jobs
 from app.services.storage import StorageService, get_storage_service
 from app.services.usage_outbox import process_usage_outbox_batch
 
@@ -78,6 +80,24 @@ def hard_delete_soft_deleted_document_task(*, document_id: str, workspace_id: st
         return {"status": "ok", "document_id": document_id}
     except Exception as e:
         logger.exception("hard_delete_soft_deleted_document failed: %s", e)
+        db.rollback()
+        raise
+    finally:
+        db.close()
+
+
+@celery_app.task(name="maintenance.requeue_stale_ingestion_jobs")
+def requeue_stale_ingestion_jobs_task(limit: int = 20) -> dict:
+    """Requeue stuck ingestion jobs: partial NULL embeddings and stale lock or retry schedule."""
+    db = SessionLocal()
+    try:
+        r = requeue_stale_ingestion_jobs(db, limit=limit)
+        return {
+            "requeued": r.requeued,
+            "job_ids": [str(x) for x in r.job_ids],
+        }
+    except Exception as e:
+        logger.exception("requeue_stale_ingestion_jobs failed: %s", e)
         db.rollback()
         raise
     finally:

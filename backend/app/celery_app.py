@@ -35,6 +35,11 @@ celery_app.conf.update(
             "schedule": crontab(minute="*"),
             "options": {"queue": settings.celery_ingestion_queue},
         },
+        "requeue-stale-ingestion-every-5m": {
+            "task": "maintenance.requeue_stale_ingestion_jobs",
+            "schedule": crontab(minute="*/5"),
+            "options": {"queue": settings.celery_ingestion_queue},
+        },
     },
     # Security: reject pickle/or other unsafe serializers (Celery recommendation for untrusted brokers).
     task_serializer="json",

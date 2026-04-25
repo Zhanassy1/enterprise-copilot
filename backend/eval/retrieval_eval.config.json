@@ -5,5 +5,10 @@
   "answer_gold_relative": "eval/answer_gold.jsonl",
   "k_list": [1, 3, 5, 10],
   "regression_epsilon": 0.02,
-  "notes": "Default gold is synthetic (seed_corpus + fixed chunk UUIDs). For CI smoke use eval/retrieval_gold_smoke.jsonl via --gold."
+  "gold_p2_relative": "eval/retrieval_gold_p2.jsonl",
+  "answer_gold_p2_relative": "eval/answer_gold_p2.jsonl",
+  "baseline_p2_retrieval_relative": "eval/baseline_metrics_p2.json",
+  "baseline_p2_answer_relative": "eval/baseline_p2_answer.json",
+  "p2_regression_epsilon": 0.12,
+  "notes": "Default gold is synthetic (seed_corpus + fixed chunk UUIDs). For CI smoke use eval/retrieval_gold_smoke.jsonl via --gold. P2: RUN_P2_EVAL=1 + seed_p2_rag_eval_corpus (50 rows)."
 }

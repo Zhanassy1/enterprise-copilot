@@ -9,6 +9,7 @@
 | **Конфиг** | `retrieval_eval.config.json` — пути к gold/baseline (относительно `backend/`), `answer_gold_relative`, опционально `ranked_baseline_relative`, `k_list`, `regression_epsilon` |
 | **Dummy / synthetic gold** | `retrieval_gold.jsonl` / `retrieval_gold_smoke.jsonl` — поля `query_id`, `query_text`, `gold_chunk_ids`; опционально **`query_type`** (строка сегмента для стратифицированных метрик) и/или **`tags`** (массив; если `query_type` нет, сегмент берётся по первому тегу в лексикографическом порядке). `answer_gold.jsonl` — см. [Answer quality eval: scope](#answer-quality-eval-scope) ниже; фиксированные `chunk_id` из `app/eval/seed_corpus.py` |
 | **Chunking fixture** | `eval/fixtures/chunking_golden.txt` + тест `tests/test_chunking_golden.py` (регрессия `chunk_text` без моков) |
+| **P2 (50+ строк, optional CI)** | `retrieval_gold_p2.jsonl`, `answer_gold_p2.jsonl`, `baseline_p2_answer.json`, `baseline_metrics_p2.json`, seed `seed_p2_rag_eval_corpus` |
 | **Baseline метрик** | `baseline_metrics.json` — пороги для **векторного** этапа (`run_search_chunks_eval`); `baseline_metrics_ranked.json` — для полного пути `retrieve_ranked_hits` при выключенном cross-encoder (компактация сниппетов + правила contract-value). Сегментные метрики (`mrr__<segment>`, …) в отчёте появляются при наличии `query_type` или `tags` в gold; **регрессия по baseline** сравнивает только ключи, явно перечисленные в JSON baseline. |
 
 ## Что **нельзя** коммитить
@@ -85,9 +86,19 @@ python scripts/eval_answer_synthesis.py --llm-answer --judge
 
 Обновление baseline после осознанного улучшения качества: зафиксировать новые числа в `baseline_metrics.json` и при необходимости в `baseline_metrics_ranked.json` отдельным коммитом.
 
+## P2 RAG eval (50 строк, `eval/retrieval_gold_p2.jsonl`, `eval/answer_gold_p2.jsonl`)
+
+- **Корпус:** `seed_p2_rag_eval_corpus` — 50 синтетических чанков (RU / EN / mixed / 4 prompt-injection fixture), UUID с префиксом `f0000002-...` (см. `app/eval/p2_corpus_data.py`). В репозитории нет ПДн; «человеческие» формулировки вопросов — обезличенные шаблоны.
+- **Метрики в `run_answer_quality_eval`:** помимо legacy-полей — `mean_citation_chunk_precision` (|prov ∩ gold| / |prov|), `mean_faithfulness_proxy` (лексическое заземление + required evidence + forbidden + опц. reference F1 — **не** NLI), `expected_mode_accuracy` по полю `expected_mode` (если задано), плюс префикс `retrieval__*` (MRR, Recall@k, nDCG и сегменты `__lang_ru` и т.д. из `query_type` / `tags`).
+- **Prompt-injection:** в чанке — фиктивный токен `DOC_POISON_A7F9` (не прод-секрет); в gold — `forbidden_phrases` и ожидание, что extractive/пост-обработка не выводят токен в ответ.
+- **Базовые линии:** `baseline_p2_answer.json` (ответ + `retrieval__*`), `baseline_metrics_p2.json` (только ranked retrieval). Порог: `p2_regression_epsilon` в `retrieval_eval.config.json`.
+- **CI:** по умолчанию P2 **не** гоняется (долго); включение: `RUN_P2_EVAL=1` + `RUN_INTEGRATION_TESTS=1`, маркер `p2_rag`, `tests/test_p2_rag_eval_integration.py`. Ночной/ручной workflow задаёт `RUN_P2_EVAL` (см. `.github/workflows/ci.yml`).
+- **Скрипт:** `python scripts/eval_rag_quality.py --seed --p2` затем `RETRIEVAL_EVAL_WORKSPACE_ID=... python scripts/eval_rag_quality.py --p2` — отчёт с P2 gold.
+
 ## Интеграционные тесты (pytest)
 
 - Маркер `retrieval_regression`: `tests/test_retrieval_eval_integration.py`, `tests/test_answer_eval_integration.py`, `tests/test_rerank_gain_eval.py` (нужны `RUN_INTEGRATION_TESTS=1`, Postgres+pgvector).
+- Маркер `p2_rag`: `tests/test_p2_rag_eval_integration.py` при `RUN_P2_EVAL=1`.
 - Быстрый smoke на одной строке gold: `RUN_RETRIEVAL_SMOKE=1` (тот же модуль).
 - Юнит без БД: `tests/test_answer_metrics.py`, `tests/test_chunking_golden.py`, `tests/test_build_answer_provenance.py`.
 - Нагрузочные сценарии (`tests/test_perf_load.py`, маркер `perf`): `RUN_PERF_TESTS=1`; для сценариев с HTTP+БД дополнительно `RUN_INTEGRATION_TESTS=1`. Пример:

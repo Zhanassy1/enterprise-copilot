@@ -1,0 +1,21 @@
+{
+  "source_gold_all_in_top_k_rate": 0.78,
+  "must_appear_rate": 0.78,
+  "mean_grounded_line_ratio": 0.72,
+  "mean_faithfulness_proxy": 0.75,
+  "mean_citation_chunk_precision": 0.75,
+  "expected_mode_accuracy": 0.9,
+  "retrieval__mrr": 0.78,
+  "retrieval__recall_at_1": 0.7,
+  "retrieval__recall_at_3": 0.75,
+  "retrieval__recall_at_5": 0.78,
+  "retrieval__recall_at_10": 0.8,
+  "retrieval__recall_multi_at_1": 0.7,
+  "retrieval__recall_multi_at_3": 0.75,
+  "retrieval__recall_multi_at_5": 0.78,
+  "retrieval__recall_multi_at_10": 0.8,
+  "retrieval__ndcg_at_1": 0.75,
+  "retrieval__ndcg_at_3": 0.78,
+  "retrieval__ndcg_at_5": 0.8,
+  "retrieval__ndcg_at_10": 0.82
+}

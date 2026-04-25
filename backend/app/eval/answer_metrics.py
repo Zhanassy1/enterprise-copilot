@@ -120,6 +120,49 @@ def _uuid_str(x: uuid.UUID | str) -> str:
     return str(uuid.UUID(str(x)))
 
 
+def citation_chunk_precision(
+    provenance_ids: list[uuid.UUID] | list[str] | None,
+    *,
+    gold_relevant: set[str],
+) -> float:
+    """
+    |provenance ∩ gold_relevant| / max(1, |provenance|). Gold-relevant ids only.
+
+    If ``gold_relevant`` is empty, returns 1.0. Empty provenance with non-empty
+    gold returns 0.0.
+    """
+    if not gold_relevant:
+        return 1.0
+    p = []
+    for x in provenance_ids or []:
+        p.append(_uuid_str(x))
+    pset = set(p)
+    if not pset:
+        return 0.0
+    return float(len(pset & gold_relevant)) / float(len(pset))
+
+
+def faithfulness_proxy_row(
+    grounded: float,
+    *,
+    evidence_ok: bool,
+    forbidden_ok: bool,
+    has_required_evidence: bool,
+    reference_f1: float | None,
+) -> float:
+    """
+    Deterministic 0..1 score: lexical grounding + required evidence (if any) +
+    forbidden phrases + optional reference F1. Not semantic entailment.
+    """
+    parts: list[float] = [max(0.0, min(1.0, grounded))]
+    if has_required_evidence:
+        parts.append(1.0 if evidence_ok else 0.0)
+    parts.append(1.0 if forbidden_ok else 0.0)
+    if reference_f1 is not None:
+        parts.append(max(0.0, min(1.0, reference_f1)))
+    return sum(parts) / float(len(parts)) if parts else 0.0
+
+
 _CIT_RE = re.compile(r"\[(\d+)\]")
 
 
